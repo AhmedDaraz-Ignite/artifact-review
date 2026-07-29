@@ -253,7 +253,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 License: MIT
 Source: https://github.com/iconify/iconify.git
 
---- LICENSE.txt ---
+--- license.txt ---
 MIT License
 
 Copyright (c) 2021-PRESENT Vjacheslav Trushkin
@@ -710,7 +710,7 @@ clsx@1.1.1
 License: MIT
 Source: lukeed/clsx
 
---- LICENSE ---
+--- license ---
 MIT License
 
 Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
@@ -2197,7 +2197,7 @@ khroma@2.1.0
 License: See package metadata
 Source: github:fabiospampinato/khroma
 
---- LICENSE ---
+--- license ---
 The MIT License (MIT)
 
 Copyright (c) 2019-present Fabio Spampinato, Andrew Maney

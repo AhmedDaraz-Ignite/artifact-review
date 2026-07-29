@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,14 +23,14 @@ for (const input of Object.keys(metadata.inputs)) {
   }
 }
 
-const candidates = [
-  "LICENSE",
-  "LICENSE.md",
-  "LICENSE.txt",
-  "LICENCE",
-  "COPYING",
-  "NOTICE",
-];
+const legalFileNames = new Set([
+  "license",
+  "license.md",
+  "license.txt",
+  "licence",
+  "copying",
+  "notice",
+]);
 const packages = [];
 
 for (const packageRoot of [...packageRoots].sort()) {
@@ -43,10 +43,25 @@ for (const packageRoot of [...packageRoots].sort()) {
     continue;
   }
   const licenseTexts = [];
-  for (const candidate of candidates) {
+  let legalFiles = [];
+  try {
+    legalFiles = (await readdir(packageRoot, { withFileTypes: true }))
+      .filter(
+        (entry) =>
+          entry.isFile() && legalFileNames.has(entry.name.toLowerCase()),
+      )
+      .map((entry) => entry.name)
+      .sort();
+  } catch {
+    // The package manifest is enough to retain metadata if listing fails.
+  }
+  for (const candidate of legalFiles) {
     try {
       const text = await readFile(path.join(packageRoot, candidate), "utf8");
-      licenseTexts.push({ candidate, text: text.trim() });
+      licenseTexts.push({
+        candidate,
+        text: text.replace(/\r\n?/g, "\n").trim(),
+      });
     } catch {
       // Packages are allowed to declare a license without shipping its text.
     }
