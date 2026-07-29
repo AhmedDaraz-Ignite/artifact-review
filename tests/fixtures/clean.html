@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>clean fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; }
+  .table-wrap { overflow-x: auto; max-width: 100%; }
+  table { border-collapse: collapse; width: 600px; }
+  td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  button { padding: 6px 12px; }
+</style>
+</head>
+<body>
+  <h1>Clean artifact fixture</h1>
+  <p>This is a well-formed paragraph of readable text describing the artifact.</p>
+  <p>A second paragraph adds a bit more context for the reader to scan.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Value</th><th>Unit</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Alpha</td><td>1.2</td><td>mg</td><td>first row</td></tr>
+        <tr><td>Beta</td><td>3.4</td><td>mg</td><td>second row</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <fieldset>
+    <legend>Pick one</legend>
+    <label><input type="radio" name="opt" value="a" checked> Option A</label>
+    <label><input type="radio" name="opt" value="b"> Option B</label>
+  </fieldset>
+
+  <button data-arev-action="approve">Approve</button>
+
+  <pre class="mermaid">flowchart TD; A-->B</pre>
+</body>
+</html>

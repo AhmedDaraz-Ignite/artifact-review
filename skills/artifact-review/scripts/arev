@@ -1,0 +1,24 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_PATH=$0
+if command -v readlink >/dev/null 2>&1; then
+  while [ -L "$SCRIPT_PATH" ]; do
+    LINK_TARGET=$(readlink "$SCRIPT_PATH")
+    case "$LINK_TARGET" in
+      /*) SCRIPT_PATH=$LINK_TARGET ;;
+      *) SCRIPT_PATH=$(dirname -- "$SCRIPT_PATH")/$LINK_TARGET ;;
+    esac
+  done
+fi
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
+
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 "$SCRIPT_DIR/arev.py" "$@"
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python "$SCRIPT_DIR/arev.py" "$@"
+fi
+
+echo "artifact-review requires Python 3.9 or newer." >&2
+exit 127

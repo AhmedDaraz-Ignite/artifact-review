@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install development dependencies
+        run: npm ci
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Build generated assets and notices
+        run: npm run build
+
+      - name: Verify generated files are current
+        run: |
+          git diff --exit-code -- \
+            THIRD_PARTY_NOTICES.txt \
+            skills/artifact-review/THIRD_PARTY_NOTICES.txt \
+            skills/artifact-review/assets/review-ui/whiteboard.css \
+            skills/artifact-review/assets/review-ui/whiteboard.js
+
+      - name: Verify skill discovery
+        run: npx --yes skills@1.5.19 add . --list
+
+      - name: Verify bundled runtime
+        run: skills/artifact-review/scripts/arev doctor
+
+      - name: Reject local cache files in the skill
+        run: |
+          if find skills/artifact-review \
+            \( -name __pycache__ -o -name '*.pyc' -o -name '*.pyo' \) \
+            -print -quit | grep -q .; then
+            echo "Python cache files must not be included in the skill."
+            exit 1
+          fi
+
+      - name: Test
+        run: npm test
+
+  install-smoke-posix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install a copied skill for Codex and Claude Code
+        shell: bash
+        run: |
+          install_root="$(mktemp -d)"
+          cd "$install_root"
+          npx --yes skills@1.5.19 add "$GITHUB_WORKSPACE" \
+            --skill artifact-review \
+            --agent codex claude-code \
+            --copy \
+            --yes
+          python3 \
+            "$install_root/.agents/skills/artifact-review/scripts/arev.py" \
+            doctor
+          python3 \
+            "$install_root/.claude/skills/artifact-review/scripts/arev.py" \
+            doctor
+
+  install-smoke-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install a copied skill and verify the Windows launcher
+        shell: pwsh
+        run: |
+          $installRoot = Join-Path $env:RUNNER_TEMP "artifact-review-install"
+          New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+          Push-Location $installRoot
+          npx --yes skills@1.5.19 add $env:GITHUB_WORKSPACE `
+            --skill artifact-review `
+            --agent codex claude-code `
+            --copy `
+            --yes
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$installRoot\.agents\skills\artifact-review\scripts\arev.cmd" doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & "$installRoot\.claude\skills\artifact-review\scripts\arev.cmd" doctor
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location

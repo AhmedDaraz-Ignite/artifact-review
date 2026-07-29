@@ -1,0 +1,4 @@
+interface:
+  display_name: "Artifact Review"
+  short_description: "Review HTML with precise, iterative feedback"
+  default_prompt: "Use $artifact-review to open this HTML artifact for visual review, collect my feedback, and iterate until I approve it."

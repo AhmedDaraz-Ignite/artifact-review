@@ -1,0 +1,1455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Artifact Review</title>
+<link rel="stylesheet" id="whiteboardCss">
+<style>
+  :root {
+    color-scheme: light;
+    --canvas:#f2f3f5;
+    --surface:#fff;
+    --surface-subtle:#f7f8fa;
+    --ink:#171a20;
+    --muted:#61687a;
+    --line:#dcdde3;
+    --accent:#3557c0;
+    --accent-hover:#2947a5;
+    --accent-soft:#e8edfb;
+    --success:#186a4b;
+    --success-soft:#e7f4ee;
+    --warning:#a1420f;
+    --warning-soft:#faede6;
+    --danger:#a63d40;
+    --danger-soft:#f8e9ea;
+    --shadow:0 4px 8px rgba(20,24,32,.14);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --canvas:#101318;
+      --surface:#181c23;
+      --surface-subtle:#20252e;
+      --ink:#e8ebf1;
+      --muted:#a0a7b6;
+      --line:#303744;
+      --accent:#87a3f4;
+      --accent-hover:#9bb3f7;
+      --accent-soft:#242d45;
+      --success:#5dd3a0;
+      --success-soft:#17362a;
+      --warning:#f0ae62;
+      --warning-soft:#3c2b1e;
+      --danger:#e38d91;
+      --danger-soft:#3d2629;
+      --shadow:0 4px 8px rgba(0,0,0,.38);
+    }
+  }
+  * { box-sizing:border-box }
+  [hidden] { display:none !important }
+  html, body { width:100%; height:100%; overflow:hidden }
+  body {
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    background:var(--canvas);
+    color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  button, textarea { font:inherit }
+  button { color:inherit }
+  button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
+  button:disabled, textarea:disabled { cursor:not-allowed; opacity:.52 }
+  .sr-only {
+    position:absolute !important;
+    width:1px !important;
+    height:1px !important;
+    padding:0 !important;
+    margin:-1px !important;
+    overflow:hidden !important;
+    clip:rect(0,0,0,0) !important;
+    white-space:nowrap !important;
+    border:0 !important;
+  }
+
+  .topbar {
+    min-height:52px;
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:8px 12px 8px 16px;
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+  }
+  .identity { min-width:0; display:flex; align-items:baseline; gap:10px }
+  .artifact-name {
+    max-width:28vw;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    font-size:14px;
+    font-weight:650;
+  }
+  .artifact-path {
+    max-width:34vw;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    color:var(--muted);
+    font-size:12px;
+  }
+  .topbar-actions { margin-left:auto; display:flex; align-items:center; gap:8px }
+  .button {
+    min-height:36px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:7px 11px;
+    background:var(--surface);
+    cursor:pointer;
+    font-size:12px;
+    font-weight:600;
+    line-height:1;
+  }
+  .button:hover:not(:disabled) { border-color:var(--accent); background:var(--surface-subtle) }
+  .button.primary { border-color:var(--accent); background:var(--accent); color:#fff }
+  .button.primary:hover:not(:disabled) { border-color:var(--accent-hover); background:var(--accent-hover) }
+  .button.active { border-color:var(--accent); background:var(--accent-soft); color:var(--accent) }
+  .button.icon { width:36px; padding:0; font-size:18px }
+  .button.danger { color:var(--danger) }
+  .chevron { width:9px; height:9px; fill:currentColor }
+  kbd {
+    border:1px solid var(--line);
+    border-bottom-width:2px;
+    border-radius:4px;
+    padding:1px 4px;
+    color:var(--muted);
+    background:var(--surface-subtle);
+    font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .agent-chip {
+    min-height:28px;
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    border-radius:999px;
+    padding:4px 9px;
+    background:var(--surface-subtle);
+    color:var(--muted);
+    font-size:11px;
+    font-weight:600;
+    white-space:nowrap;
+  }
+  .agent-dot { width:7px; height:7px; border-radius:50%; background:currentColor }
+  .agent-chip.listening { color:var(--success); background:var(--success-soft) }
+  .agent-chip.working { color:var(--accent); background:var(--accent-soft) }
+  .agent-chip.idle { color:var(--warning); background:var(--warning-soft) }
+
+  .banner {
+    flex:0 0 auto;
+    padding:8px 14px;
+    border-bottom:1px solid var(--line);
+    background:var(--danger-soft);
+    color:var(--danger);
+    font-size:12px;
+    font-weight:600;
+  }
+  .workspace { min-height:0; flex:1; display:flex }
+  .stage { position:relative; min-width:0; min-height:0; flex:1 }
+  #art { display:block; width:100%; height:100%; border:0; background:#fff }
+
+  .audit-curtain {
+    position:absolute;
+    inset:0;
+    z-index:20;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:var(--canvas);
+  }
+  .audit-card {
+    width:min(580px,100%);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:20px;
+    background:var(--surface);
+  }
+  .audit-eyebrow { margin:0 0 4px; color:var(--muted); font-size:11px; font-weight:600 }
+  .audit-card h1 { margin:0; font-size:17px; line-height:1.35 }
+  .audit-card p { margin:7px 0 0; color:var(--muted); font-size:13px }
+  .audit-card.blocked h1 { color:var(--danger) }
+  .audit-list { max-height:38vh; overflow:auto; margin:14px 0; padding-left:20px; color:var(--muted); font-size:12px }
+  .audit-list li { margin:0 0 8px }
+  .audit-list code {
+    border-radius:4px;
+    padding:1px 4px;
+    background:var(--accent-soft);
+    color:var(--accent);
+    font:11px ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+
+  .annotation-pop {
+    position:absolute;
+    z-index:30;
+    width:min(340px,calc(100% - 16px));
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px;
+    background:var(--surface);
+    box-shadow:var(--shadow);
+  }
+  .context {
+    overflow:hidden;
+    margin-bottom:8px;
+    color:var(--muted);
+    font-size:12px;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .field-label { display:block; margin:0 0 5px; font-size:12px; font-weight:600 }
+  textarea {
+    width:100%;
+    min-height:68px;
+    resize:vertical;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:9px 10px;
+    background:var(--surface-subtle);
+    color:var(--ink);
+  }
+  textarea::placeholder { color:var(--muted) }
+  .feedback-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:9px }
+  .action-state { margin-right:auto; color:var(--muted); font-size:11px; font-weight:600 }
+  .action-state.sending { color:var(--accent) }
+  .action-state.sent { color:var(--success) }
+  .action-state.failed { color:var(--danger) }
+
+  .review-rail {
+    width:360px;
+    min-height:0;
+    flex:0 0 360px;
+    display:flex;
+    flex-direction:column;
+    border-left:1px solid var(--line);
+    background:var(--surface);
+  }
+  .rail-grip { display:none }
+  .section-head {
+    min-height:40px;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  .section-head h2 { margin:0; font-size:12px; font-weight:650 }
+  .section-head .hint { margin-left:auto; color:var(--muted); font-size:11px }
+  .count {
+    min-width:20px;
+    border-radius:999px;
+    padding:1px 6px;
+    background:var(--surface-subtle);
+    color:var(--muted);
+    font-size:11px;
+    font-weight:650;
+    text-align:center;
+  }
+  .drafts { min-height:84px; max-height:34%; overflow:auto }
+  .draft-row {
+    display:grid;
+    grid-template-columns:auto minmax(0,1fr) auto;
+    gap:8px;
+    align-items:start;
+    padding:9px 12px;
+    border-bottom:1px solid var(--line);
+  }
+  .state-chip {
+    display:inline-flex;
+    align-items:center;
+    min-height:20px;
+    border-radius:999px;
+    padding:2px 7px;
+    background:var(--surface-subtle);
+    color:var(--muted);
+    font-size:10px;
+    font-weight:650;
+    white-space:nowrap;
+  }
+  .state-chip.sent, .state-chip.received, .state-chip.answered { color:var(--success); background:var(--success-soft) }
+  .state-chip.sending { color:var(--accent); background:var(--accent-soft) }
+  .state-chip.failed { color:var(--danger); background:var(--danger-soft) }
+  .draft-jump {
+    min-width:0;
+    border:0;
+    padding:0;
+    background:none;
+    cursor:pointer;
+    text-align:left;
+  }
+  .draft-main { overflow:hidden; color:var(--ink); font-size:12px; text-overflow:ellipsis; white-space:nowrap }
+  .draft-context { overflow:hidden; margin-top:2px; color:var(--muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap }
+  .remove {
+    width:28px;
+    height:28px;
+    border:0;
+    border-radius:6px;
+    padding:0;
+    background:transparent;
+    color:var(--muted);
+    cursor:pointer;
+    font-size:17px;
+  }
+  .remove:hover { background:var(--danger-soft); color:var(--danger) }
+  .empty { padding:12px; color:var(--muted); font-size:12px }
+  .diagram-list { border-bottom:1px solid var(--line) }
+  .diagram-row {
+    width:100%;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    border:0;
+    border-bottom:1px solid var(--line);
+    padding:8px 12px;
+    background:var(--surface);
+    color:var(--ink);
+    cursor:pointer;
+    font-size:12px;
+    text-align:left;
+  }
+  .diagram-row:last-child { border-bottom:0 }
+  .diagram-row:hover { background:var(--surface-subtle) }
+  .diagram-icon { color:var(--accent) }
+  .activity { min-height:96px; flex:1; overflow:auto }
+  .feed-entry { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px }
+  .feed-entry.agent { background:var(--accent-soft) }
+  .feed-meta { display:flex; align-items:center; gap:7px; margin-bottom:5px }
+  .feed-who { font-size:11px; font-weight:650 }
+  .feed-time { margin-left:auto; color:var(--muted); font-size:10px }
+  .feed-entry pre { margin:0; white-space:pre-wrap; word-break:break-word; font:inherit }
+  .composer { flex:0 0 auto; border-top:1px solid var(--line); padding:11px 12px 12px }
+  .composer textarea { min-height:74px }
+  .composer-help { margin-top:5px; color:var(--muted); font-size:10px }
+
+  [popover].menu {
+    inset:auto;
+    width:244px;
+    margin:0;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:5px;
+    background:var(--surface);
+    color:var(--ink);
+    box-shadow:var(--shadow);
+  }
+  [popover].menu::backdrop { background:transparent }
+  .menu-item {
+    width:100%;
+    display:block;
+    border:0;
+    border-radius:7px;
+    padding:8px 9px;
+    background:transparent;
+    color:inherit;
+    cursor:pointer;
+    text-align:left;
+  }
+  .menu-item:hover, .menu-item:focus-visible { background:var(--surface-subtle) }
+  .menu-item strong { display:block; font-size:12px; font-weight:650 }
+  .menu-item small { display:block; margin-top:2px; color:var(--muted); font-size:10px; line-height:1.35 }
+  .menu-separator { height:1px; margin:4px; background:var(--line) }
+  .menu-item.danger strong { color:var(--danger) }
+
+  dialog.board {
+    width:min(1240px,96vw);
+    max-width:none;
+    height:min(900px,94vh);
+    max-height:none;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:0;
+    background:var(--surface);
+    color:var(--ink);
+  }
+  dialog.board::backdrop { background:rgba(13,17,24,.68) }
+  .board-layout { height:100%; display:grid; grid-template-rows:auto minmax(0,1fr) auto }
+  .board-head { display:flex; align-items:center; gap:10px; padding:10px 12px; border-bottom:1px solid var(--line) }
+  .board-head h2 { margin:0; font-size:14px }
+  .board-head .button { margin-left:auto }
+  #boardHost { min-height:0; margin:10px; border:1px solid var(--line); border-radius:8px; overflow:hidden }
+  .board-summary { border-top:1px solid var(--line); padding:10px 12px 12px }
+  .board-summary textarea { min-height:54px }
+
+  @media (max-width: 780px) {
+    .topbar { min-height:56px; padding-inline:10px }
+    .artifact-path, .shortcut { display:none }
+    .artifact-name { max-width:38vw }
+    .workspace { flex-direction:column }
+    .stage { min-height:0; flex:1 1 44% }
+    .review-rail {
+      width:100%;
+      height:auto;
+      min-height:0;
+      flex:0 0 56%;
+      border-top:1px solid var(--line);
+      border-left:0;
+      border-radius:14px 14px 0 0;
+    }
+    .rail-grip {
+      width:34px;
+      height:4px;
+      display:block;
+      flex:0 0 auto;
+      margin:6px auto 0;
+      border-radius:999px;
+      background:var(--line);
+    }
+    .drafts { min-height:0; max-height:22% }
+    .activity { min-height:0 }
+    .composer textarea { min-height:56px; max-height:72px }
+    dialog.board { width:100vw; height:100vh; border:0; border-radius:0 }
+  }
+  @media (max-width: 480px) {
+    .agent-chip span:last-child { display:none }
+    .agent-chip { width:28px; justify-content:center; padding:0 }
+    .button-label { display:none }
+    .artifact-name { max-width:48vw }
+  }
+  @media (pointer:coarse) {
+    .button, .remove, .menu-item { min-height:44px }
+    .button.icon { width:44px }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior:auto !important; transition:none !important; animation:none !important }
+  }
+</style>
+</head>
+<body>
+<script>/*__AREV_BOOT__*/</script>
+
+<header class="topbar">
+  <div class="identity">
+    <span class="artifact-name" id="hName"></span>
+    <span class="artifact-path" id="hPath"></span>
+  </div>
+  <div class="topbar-actions">
+    <span class="agent-chip" id="agentChip" title="No agent poll is active">
+      <span class="agent-dot" aria-hidden="true"></span>
+      <span id="agentLabel">Agent offline</span>
+    </span>
+    <button class="button" id="annBtn" type="button" aria-pressed="false"
+            aria-label="Toggle annotation mode">
+      <span aria-hidden="true">⌖</span>
+      <span class="button-label">Annotate</span>
+      <kbd class="shortcut">⌘I</kbd>
+    </button>
+    <button class="button icon" id="sessionMenuBtn" type="button"
+            aria-label="Review options" aria-haspopup="menu" aria-controls="sessionMenu">⋯</button>
+  </div>
+</header>
+<div class="banner" id="banner" role="alert" hidden></div>
+<div class="sr-only" id="liveStatus" role="status" aria-live="polite"></div>
+
+<main class="workspace">
+  <section class="stage" aria-label="Artifact">
+    <iframe id="art" title="Artifact under review"
+            sandbox="allow-scripts allow-modals"></iframe>
+    <div class="audit-curtain" id="curtain">
+      <div class="audit-card" id="curtainCard">
+        <p class="audit-eyebrow">Layout check</p>
+        <h1 id="curtainTitle">Checking the artifact…</h1>
+        <p id="curtainSummary">The review opens as soon as the first visual integrity check completes.</p>
+        <ul class="audit-list" id="curtainList"></ul>
+        <button class="button" id="showAnyway" type="button" hidden>Show anyway</button>
+      </div>
+    </div>
+
+    <section class="annotation-pop" id="pop" role="dialog" aria-labelledby="popLabel" hidden>
+      <div class="context" id="popCtx"></div>
+      <label class="field-label" id="popLabel" for="popText">What should change here?</label>
+      <textarea id="popText" placeholder="Describe the intended change"></textarea>
+      <div class="feedback-actions">
+        <span class="action-state" id="popState">Draft</span>
+        <button class="button" id="popCancel" type="button">Cancel</button>
+        <button class="button primary" id="popAction" type="button"
+                aria-haspopup="menu" aria-controls="popMenu">
+          <span class="action-label">Send or add</span>
+          <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+        </button>
+      </div>
+    </section>
+  </section>
+
+  <aside class="review-rail" aria-label="Review feedback">
+    <span class="rail-grip" aria-hidden="true"></span>
+    <div class="section-head">
+      <h2>Draft feedback</h2>
+      <span class="count" id="qCount" aria-label="0 draft items">0</span>
+      <span class="hint">Sent together</span>
+    </div>
+    <div class="drafts" id="queue">
+      <div class="empty">Nothing drafted. Annotate the artifact or write a note below.</div>
+    </div>
+    <div class="diagram-list" id="diagrams" hidden></div>
+    <div class="section-head">
+      <h2>Activity</h2>
+      <span class="hint" id="activityHint">No messages yet</span>
+    </div>
+    <div class="activity" id="feed">
+      <div class="empty">Feedback and agent replies appear here.</div>
+    </div>
+    <form class="composer" id="composer">
+      <label class="field-label" for="chat">Feedback for the agent</label>
+      <textarea id="chat" placeholder="Write a review note"></textarea>
+      <div class="composer-help">Send now includes every draft. Shift+Enter adds a new line.</div>
+      <div class="feedback-actions">
+        <span class="action-state" id="composerState">Draft</span>
+        <button class="button primary" id="chatAction" type="button"
+                aria-haspopup="menu" aria-controls="chatMenu">
+          <span class="action-label">Send or add</span>
+          <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+        </button>
+      </div>
+    </form>
+  </aside>
+</main>
+
+<div class="menu" id="sessionMenu" popover role="menu" aria-label="Review options">
+  <button class="menu-item" id="copyPath" type="button" role="menuitem">
+    <strong>Copy artifact path</strong>
+    <small>Use the exact source path in another tool.</small>
+  </button>
+  <div class="menu-separator" role="separator"></div>
+  <button class="menu-item danger" id="endBtn" type="button" role="menuitem">
+    <strong>End review</strong>
+    <small>Stop accepting feedback for this session.</small>
+  </button>
+</div>
+
+<div class="menu" id="chatMenu" popover role="menu" aria-label="Feedback action">
+  <button class="menu-item" id="chatSend" type="button" role="menuitem">
+    <strong>Send now</strong>
+    <small>Deliver this note and every draft to the agent.</small>
+  </button>
+  <button class="menu-item" id="chatQueue" type="button" role="menuitem">
+    <strong>Add to review</strong>
+    <small>Keep this note as a draft for the next send.</small>
+  </button>
+</div>
+
+<div class="menu" id="popMenu" popover role="menu" aria-label="Annotation action">
+  <button class="menu-item" id="popSend" type="button" role="menuitem">
+    <strong>Send now</strong>
+    <small>Deliver this annotation and every draft to the agent.</small>
+  </button>
+  <button class="menu-item" id="popQueue" type="button" role="menuitem">
+    <strong>Add to review</strong>
+    <small>Keep this annotation as a draft for the next send.</small>
+  </button>
+</div>
+
+<dialog class="board" id="board" aria-labelledby="boardTitle">
+  <div class="board-layout">
+    <div class="board-head">
+      <h2 id="boardTitle">Edit diagram</h2>
+      <button class="button" id="boardClose" type="button">Close</button>
+    </div>
+    <div id="boardHost"></div>
+    <div class="board-summary">
+      <label class="field-label" for="boardSummaryText">What changed?</label>
+      <textarea id="boardSummaryText" placeholder="For example: swapped A and B and added a retry edge"></textarea>
+      <div class="feedback-actions">
+        <span class="action-state" id="boardState">Draft</span>
+        <button class="button primary" id="boardAction" type="button"
+                aria-haspopup="menu" aria-controls="boardMenu">
+          <span class="action-label">Send or add</span>
+          <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="menu" id="boardMenu" popover role="menu" aria-label="Diagram feedback action">
+    <button class="menu-item" id="boardSend" type="button" role="menuitem">
+      <strong>Send now</strong>
+      <small>Save the diagram and deliver it with every draft.</small>
+    </button>
+    <button class="menu-item" id="boardQueue" type="button" role="menuitem">
+      <strong>Add to review</strong>
+      <small>Save the diagram as a draft for the next send.</small>
+    </button>
+  </div>
+</dialog>
+
+<script type="module">
+const B = window.AREV;
+const H = { "X-Arev-Token": B.token, "Content-Type": "application/json" };
+const $ = id => document.getElementById(id);
+const art = $("art");
+$("whiteboardCss").href = `/whiteboard.css?t=${encodeURIComponent(B.token)}`;
+let state = null;
+let lastVersion = null;
+let annotating = false;
+let popItem = null;
+let auditRun = 0;
+let mermaidBlocks = [];
+let deadPolls = 0;
+let stopped = false;
+let scrollResolver = null;
+let reloadInFlight = false;
+let paintedQueue = "";
+let paintedFeed = "";
+
+async function api(method, path, body) {
+  const response = await fetch(path, {
+    method,
+    headers:H,
+    body:body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = {};
+  try { data = await response.json(); } catch (error) {}
+  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  return data;
+}
+
+function announce(message) {
+  $("liveStatus").textContent = "";
+  requestAnimationFrame(() => { $("liveStatus").textContent = message; });
+}
+
+function showBanner(message) {
+  $("banner").textContent = message;
+  $("banner").hidden = !message;
+  if (message) announce(message);
+}
+
+function actionState(id, value, message) {
+  const host = $(id);
+  host.textContent = value;
+  host.className = "action-state " + value.toLowerCase();
+  if (message) announce(message);
+}
+
+function errorMessage(error) {
+  return error && error.message ? error.message : "The action could not be completed.";
+}
+
+function positionMenu(trigger, menu) {
+  const rect = trigger.getBoundingClientRect();
+  const width = 244;
+  const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
+  const above = rect.bottom + 160 > window.innerHeight;
+  menu.style.left = left + "px";
+  menu.style.top = (above ? Math.max(8, rect.top - 132) : rect.bottom + 6) + "px";
+}
+
+function attachMenu(trigger, menu) {
+  const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled)'));
+  const open = (focusFirst = false) => {
+    positionMenu(trigger, menu);
+    if (!menu.matches(":popover-open")) menu.showPopover();
+    trigger.setAttribute("aria-expanded", "true");
+    if (focusFirst) requestAnimationFrame(() => items()[0]?.focus());
+  };
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.addEventListener("click", () => {
+    if (menu.matches(":popover-open")) menu.hidePopover();
+    else open(false);
+  });
+  trigger.addEventListener("keydown", event => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      open(true);
+    }
+  });
+  menu.addEventListener("toggle", event => {
+    if (event.newState === "closed") trigger.setAttribute("aria-expanded", "false");
+  });
+  menu.addEventListener("keydown", event => {
+    const list = items();
+    const index = list.indexOf(document.activeElement);
+    let next = null;
+    if (event.key === "ArrowDown") next = list[(index + 1 + list.length) % list.length];
+    if (event.key === "ArrowUp") next = list[(index - 1 + list.length) % list.length];
+    if (event.key === "Home") next = list[0];
+    if (event.key === "End") next = list[list.length - 1];
+    if (next) {
+      event.preventDefault();
+      next.focus();
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      menu.hidePopover();
+      trigger.focus();
+    }
+  });
+  menu.addEventListener("click", event => {
+    if (event.target.closest('[role="menuitem"]')) {
+      menu.hidePopover();
+      trigger.focus();
+    }
+  });
+}
+
+attachMenu($("sessionMenuBtn"), $("sessionMenu"));
+attachMenu($("chatAction"), $("chatMenu"));
+attachMenu($("popAction"), $("popMenu"));
+attachMenu($("boardAction"), $("boardMenu"));
+
+function rememberChoice(mode) {
+  const label = mode === "send" ? "Send now" : "Add to review";
+  document.querySelectorAll(".action-label").forEach(host => {
+    host.textContent = label;
+  });
+  try { localStorage.setItem("artifact-review:last-action", mode); } catch (error) {}
+}
+
+try {
+  const remembered = localStorage.getItem("artifact-review:last-action");
+  if (remembered === "send" || remembered === "queue") rememberChoice(remembered);
+} catch (error) {}
+
+$("hName").textContent = B.name;
+$("hName").title = B.name;
+$("hPath").textContent = B.artifact;
+$("hPath").title = B.artifact;
+document.title = `${B.name} · Artifact Review`;
+art.src = "/artifact";
+
+function resetCurtain() {
+  auditRun += 1;
+  const run = auditRun;
+  $("curtain").hidden = false;
+  $("curtainCard").classList.remove("blocked");
+  $("curtainTitle").textContent = "Checking the artifact…";
+  $("curtainSummary").textContent = "The review opens as soon as the first visual integrity check completes.";
+  $("curtainList").textContent = "";
+  $("showAnyway").hidden = true;
+  setTimeout(() => {
+    if (run === auditRun && !$("curtain").hidden) {
+      $("curtain").hidden = true;
+      announce("The layout check timed out. The artifact is available for manual review.");
+    }
+  }, 4000);
+}
+
+function liftCurtain() {
+  $("curtain").hidden = true;
+}
+
+function showBlocked(findings) {
+  const severe = findings.filter(finding => finding.severity === "severe");
+  $("curtain").hidden = false;
+  $("curtainCard").classList.add("blocked");
+  $("curtainTitle").textContent = "The layout needs attention";
+  $("curtainSummary").textContent = "The agent received these proven failures. You can still inspect the artifact.";
+  const list = $("curtainList");
+  list.textContent = "";
+  severe.slice(0, 8).forEach(finding => {
+    const item = document.createElement("li");
+    const selector = document.createElement("code");
+    selector.textContent = finding.selector;
+    item.append(selector, document.createTextNode(` ${finding.kind}: ${finding.evidence || ""}`));
+    list.appendChild(item);
+  });
+  if (severe.length > 8) {
+    const item = document.createElement("li");
+    item.textContent = `${severe.length - 8} more failures were sent to the agent.`;
+    list.appendChild(item);
+  }
+  $("showAnyway").hidden = false;
+  announce(`${severe.length} severe layout ${severe.length === 1 ? "failure was" : "failures were"} found.`);
+}
+
+$("showAnyway").addEventListener("click", async () => {
+  try {
+    await api("POST", "/audit/override", {});
+    liftCurtain();
+  } catch (error) {
+    showBanner(`Could not override the layout check: ${errorMessage(error)}`);
+  }
+});
+
+window.addEventListener("message", async event => {
+  if (event.source !== art.contentWindow ||
+      (event.origin !== location.origin && event.origin !== "null") ||
+      !event.data || !event.data.arev) return;
+  const message = event.data;
+  if (message.type === "audit-done") {
+    try {
+      const result = await api("POST", "/audit", { findings:message.findings || [] });
+      if (result.status === "blocked") showBlocked(message.findings || []);
+      else liftCurtain();
+    } catch (error) {
+      liftCurtain();
+      showBanner(`The layout result could not be saved: ${errorMessage(error)}`);
+    }
+  }
+  if (message.type === "sdk-ready") {
+    mermaidBlocks = message.mermaid || [];
+    renderDiagramList();
+    renderMermaid();
+  }
+  if (message.type === "scroll" && scrollResolver) {
+    scrollResolver(Number(message.y) || 0);
+    scrollResolver = null;
+  }
+  if (message.type === "toggle-annotate") setAnnotate(!annotating);
+  if (message.type === "pick-element") {
+    openAnnotation(
+      { kind:"element", selector:message.selector, label:message.label },
+      message.rect,
+      message.label,
+    );
+  }
+  if (message.type === "pick-text") {
+    openAnnotation(
+      { kind:"text", selector:message.selector, anchor:message.anchor, snippet:message.snippet },
+      message.rect,
+      `“${message.snippet}”`,
+    );
+  }
+  if (message.type === "control") {
+    try {
+      await api("POST", "/queue", { item:message.item });
+      actionState("composerState", "Draft", "Page choice added to the review.");
+    } catch (error) {
+      showBanner(`The page choice was not saved: ${errorMessage(error)}`);
+    }
+  }
+  if (message.type === "want-board") mountBoard(message.id);
+});
+
+function setAnnotate(on) {
+  if (state?.ended) return;
+  annotating = on;
+  $("annBtn").classList.toggle("active", on);
+  $("annBtn").setAttribute("aria-pressed", String(on));
+  try {
+    art.contentWindow.postMessage({ arev:true, type:"set-annotate", on }, "*");
+  } catch (error) {}
+  announce(on ? "Annotation mode on." : "Annotation mode off.");
+}
+
+$("annBtn").addEventListener("click", () => setAnnotate(!annotating));
+document.addEventListener("keydown", event => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "i") {
+    event.preventDefault();
+    setAnnotate(!annotating);
+  }
+});
+
+function openAnnotation(item, rect, context) {
+  popItem = item;
+  $("popCtx").textContent = context || item.selector;
+  $("popText").value = "";
+  actionState("popState", "Draft");
+  const stageRect = art.getBoundingClientRect();
+  const host = $("pop");
+  const left = Math.max(8, Math.min(stageRect.width - 348, rect?.left || 40));
+  const top = Math.max(8, Math.min(stageRect.height - 190, (rect?.bottom || 32) + 8));
+  host.style.left = left + "px";
+  host.style.top = top + "px";
+  host.hidden = false;
+  $("popText").focus();
+}
+
+function closeAnnotation() {
+  $("pop").hidden = true;
+  popItem = null;
+  art.focus();
+}
+
+$("popCancel").addEventListener("click", closeAnnotation);
+$("popText").addEventListener("keydown", event => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeAnnotation();
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    $("popAction").click();
+  }
+});
+$("popText").addEventListener("input", () => {
+  if ($("popState").textContent === "Failed") actionState("popState", "Draft");
+});
+
+async function submitAnnotation(mode) {
+  if (!popItem) return;
+  const item = { ...popItem, comment:$("popText").value.trim() };
+  const controls = [$("popAction"), $("popCancel"), $("popText")];
+  controls.forEach(control => { control.disabled = true; });
+  actionState("popState", mode === "send" ? "Sending" : "Draft",
+    mode === "send" ? "Sending annotation." : "Adding annotation to the review.");
+  try {
+    if (mode === "send") await api("POST", "/send", { item });
+    else await api("POST", "/queue", { item });
+    actionState("popState", mode === "send" ? "Sent" : "Draft",
+      mode === "send" ? "Annotation sent." : "Annotation added to the review.");
+    showBanner("");
+    closeAnnotation();
+  } catch (error) {
+    actionState("popState", "Failed", `Annotation failed: ${errorMessage(error)}`);
+    showBanner(`Annotation preserved. Try again: ${errorMessage(error)}`);
+  } finally {
+    controls.forEach(control => { control.disabled = !!state?.ended; });
+  }
+}
+
+$("popSend").addEventListener("click", () => {
+  rememberChoice("send");
+  submitAnnotation("send");
+});
+$("popQueue").addEventListener("click", () => {
+  rememberChoice("queue");
+  submitAnnotation("queue");
+});
+
+function describeItem(item) {
+  if (item.kind === "chat") return item.text || "(empty note)";
+  if (item.kind === "control") return `${item.label || item.selector} → ${item.value}`;
+  if (item.kind === "whiteboard") return `${item.id}: ${item.summary || "diagram edited"}`;
+  return item.comment || item.label || "(annotation without a note)";
+}
+
+function itemContext(item) {
+  if (item.snippet) return `“${item.snippet}”`;
+  return item.selector || "";
+}
+
+function renderQueue(queue) {
+  const host = $("queue");
+  host.textContent = "";
+  if (!queue.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Nothing drafted. Annotate the artifact or write a note below.";
+    host.appendChild(empty);
+  }
+  queue.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "draft-row";
+    const status = document.createElement("span");
+    status.className = "state-chip";
+    status.textContent = "Draft";
+    const body = document.createElement("button");
+    body.type = "button";
+    body.className = "draft-jump";
+    body.disabled = !item.selector;
+    const main = document.createElement("div");
+    main.className = "draft-main";
+    main.textContent = describeItem(item);
+    const context = document.createElement("div");
+    context.className = "draft-context";
+    context.textContent = itemContext(item) || item.kind;
+    body.append(main, context);
+    body.addEventListener("click", () => {
+      if (item.selector) {
+        art.contentWindow.postMessage(
+          { arev:true, type:"flash", selector:item.selector },
+          "*",
+        );
+      }
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove";
+    remove.setAttribute("aria-label", `Remove ${item.kind} draft`);
+    remove.textContent = "×";
+    remove.disabled = !!state?.ended;
+    remove.addEventListener("click", async () => {
+      try {
+        await api("POST", "/unqueue", { qid:item.qid });
+        announce("Draft removed.");
+      } catch (error) {
+        showBanner(`Draft was not removed: ${errorMessage(error)}`);
+      }
+    });
+    row.append(status, body, remove);
+    host.appendChild(row);
+  });
+  $("qCount").textContent = String(queue.length);
+  $("qCount").setAttribute("aria-label", `${queue.length} draft ${queue.length === 1 ? "item" : "items"}`);
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return "";
+  return new Date(timestamp * 1000).toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+}
+
+function deliveryLabel(entry) {
+  if (entry.status === "answered") return "Answered";
+  if (entry.status === "delivered") return "Received";
+  return "Sent";
+}
+
+function feedText(entry) {
+  if (entry.text) return entry.text;
+  return (entry.items || []).map(item => {
+    if (item.kind === "chat") return item.text;
+    if (item.kind === "control") return `${item.label || item.selector} → ${item.value}`;
+    if (item.kind === "whiteboard") return `Diagram ${item.id}: ${item.summary || "edited"}`;
+    return `${item.kind} on ${item.selector || "artifact"}${item.comment ? `: ${item.comment}` : ""}`;
+  }).join("\n");
+}
+
+function renderFeed(feed) {
+  const host = $("feed");
+  host.textContent = "";
+  if (!feed.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    empty.textContent = "Feedback and agent replies appear here.";
+    host.appendChild(empty);
+    $("activityHint").textContent = "No messages yet";
+    return;
+  }
+  feed.forEach(entry => {
+    const container = document.createElement("article");
+    container.className = "feed-entry" + (entry.role === "agent" ? " agent" : "");
+    const meta = document.createElement("div");
+    meta.className = "feed-meta";
+    const who = document.createElement("span");
+    who.className = "feed-who";
+    who.textContent = entry.role === "agent" ? "Agent" : "You";
+    meta.appendChild(who);
+    if (entry.role !== "agent") {
+      const delivery = deliveryLabel(entry);
+      const status = document.createElement("span");
+      status.className = `state-chip ${delivery.toLowerCase()}`;
+      status.textContent = delivery;
+      meta.appendChild(status);
+    }
+    const time = document.createElement("time");
+    time.className = "feed-time";
+    time.textContent = formatTime(entry.ts);
+    meta.appendChild(time);
+    const content = document.createElement("pre");
+    content.textContent = feedText(entry);
+    container.append(meta, content);
+    host.appendChild(container);
+  });
+  $("activityHint").textContent = `${feed.length} ${feed.length === 1 ? "entry" : "entries"}`;
+  host.scrollTop = host.scrollHeight;
+}
+
+function setComposerBusy(busy) {
+  [$("chat"), $("chatAction")].forEach(control => {
+    control.disabled = busy || !!state?.ended;
+  });
+}
+
+async function submitChat(mode) {
+  const text = $("chat").value.trim();
+  const drafts = state?.queue?.length || 0;
+  if (mode === "queue" && !text) {
+    actionState("composerState", "Failed", "Write a note before adding it to the review.");
+    $("chat").focus();
+    return;
+  }
+  if (mode === "send" && !text && !drafts) {
+    actionState("composerState", "Failed", "Write feedback or add a draft before sending.");
+    $("chat").focus();
+    return;
+  }
+  setComposerBusy(true);
+  actionState("composerState", mode === "send" ? "Sending" : "Draft",
+    mode === "send" ? "Sending feedback." : "Adding note to the review.");
+  try {
+    const item = text ? { kind:"chat", text } : null;
+    if (mode === "send") await api("POST", "/send", { item });
+    else await api("POST", "/queue", { item });
+    $("chat").value = "";
+    actionState("composerState", mode === "send" ? "Sent" : "Draft",
+      mode === "send" ? "Feedback sent." : "Note added to the review.");
+    showBanner("");
+  } catch (error) {
+    actionState("composerState", "Failed", `Feedback failed: ${errorMessage(error)}`);
+    showBanner(`Your feedback is preserved. Try again: ${errorMessage(error)}`);
+  } finally {
+    setComposerBusy(false);
+  }
+}
+
+$("chatSend").addEventListener("click", () => {
+  rememberChoice("send");
+  submitChat("send");
+});
+$("chatQueue").addEventListener("click", () => {
+  rememberChoice("queue");
+  submitChat("queue");
+});
+$("composer").addEventListener("submit", event => event.preventDefault());
+$("chat").addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("chatAction").click();
+  }
+});
+$("chat").addEventListener("input", () => {
+  if ($("composerState").textContent === "Failed") actionState("composerState", "Draft");
+});
+
+function renderAgent(agent) {
+  const chip = $("agentChip");
+  const age = agent?.last_seen ? Date.now() / 1000 - agent.last_seen : Infinity;
+  let status = agent?.status || "offline";
+  if (status !== "offline" && age > 125) status = "offline";
+  const labels = {
+    offline:"Agent offline",
+    idle:"Agent available",
+    listening:"Agent listening",
+    working:"Agent working",
+  };
+  chip.className = `agent-chip ${status}`;
+  $("agentLabel").textContent = labels[status];
+  chip.title = status === "offline"
+    ? "No live agent poll is active. Feedback remains durable until an agent polls."
+    : labels[status];
+}
+
+function applyState(next) {
+  const previousVersion = lastVersion;
+  state = next;
+  lastVersion = next.version;
+  const queueKey = JSON.stringify(next.queue || []);
+  const feedKey = JSON.stringify(next.feed || []);
+  if (queueKey !== paintedQueue) {
+    paintedQueue = queueKey;
+    renderQueue(next.queue || []);
+  }
+  if (feedKey !== paintedFeed) {
+    paintedFeed = feedKey;
+    renderFeed(next.feed || []);
+  }
+  renderAgent(next.agent);
+  const ended = !!next.ended;
+  [$("annBtn"), $("chat"), $("chatAction"), $("chatSend"), $("chatQueue"),
+    $("popAction"), $("popSend"), $("popQueue"),
+    $("boardAction"), $("boardSend"), $("boardQueue")]
+    .forEach(control => { control.disabled = ended; });
+  document.querySelectorAll(".remove, .diagram-row").forEach(control => {
+    control.disabled = ended;
+  });
+  if (ended) {
+    setAnnotate(false);
+    showBanner(`Review ended by ${next.ended_by}. This session is read-only.`);
+  }
+  if (previousVersion !== null && previousVersion !== next.version) reloadArtifact();
+}
+
+async function stateLoop() {
+  let revision = -1;
+  while (!stopped) {
+    try {
+      const path = revision < 0
+        ? "/state"
+        : `/state/next?after=${revision}&timeout=25`;
+      const next = await api("GET", path);
+      revision = next.revision;
+      deadPolls = 0;
+      if (!next.ended && $("banner").textContent.includes("server is not responding")) showBanner("");
+      applyState(next);
+    } catch (error) {
+      deadPolls += 1;
+      if (deadPolls >= 3) {
+        showBanner("The session server is not responding. Your unsent text is preserved in this tab.");
+      }
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, deadPolls * 750)));
+    }
+  }
+}
+
+function requestArtifactScroll() {
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      scrollResolver = null;
+      resolve(value);
+    };
+    scrollResolver = finish;
+    try {
+      art.contentWindow.postMessage({ arev:true, type:"get-scroll" }, "*");
+    } catch (error) {
+      finish(0);
+    }
+    setTimeout(() => finish(0), 150);
+  });
+}
+
+async function reloadArtifact() {
+  if (reloadInFlight) return;
+  reloadInFlight = true;
+  const scrollY = await requestArtifactScroll();
+  resetCurtain();
+  mermaidBlocks = [];
+  renderDiagramList();
+  const onLoad = () => {
+    art.removeEventListener("load", onLoad);
+    setTimeout(() => {
+      try {
+        art.contentWindow.postMessage({ arev:true, type:"set-scroll", y:scrollY }, "*");
+        if (annotating) {
+          art.contentWindow.postMessage({ arev:true, type:"set-annotate", on:true }, "*");
+        }
+      } catch (error) {}
+    }, 120);
+  };
+  art.addEventListener("load", onLoad);
+  art.src = `/artifact?v=${Date.now()}`;
+  setTimeout(() => { reloadInFlight = false; }, 250);
+}
+
+$("copyPath").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(B.artifact);
+    announce("Artifact path copied.");
+  } catch (error) {
+    const helper = document.createElement("textarea");
+    helper.value = B.artifact;
+    document.body.appendChild(helper);
+    helper.select();
+    document.execCommand("copy");
+    helper.remove();
+    announce("Artifact path copied.");
+  }
+});
+
+$("endBtn").addEventListener("click", async () => {
+  if (!confirm("End this review? The agent will receive an ended event.")) return;
+  try {
+    await api("POST", "/end", { by:"user" });
+  } catch (error) {
+    showBanner(`The review was not ended: ${errorMessage(error)}`);
+  }
+});
+
+setInterval(() => {
+  if (state) renderAgent(state.agent);
+}, 5000);
+
+/* Mermaid remains authoritative in the HTML. The bundled, offline whiteboard
+   renders it as Excalidraw; human edits are review feedback and never modify
+   the artifact file. */
+let whiteboard = null;
+let boardRoot = null;
+let boardApi = null;
+let boardId = null;
+const scenes = new Map();
+
+async function whiteboardLibs() {
+  if (whiteboard) return whiteboard;
+  window.EXCALIDRAW_ASSET_PATH = "/";
+  whiteboard = await import(`/whiteboard.js?t=${encodeURIComponent(B.token)}`);
+  return whiteboard;
+}
+
+function normalizeFonts(elements) {
+  return elements.map(element =>
+    element.type === "text" ? { ...element, fontFamily:2 } : element
+  );
+}
+
+function renderDiagramList() {
+  const host = $("diagrams");
+  host.textContent = "";
+  host.hidden = !mermaidBlocks.length;
+  mermaidBlocks.forEach(block => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "diagram-row";
+    button.disabled = !!state?.ended;
+    button.innerHTML = '<span class="diagram-icon" aria-hidden="true">◇</span>';
+    const label = document.createElement("span");
+    label.textContent = `Edit diagram: ${block.id}`;
+    button.appendChild(label);
+    button.addEventListener("click", () => mountBoard(block.id));
+    host.appendChild(button);
+  });
+}
+
+async function renderMermaid() {
+  if (!mermaidBlocks.length) return;
+  let libs;
+  try {
+    libs = await whiteboardLibs();
+  } catch (error) {
+    showBanner("The offline diagram editor could not load. Mermaid source remains visible.");
+    return;
+  }
+  for (const block of mermaidBlocks) {
+    try {
+      const parsed = await libs.parseMermaidToExcalidraw(block.source);
+      const elements = normalizeFonts(libs.convertToExcalidrawElements(parsed.elements));
+      scenes.set(block.id, elements);
+      const svg = await libs.exportToSvg({
+        elements,
+        files:null,
+        appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
+      });
+      art.contentWindow.postMessage({
+        arev:true,
+        type:"inject-svg",
+        id:block.id,
+        selector:block.selector,
+        svg:svg.outerHTML,
+      }, "*");
+    } catch (error) {
+      // Invalid Mermaid remains readable as its original source.
+    }
+  }
+}
+
+async function mountBoard(id) {
+  if (state?.ended) return;
+  let libs;
+  try {
+    libs = await whiteboardLibs();
+  } catch (error) {
+    showBanner("The offline diagram editor could not load.");
+    return;
+  }
+  boardId = id;
+  boardApi = null;
+  $("boardTitle").textContent = `Edit diagram · ${id}`;
+  $("boardSummaryText").value = "";
+  actionState("boardState", "Draft");
+  const host = $("boardHost");
+  if (boardRoot) {
+    boardRoot.unmount();
+    host.textContent = "";
+  }
+  $("board").showModal();
+  boardRoot = libs.createRoot(host);
+  boardRoot.render(libs.React.createElement(libs.Excalidraw, {
+    initialData:{
+      elements:scenes.get(id) || [],
+      scrollToContent:true,
+      appState:{ currentItemFontFamily:2 },
+    },
+    excalidrawAPI:apiRef => { boardApi = apiRef; },
+  }));
+}
+
+$("boardClose").addEventListener("click", () => $("board").close());
+$("board").addEventListener("cancel", event => {
+  if ($("boardMenu").matches(":popover-open")) {
+    event.preventDefault();
+    $("boardMenu").hidePopover();
+  }
+});
+$("boardSummaryText").addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    $("boardAction").click();
+  }
+});
+$("boardSummaryText").addEventListener("input", () => {
+  if ($("boardState").textContent === "Failed") actionState("boardState", "Draft");
+});
+
+async function blobBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function setBoardBusy(busy) {
+  [$("boardSummaryText"), $("boardAction"), $("boardClose")]
+    .forEach(control => { control.disabled = busy; });
+}
+
+async function submitBoard(mode) {
+  if (!boardApi || !boardId) {
+    actionState("boardState", "Failed", "The diagram editor is still loading.");
+    return;
+  }
+  const summary = $("boardSummaryText").value.trim();
+  if (!summary) {
+    actionState("boardState", "Failed", "Describe what changed before adding the diagram.");
+    $("boardSummaryText").focus();
+    return;
+  }
+  setBoardBusy(true);
+  actionState("boardState", mode === "send" ? "Sending" : "Draft",
+    mode === "send" ? "Saving and sending diagram." : "Saving diagram to the review.");
+  try {
+    const libs = await whiteboardLibs();
+    const elements = normalizeFonts(boardApi.getSceneElements());
+    scenes.set(boardId, elements);
+    const blob = await libs.exportToBlob({
+      elements,
+      files:null,
+      mimeType:"image/png",
+      appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
+    });
+    const png = await blobBase64(blob);
+    const saved = await api("POST", "/whiteboard", {
+      id:boardId,
+      scene:{ type:"excalidraw", version:2, source:"artifact-review", elements, appState:{} },
+      png_base64:png,
+    });
+    const item = {
+      kind:"whiteboard",
+      id:boardId,
+      summary,
+      scene_path:saved.scene_path,
+      png_path:saved.png_path,
+    };
+    if (mode === "send") await api("POST", "/send", { item });
+    else await api("POST", "/queue", { item });
+    const svg = await libs.exportToSvg({
+      elements,
+      files:null,
+      appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
+    });
+    art.contentWindow.postMessage({
+      arev:true,
+      type:"inject-svg",
+      id:boardId,
+      selector:`#${CSS.escape(boardId)}`,
+      svg:svg.outerHTML,
+    }, "*");
+    actionState("boardState", mode === "send" ? "Sent" : "Draft",
+      mode === "send" ? "Diagram sent." : "Diagram added to the review.");
+    showBanner("");
+    $("board").close();
+  } catch (error) {
+    actionState("boardState", "Failed", `Diagram feedback failed: ${errorMessage(error)}`);
+    showBanner(`The diagram remains open. Try again: ${errorMessage(error)}`);
+  } finally {
+    setBoardBusy(false);
+  }
+}
+
+$("boardSend").addEventListener("click", () => {
+  rememberChoice("send");
+  submitBoard("send");
+});
+$("boardQueue").addEventListener("click", () => {
+  rememberChoice("queue");
+  submitBoard("queue");
+});
+
+resetCurtain();
+stateLoop();
+window.addEventListener("pagehide", () => { stopped = true; });
+</script>
+</body>
+</html>

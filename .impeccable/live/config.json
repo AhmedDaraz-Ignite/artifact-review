@@ -1,0 +1,8 @@
+{
+  "files": [
+    "skills/artifact-review/assets/review-ui/chrome.html"
+  ],
+  "insertBefore": "</body>",
+  "commentSyntax": "html",
+  "cspChecked": true
+}

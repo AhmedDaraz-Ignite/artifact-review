@@ -1,0 +1,28 @@
+{
+  "name": "artifact-review-development",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tooling/build-whiteboard.mjs && node tooling/generate-notices.mjs",
+    "test": "bash tests/run.sh"
+  },
+  "devDependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "esbuild": "0.28.1",
+    "playwright": "1.55.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "overrides": {
+    "@excalidraw/excalidraw": {
+      "nanoid": "3.3.16"
+    },
+    "@excalidraw/mermaid-to-excalidraw": {
+      "@mermaid-js/parser": "1.2.0",
+      "nanoid": "5.1.16"
+    },
+    "lodash-es": "4.18.1"
+  }
+}

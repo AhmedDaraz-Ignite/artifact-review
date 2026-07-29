@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>broken fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; position: relative; }
+  .wide { width: 2000px; height: 20px; background: #eee; }
+  .clip-box {
+    width: 120px;
+    height: 20px;
+    overflow: hidden;
+    white-space: nowrap;
+    border: 1px solid #999;
+  }
+  .content { position: relative; }
+  .content p { margin: 4px 0; }
+  .overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #ffffff;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+  <h1>Broken layout fixture</h1>
+
+  <p>Escaped markup example follows, rendered as plain text instead of HTML:</p>
+  <p>&lt;div class=&quot;card&quot;&gt;&lt;/div&gt;</p>
+
+  <div class="clip-box">ThisIsOneReallyLongUnbrokenStringThatCannotWrapAndWillOverflowTheBox</div>
+
+  <div class="wide">wide box forcing horizontal page overflow</div>
+
+  <div class="content">
+    <p>Paragraph one has some readable text content here.</p>
+    <p>Paragraph two has some readable text content here too.</p>
+    <p>Paragraph three continues with more readable text content.</p>
+    <p>Paragraph four rounds out the sample text content block.</p>
+    <div class="overlay"></div>
+  </div>
+</body>
+</html>
