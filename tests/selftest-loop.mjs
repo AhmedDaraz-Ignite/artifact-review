@@ -270,7 +270,7 @@ try {
   }, { timeout:3000, label:'artifact scroll restoration' });
   test.check('live reload preserves artifact scroll', scrollY > 100, `y=${scrollY}`);
   const diagramCount = await eventually(async () => {
-    const count = await page.getByRole('button', { name:/Edit diagram:/ }).count();
+    const count = await page.getByRole('button', { name:/Focus diagram editor:/ }).count();
     return count >= 1 ? count : null;
   }, { timeout:3000, label:'Mermaid re-index after live reload' });
   test.check(

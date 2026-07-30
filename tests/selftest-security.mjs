@@ -65,6 +65,7 @@ try {
   const controllerWithoutToken = await rawRequest(origin, { path:'/' });
   const stateWithoutToken = await rawRequest(origin, { path:'/state' });
   const assetWithoutToken = await rawRequest(origin, { path:'/whiteboard.css' });
+  const frameWithoutToken = await rawRequest(origin, { path:'/whiteboard-frame' });
   const mutationWithoutToken = await rawRequest(origin, {
     path:'/queue',
     method:'POST',
@@ -72,15 +73,24 @@ try {
     body:JSON.stringify({ item:{ kind:'chat', text:'must not be queued' } }),
   });
   test.check(
-    'controller, state, mutations, and controller assets require a token',
-    [controllerWithoutToken, stateWithoutToken, assetWithoutToken, mutationWithoutToken]
+    'controller, state, and mutations require a token',
+    [controllerWithoutToken, stateWithoutToken, mutationWithoutToken]
       .every(response => response.status === 403),
     [
       controllerWithoutToken.status,
       stateWithoutToken.status,
-      assetWithoutToken.status,
       mutationWithoutToken.status,
     ].join(','),
+  );
+  test.check(
+    'tokenless frame assets are static-only CORS resources',
+    assetWithoutToken.status === 200 &&
+      frameWithoutToken.status === 200 &&
+      assetWithoutToken.headers['access-control-allow-origin'] === '*' &&
+      frameWithoutToken.headers['access-control-allow-origin'] === '*' &&
+      !assetWithoutToken.body.includes(token) &&
+      !frameWithoutToken.body.includes(token),
+    `asset=${assetWithoutToken.status} frame=${frameWithoutToken.status}`,
   );
 
   const badToken = await rawRequest(origin, {
@@ -95,10 +105,14 @@ try {
     path:'/whiteboard.css',
     headers:{ 'X-Arev-Token':token },
   });
+  const apiCors = goodState.headers['access-control-allow-origin'];
   test.check(
-    'bad token is rejected while valid controller requests succeed',
-    badToken.status === 403 && goodState.status === 200 && goodAsset.status === 200,
-    `bad=${badToken.status} state=${goodState.status} asset=${goodAsset.status}`,
+    'bad token is rejected while valid controller requests succeed without API CORS',
+    badToken.status === 403 &&
+      goodState.status === 200 &&
+      goodAsset.status === 200 &&
+      !apiCors,
+    `bad=${badToken.status} state=${goodState.status} asset=${goodAsset.status} cors=${apiCors}`,
   );
 
   const badHostArtifact = await rawRequest(origin, {

@@ -43,6 +43,7 @@ run gate selftest-gate.mjs clean.html
 run security selftest-security.mjs clean.html
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
+run diagrams selftest-diagram-features.mjs diagram-features.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then

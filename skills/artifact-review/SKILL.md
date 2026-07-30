@@ -49,7 +49,9 @@ Use the playbooks as requirements, not optional inspiration. In particular:
 - Keep page-level horizontal overflow at zero.
 - Use semantic native controls for human decisions.
 - Give controls stable `id`, `name`, and labels.
-- Use `<pre class="mermaid">...</pre>` for Mermaid source.
+- Use `<pre class="mermaid" id="stable-diagram-id">...</pre>` for Mermaid
+  source. Flowchart, sequence, class, ER, and state diagrams become editable
+  shapes; other valid types use a labeled image-annotation fallback.
 - Mark a genuinely custom clickable control with
   `data-arev-action="<specific-name>"`.
 
@@ -125,6 +127,18 @@ For whiteboard feedback, inspect the returned `png_path` to understand the
 human's visible edit and use `scene_path` only as supporting structured data.
 Update the authoritative Mermaid or HTML source yourself. Never replace the
 artifact with the Excalidraw scene.
+
+Inline diagram editors start locked so page scrolling remains natural. The
+reviewer explicitly unlocks one editor, may expand it fullscreen, and can add
+or send the visible edit from that frame. Working scenes autosave locally.
+When the Mermaid source hash no longer matches a saved scene, the browser asks
+the reviewer to re-convert or keep the stale scene; never infer that decision
+for them.
+
+An element item may include a normalized `target` whose type is
+`mermaid-node`. Use its `diagramId`, `nodeId`, `label`, and `selector` to edit
+the corresponding node in the authoritative Mermaid source rather than
+treating the whole SVG as the requested target.
 
 When the user ends a session from the browser, respect that decision. Do not
 open it again unless the concern has been addressed and a new review is
