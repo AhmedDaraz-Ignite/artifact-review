@@ -596,13 +596,15 @@ const B = window.AREV;
 const H = { "X-Arev-Token": B.token, "Content-Type": "application/json" };
 const $ = id => document.getElementById(id);
 const art = $("art");
-$("whiteboardCss").href = `/whiteboard.css?t=${encodeURIComponent(B.token)}`;
+$("whiteboardCss").href = "/whiteboard.css";
 let state = null;
 let lastVersion = null;
 let annotating = false;
 let popItem = null;
 let auditRun = 0;
 let mermaidBlocks = [];
+let inlineGeneration = 0;
+const inlineDiagrams = new Map();
 let deadPolls = 0;
 let stopped = false;
 let scrollResolver = null;
@@ -618,7 +620,12 @@ async function api(method, path, body) {
   });
   let data = {};
   try { data = await response.json(); } catch (error) {}
-  if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(data.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
   return data;
 }
 
@@ -796,9 +803,7 @@ window.addEventListener("message", async event => {
     }
   }
   if (message.type === "sdk-ready") {
-    mermaidBlocks = message.mermaid || [];
-    renderDiagramList();
-    renderMermaid();
+    await prepareInlineDiagrams(message.mermaid || []);
   }
   if (message.type === "scroll" && scrollResolver) {
     scrollResolver(Number(message.y) || 0);
@@ -807,7 +812,12 @@ window.addEventListener("message", async event => {
   if (message.type === "toggle-annotate") setAnnotate(!annotating);
   if (message.type === "pick-element") {
     openAnnotation(
-      { kind:"element", selector:message.selector, label:message.label },
+      {
+        kind:"element",
+        selector:message.selector,
+        label:message.label,
+        ...(message.target ? { target:message.target } : {}),
+      },
       message.rect,
       message.label,
     );
@@ -827,7 +837,15 @@ window.addEventListener("message", async event => {
       showBanner(`The page choice was not saved: ${errorMessage(error)}`);
     }
   }
-  if (message.type === "want-board") mountBoard(message.id);
+  if (message.type === "want-board") focusInlineDiagram(message.id);
+  if (message.type === "inline-mount-failed") {
+    showBanner(
+      `Diagram editor ${String(message.id || "")} could not mount: ${String(message.error || "Unknown error")}`,
+    );
+  }
+  if (message.type === "whiteboard-frame") {
+    await handleWhiteboardFrame(message);
+  }
 });
 
 function setAnnotate(on) {
@@ -1193,9 +1211,12 @@ function requestArtifactScroll() {
 async function reloadArtifact() {
   if (reloadInFlight) return;
   reloadInFlight = true;
+  await flushInlineDiagrams("artifact-reload");
   const scrollY = await requestArtifactScroll();
   resetCurtain();
   mermaidBlocks = [];
+  inlineGeneration += 1;
+  inlineDiagrams.clear();
   renderDiagramList();
   const onLoad = () => {
     art.removeEventListener("load", onLoad);
@@ -1241,26 +1262,93 @@ setInterval(() => {
   if (state) renderAgent(state.agent);
 }, 5000);
 
-/* Mermaid remains authoritative in the HTML. The bundled, offline whiteboard
-   renders it as Excalidraw; human edits are review feedback and never modify
-   the artifact file. */
-let whiteboard = null;
-let boardRoot = null;
-let boardApi = null;
-let boardId = null;
-const scenes = new Map();
+/* Mermaid remains authoritative in the HTML. Each editor runs in a sandboxed
+   frame inside the artifact. Only this controller owns the bearer token and
+   brokers authenticated persistence and feedback delivery for those frames. */
 
-async function whiteboardLibs() {
-  if (whiteboard) return whiteboard;
-  window.EXCALIDRAW_ASSET_PATH = "/";
-  whiteboard = await import(`/whiteboard.js?t=${encodeURIComponent(B.token)}`);
-  return whiteboard;
+function normalizeMermaidSource(source) {
+  return String(source || "").replace(/\r\n?/g, "\n").trim();
 }
 
-function normalizeFonts(elements) {
-  return elements.map(element =>
-    element.type === "text" ? { ...element, fontFamily:2 } : element
-  );
+async function sourceHash(source) {
+  const bytes = new TextEncoder().encode(normalizeMermaidSource(source));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), byte =>
+    byte.toString(16).padStart(2, "0")
+  ).join("");
+}
+
+function randomChannel() {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function relayToInline(record, message) {
+  try {
+    art.contentWindow.postMessage({
+      arev:true,
+      type:"whiteboard-frame",
+      id:record.block.id,
+      channel:record.channel,
+      message:{
+        arevFrame:true,
+        channel:record.channel,
+        ...message,
+      },
+    }, "*");
+  } catch (error) {}
+}
+
+async function prepareInlineDiagrams(blocks) {
+  const generation = ++inlineGeneration;
+  mermaidBlocks = Array.isArray(blocks) ? blocks : [];
+  inlineDiagrams.clear();
+  renderDiagramList();
+
+  await Promise.all(mermaidBlocks.map(async rawBlock => {
+    const block = {
+      id:String(rawBlock?.id || ""),
+      selector:String(rawBlock?.selector || ""),
+      source:normalizeMermaidSource(rawBlock?.source),
+    };
+    if (!block.id || !block.selector) return;
+
+    const hash = await sourceHash(block.source);
+    const record = {
+      block,
+      hash,
+      channel:randomChannel(),
+      saved:null,
+      saveTail:Promise.resolve(),
+    };
+    if (generation !== inlineGeneration) return;
+    inlineDiagrams.set(block.id, record);
+
+    try {
+      const result = await api(
+        "GET",
+        `/whiteboard/${encodeURIComponent(block.id)}`,
+      );
+      record.saved = result.saved || null;
+    } catch (error) {
+      if (generation !== inlineGeneration) return;
+      showBanner(
+        `Saved diagram edits for ${block.id} could not be loaded: ${errorMessage(error)}`,
+      );
+    }
+
+    if (generation !== inlineGeneration ||
+        inlineDiagrams.get(block.id) !== record) return;
+    art.contentWindow.postMessage({
+      arev:true,
+      type:"mount-inline",
+      id:block.id,
+      selector:block.selector,
+      channel:record.channel,
+    }, "*");
+  }));
+
+  if (generation === inlineGeneration) renderDiagramList();
 }
 
 function renderDiagramList() {
@@ -1271,185 +1359,201 @@ function renderDiagramList() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "diagram-row";
-    button.disabled = !!state?.ended;
+    button.disabled = !!state?.ended || !inlineDiagrams.has(block.id);
     button.innerHTML = '<span class="diagram-icon" aria-hidden="true">◇</span>';
     const label = document.createElement("span");
-    label.textContent = `Edit diagram: ${block.id}`;
+    label.textContent = `Focus diagram editor: ${block.id}`;
     button.appendChild(label);
-    button.addEventListener("click", () => mountBoard(block.id));
+    button.addEventListener("click", () => focusInlineDiagram(block.id));
     host.appendChild(button);
   });
 }
 
-async function renderMermaid() {
-  if (!mermaidBlocks.length) return;
-  let libs;
-  try {
-    libs = await whiteboardLibs();
-  } catch (error) {
-    showBanner("The offline diagram editor could not load. Mermaid source remains visible.");
-    return;
-  }
-  for (const block of mermaidBlocks) {
-    try {
-      const parsed = await libs.parseMermaidToExcalidraw(block.source);
-      const elements = normalizeFonts(libs.convertToExcalidrawElements(parsed.elements));
-      scenes.set(block.id, elements);
-      const svg = await libs.exportToSvg({
-        elements,
-        files:null,
-        appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
-      });
-      art.contentWindow.postMessage({
-        arev:true,
-        type:"inject-svg",
-        id:block.id,
-        selector:block.selector,
-        svg:svg.outerHTML,
-      }, "*");
-    } catch (error) {
-      // Invalid Mermaid remains readable as its original source.
-    }
-  }
-}
-
-async function mountBoard(id) {
+function focusInlineDiagram(id) {
   if (state?.ended) return;
-  let libs;
+  const record = inlineDiagrams.get(String(id || ""));
+  if (!record) {
+    showBanner("That diagram editor is not ready yet.");
+    return;
+  }
+  art.contentWindow.postMessage({
+    arev:true,
+    type:"focus-inline",
+    id:record.block.id,
+  }, "*");
+  announce(`Diagram editor ${record.block.id} focused.`);
+}
+
+function enqueueDiagram(record, task) {
+  const run = record.saveTail.catch(() => {}).then(task);
+  record.saveTail = run.catch(() => {});
+  return run;
+}
+
+async function saveInlineDiagram(record, message) {
+  const saveId = message.saveId;
   try {
-    libs = await whiteboardLibs();
-  } catch (error) {
-    showBanner("The offline diagram editor could not load.");
-    return;
-  }
-  boardId = id;
-  boardApi = null;
-  $("boardTitle").textContent = `Edit diagram · ${id}`;
-  $("boardSummaryText").value = "";
-  actionState("boardState", "Draft");
-  const host = $("boardHost");
-  if (boardRoot) {
-    boardRoot.unmount();
-    host.textContent = "";
-  }
-  $("board").showModal();
-  boardRoot = libs.createRoot(host);
-  boardRoot.render(libs.React.createElement(libs.Excalidraw, {
-    initialData:{
-      elements:scenes.get(id) || [],
-      scrollToContent:true,
-      appState:{ currentItemFontFamily:2 },
-    },
-    excalidrawAPI:apiRef => { boardApi = apiRef; },
-  }));
-}
-
-$("boardClose").addEventListener("click", () => $("board").close());
-$("board").addEventListener("cancel", event => {
-  if ($("boardMenu").matches(":popover-open")) {
-    event.preventDefault();
-    $("boardMenu").hidePopover();
-  }
-});
-$("boardSummaryText").addEventListener("keydown", event => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    $("boardAction").click();
-  }
-});
-$("boardSummaryText").addEventListener("input", () => {
-  if ($("boardState").textContent === "Failed") actionState("boardState", "Draft");
-});
-
-async function blobBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function setBoardBusy(busy) {
-  [$("boardSummaryText"), $("boardAction"), $("boardClose")]
-    .forEach(control => { control.disabled = busy; });
-}
-
-async function submitBoard(mode) {
-  if (!boardApi || !boardId) {
-    actionState("boardState", "Failed", "The diagram editor is still loading.");
-    return;
-  }
-  const summary = $("boardSummaryText").value.trim();
-  if (!summary) {
-    actionState("boardState", "Failed", "Describe what changed before adding the diagram.");
-    $("boardSummaryText").focus();
-    return;
-  }
-  setBoardBusy(true);
-  actionState("boardState", mode === "send" ? "Sending" : "Draft",
-    mode === "send" ? "Saving and sending diagram." : "Saving diagram to the review.");
-  try {
-    const libs = await whiteboardLibs();
-    const elements = normalizeFonts(boardApi.getSceneElements());
-    scenes.set(boardId, elements);
-    const blob = await libs.exportToBlob({
-      elements,
-      files:null,
-      mimeType:"image/png",
-      appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
-    });
-    const png = await blobBase64(blob);
-    const saved = await api("POST", "/whiteboard", {
-      id:boardId,
-      scene:{ type:"excalidraw", version:2, source:"artifact-review", elements, appState:{} },
-      png_base64:png,
-    });
-    const item = {
-      kind:"whiteboard",
-      id:boardId,
-      summary,
-      scene_path:saved.scene_path,
-      png_path:saved.png_path,
+    const supplied = message.record;
+    if (!supplied || typeof supplied !== "object") {
+      throw new Error("The editor supplied an invalid autosave record.");
+    }
+    const result = await enqueueDiagram(record, () =>
+      api(
+        "PUT",
+        `/whiteboard/${encodeURIComponent(record.block.id)}`,
+        supplied,
+      )
+    );
+    record.saved = {
+      ...supplied,
+      updated_at:result.updated_at || new Date().toISOString(),
     };
-    if (mode === "send") await api("POST", "/send", { item });
-    else await api("POST", "/queue", { item });
-    const svg = await libs.exportToSvg({
-      elements,
-      files:null,
-      appState:{ exportBackground:true, viewBackgroundColor:"#ffffff" },
+    relayToInline(record, {
+      type:"save-result",
+      saveId,
+      ok:true,
+      updated_at:result.updated_at,
     });
-    art.contentWindow.postMessage({
-      arev:true,
-      type:"inject-svg",
-      id:boardId,
-      selector:`#${CSS.escape(boardId)}`,
-      svg:svg.outerHTML,
-    }, "*");
-    actionState("boardState", mode === "send" ? "Sent" : "Draft",
+  } catch (error) {
+    relayToInline(record, {
+      type:"save-result",
+      saveId,
+      ok:false,
+      error:errorMessage(error),
+    });
+    showBanner(
+      `Diagram autosave for ${record.block.id} failed: ${errorMessage(error)}`,
+    );
+  }
+}
+
+async function submitInlineDiagram(record, message) {
+  const mode = message.mode;
+  const summary = String(message.summary || "").trim();
+  if (mode !== "send" && mode !== "queue") {
+    relayToInline(record, {
+      type:"submit-result",
+      mode,
+      ok:false,
+      error:"Choose whether to send now or add the diagram to the review.",
+    });
+    return;
+  }
+  if (!summary) {
+    relayToInline(record, {
+      type:"submit-result",
+      mode,
+      ok:false,
+      error:"Describe what changed before adding the diagram.",
+    });
+    return;
+  }
+
+  rememberChoice(mode);
+  actionState("composerState", mode === "send" ? "Sending" : "Draft",
+    mode === "send" ? "Saving and sending diagram." : "Adding diagram to the review.");
+  try {
+    const result = await enqueueDiagram(record, async () => {
+      const sourceHashValue = String(message.source_hash || record.hash);
+      const saved = await api("POST", "/whiteboard", {
+        id:record.block.id,
+        scene:message.scene,
+        png_base64:message.png_base64,
+        source_hash:sourceHashValue,
+        image_fallback:!!message.image_fallback,
+        stats:message.stats || {},
+      });
+      const item = {
+        kind:"whiteboard",
+        id:record.block.id,
+        summary,
+        scene_path:saved.scene_path,
+        png_path:saved.png_path,
+        source_hash:saved.source_hash || sourceHashValue,
+        image_fallback:!!message.image_fallback,
+        stats:message.stats || {},
+      };
+      const delivered = await api(
+        "POST",
+        mode === "send" ? "/send" : "/queue",
+        { item },
+      );
+      return { saved, delivered };
+    });
+    relayToInline(record, {
+      type:"submit-result",
+      mode,
+      ok:true,
+      scene_path:result.saved.scene_path,
+      png_path:result.saved.png_path,
+    });
+    actionState("composerState", mode === "send" ? "Sent" : "Draft",
       mode === "send" ? "Diagram sent." : "Diagram added to the review.");
     showBanner("");
-    $("board").close();
   } catch (error) {
-    actionState("boardState", "Failed", `Diagram feedback failed: ${errorMessage(error)}`);
-    showBanner(`The diagram remains open. Try again: ${errorMessage(error)}`);
-  } finally {
-    setBoardBusy(false);
+    relayToInline(record, {
+      type:"submit-result",
+      mode,
+      ok:false,
+      error:errorMessage(error),
+    });
+    actionState("composerState", "Failed",
+      `Diagram feedback failed: ${errorMessage(error)}`);
+    showBanner(`Diagram feedback was preserved. Try again: ${errorMessage(error)}`);
   }
 }
 
-$("boardSend").addEventListener("click", () => {
-  rememberChoice("send");
-  submitBoard("send");
-});
-$("boardQueue").addEventListener("click", () => {
-  rememberChoice("queue");
-  submitBoard("queue");
-});
+async function handleWhiteboardFrame(envelope) {
+  const id = String(envelope.id || "");
+  const record = inlineDiagrams.get(id);
+  if (!record || envelope.channel !== record.channel) return;
+  const message = envelope.message;
+  if (!message || typeof message !== "object") return;
+  if (message.channel && message.channel !== record.channel) return;
+
+  if (message.type === "ready") {
+    relayToInline(record, {
+      type:"init",
+      diagramId:record.block.id,
+      source:record.block.source,
+      sourceHash:record.hash,
+      saved:record.saved,
+    });
+    return;
+  }
+  if (message.type === "save") {
+    await saveInlineDiagram(record, message);
+    return;
+  }
+  if (message.type === "submit") {
+    await submitInlineDiagram(record, message);
+    return;
+  }
+  if (message.type === "error") {
+    showBanner(
+      `Diagram editor ${record.block.id} failed: ${String(message.error || "Unknown error")}`,
+    );
+  }
+}
+
+async function flushInlineDiagrams(reason) {
+  const records = Array.from(inlineDiagrams.values());
+  records.forEach(record => relayToInline(record, { type:"flush", reason }));
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await Promise.race([
+    Promise.all(records.map(record => record.saveTail.catch(() => {}))),
+    new Promise(resolve => setTimeout(resolve, 700)),
+  ]);
+}
 
 resetCurtain();
 stateLoop();
-window.addEventListener("pagehide", () => { stopped = true; });
+window.addEventListener("pagehide", () => {
+  stopped = true;
+  inlineDiagrams.forEach(record =>
+    relayToInline(record, { type:"flush", reason:"pagehide" })
+  );
+});
 </script>
 </body>
 </html>

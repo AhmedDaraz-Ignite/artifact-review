@@ -76,6 +76,34 @@ Review items may be text selections, element annotations, native form choices,
 chat messages, or diagram whiteboard edits. Multiple queued items are sent as
 one feedback event so related comments reach the agent together.
 
+### Diagram review
+
+Mermaid blocks written as `<pre class="mermaid" id="stable-id">…</pre>` become
+inline Excalidraw editors. Each editor starts interaction-locked so normal page
+scrolling is preserved; select **Click to edit diagram** to unlock it, or use
+**Fullscreen** when more canvas space is useful. Edits autosave locally after
+800 ms without changing the artifact source.
+
+Flowchart, sequence, class, ER, and state diagrams convert to editable shapes.
+Other valid Mermaid types use an explicit image-annotation fallback instead
+of a blank canvas. The editor labels both modes. ER support includes entity
+attributes and relationships and is built against the exactly pinned Mermaid
+runtime in `package.json`.
+
+Working scenes store the normalized Mermaid source hash. If the source changes
+after an edit, Artifact Review does not merge or discard work silently: the
+reviewer chooses **Re-convert (discard saved edits)** or **Keep editing saved
+scene**. Submitted feedback receives an immutable scene and PNG snapshot;
+working autosaves remain separate.
+
+When an artifact already contains rendered Mermaid SVG, annotation mode targets
+the exact node group. Delivered element feedback includes a constrained
+`mermaid-node` target with the diagram ID, node ID, label, and selector.
+
+![Inline diagram editing with autosave and fullscreen](docs/images/inline-diagram-review.png)
+
+![ER diagram converted to editable shapes](docs/images/er-diagram-review.png)
+
 ## Manual CLI
 
 For diagnostics or manual operation, first locate the installed
@@ -191,8 +219,9 @@ npm run build
 npm test
 ```
 
-`npm run build` bundles the offline whiteboard assets and regenerates
-third-party notices. It embeds Excalidraw's compact fonts and uses the
+`npm run build` bundles the offline whiteboard assets, including the pinned
+Mermaid converter used for ER diagrams, and regenerates third-party notices.
+It embeds Excalidraw's compact fonts and uses the
 browser's installed CJK fallback instead of adding Xiaolai's 12 MB shard set,
 keeping the complete installable skill below 10 MB with no font network
 requests. `npm test` exercises the Python server, browser review surface,

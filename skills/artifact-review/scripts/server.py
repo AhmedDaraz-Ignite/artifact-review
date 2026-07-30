@@ -4,11 +4,11 @@ One-process-per-artifact HTTP server used by the ``arev`` CLI.
 
 The controller document at ``/`` owns all authenticated state and mutation
 requests. The reviewed document at ``/artifact`` receives an injected,
-tokenless ``/sdk.js`` and is expected to run in a sandboxed iframe. Those two
-exact GET routes are intentionally tokenless so reviewed content never learns
-the controller token; Host validation still applies. Every controller asset,
-state request, and mutation requires the per-session token. No CORS permission
-is emitted.
+tokenless ``/sdk.js`` and is expected to run in a sandboxed iframe. Those
+assets and the static nested whiteboard frame are intentionally tokenless so
+reviewed content never learns the controller token; Host validation still
+applies. Every controller document, state request, and mutation requires the
+per-session token. CORS is enabled only for the static nested-editor assets.
 
 Agent consumers long-poll ``GET /next``. Feedback is persisted before waiters
 are notified, leased until acknowledged, and replayed after a failed consumer.
@@ -30,6 +30,7 @@ import socket
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -37,7 +38,19 @@ VERSION = "0.1.0"
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_WHITEBOARD_PNG_BYTES = 20 * 1024 * 1024
 MAX_WHITEBOARD_ID_LENGTH = 128
-PUBLIC_REVIEW_PATHS = frozenset(("/artifact", "/sdk.js"))
+PUBLIC_REVIEW_PATHS = frozenset((
+    "/artifact", "/sdk.js",
+    "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
+))
+WHITEBOARD_ID_RE = re.compile(
+    rf"^[a-zA-Z0-9_-]{{1,{MAX_WHITEBOARD_ID_LENGTH}}}$")
+SOURCE_HASH_RE = re.compile(r"^[0-9a-f]{16,64}$")
+MERMAID_NODE_TARGET_LIMITS = {
+    "diagramId": 256,
+    "nodeId": 256,
+    "label": 512,
+    "selector": 2048,
+}
 
 STATE_LOCK = threading.Lock()
 EVENTS_COND = threading.Condition(STATE_LOCK)
@@ -233,6 +246,97 @@ def _write_private_bytes(path, value):
             pass
 
 
+def _utc_timestamp():
+    return datetime.now(timezone.utc).isoformat(
+        timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _validated_whiteboard_id(value):
+    if isinstance(value, str) and WHITEBOARD_ID_RE.fullmatch(value):
+        return value
+    return None
+
+
+def _validated_source_hash(value):
+    if isinstance(value, str) and SOURCE_HASH_RE.fullmatch(value):
+        return value
+    return None
+
+
+def _normalise_feedback_item(item):
+    target = item.get("target")
+    if (item.get("kind") != "element"
+            or not isinstance(target, dict)
+            or target.get("type") != "mermaid-node"):
+        return item
+    normalised = {"type": "mermaid-node"}
+    for field, limit in MERMAID_NODE_TARGET_LIMITS.items():
+        value = target.get(field)
+        if not isinstance(value, str) or len(value) > limit:
+            raise ValueError(
+                f"mermaid-node target {field} must be a string "
+                f"of at most {limit} characters")
+        normalised[field] = value
+    item["target"] = normalised
+    return item
+
+
+def _whiteboard_dir_locked():
+    path = os.path.join(SESSION_DIR, "whiteboards")
+    os.makedirs(path, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    return path
+
+
+def _working_whiteboard_path(whiteboard_id):
+    return os.path.join(
+        SESSION_DIR, "whiteboards", whiteboard_id + ".working.json")
+
+
+def _normalise_working_record(value):
+    if not isinstance(value, dict):
+        raise ValueError("working whiteboard record is not an object")
+    scene = value.get("scene")
+    baseline = value.get("baseline")
+    source_hash = _validated_source_hash(value.get("source_hash"))
+    metrics_version = value.get("text_metrics_version")
+    updated_at = value.get("updated_at")
+    if not isinstance(scene, dict):
+        raise ValueError("working whiteboard scene is not an object")
+    if baseline is not None and not isinstance(baseline, dict):
+        raise ValueError("working whiteboard baseline is malformed")
+    if source_hash is None:
+        raise ValueError("working whiteboard source hash is malformed")
+    if (not isinstance(metrics_version, int)
+            or isinstance(metrics_version, bool)):
+        raise ValueError("working whiteboard text metrics version is malformed")
+    if not isinstance(updated_at, str) or len(updated_at) > 64:
+        raise ValueError("working whiteboard timestamp is malformed")
+    return {
+        "source_hash": source_hash,
+        "text_metrics_version": metrics_version,
+        "updated_at": updated_at,
+        "scene": scene,
+        "baseline": baseline,
+    }
+
+
+def _new_whiteboard_snapshot_paths_locked(
+        directory, whiteboard_id, include_png):
+    for _ in range(16):
+        suffix = f"{time.time_ns():x}-{secrets.token_hex(8)}"
+        stem = f"{whiteboard_id}.{suffix}"
+        scene_path = os.path.join(directory, stem + ".excalidraw")
+        png_path = os.path.join(directory, stem + ".png") if include_png else None
+        if (not os.path.exists(scene_path)
+                and (png_path is None or not os.path.exists(png_path))):
+            return scene_path, png_path
+    raise OSError("cannot allocate a unique whiteboard snapshot")
+
+
 def _normalise_host(value):
     value = (value or "").strip()
     if not value:
@@ -284,20 +388,31 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _bytes(self, body, ctype):
+    def _bytes(self, body, ctype, public_static=False):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if public_static:
+            # The editor iframe has an opaque sandbox origin, so its ES module
+            # and stylesheet loads require CORS despite using the same URL.
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
-    def _asset(self, name):
+    def _asset(self, name, public_static=False):
         path = os.path.join(ASSET_DIR, name)
-        with open(path, "rb") as fh:
-            self._bytes(fh.read(), MIME.get(os.path.splitext(name)[1], "text/plain"))
+        try:
+            with open(path, "rb") as fh:
+                body = fh.read()
+        except OSError:
+            self._json({"error": "asset not found", "asset": name}, 404)
+            return
+        self._bytes(
+            body, MIME.get(os.path.splitext(name)[1], "text/plain"),
+            public_static=public_static)
 
     def _body(self):
         raw_length = self.headers.get("Content-Length", "0")
@@ -338,8 +453,12 @@ class Handler(BaseHTTPRequestHandler):
             self._artifact()
         elif path == "/sdk.js":
             self._sdk()
+        elif path == "/whiteboard-frame":
+            self._asset("whiteboard-frame.html", public_static=True)
         elif path in ("/whiteboard.js", "/whiteboard.css"):
-            self._asset(path.lstrip("/"))
+            self._asset(path.lstrip("/"), public_static=True)
+        elif path.startswith("/whiteboard/"):
+            self._whiteboard_working_get(path[len("/whiteboard/"):])
         elif path == "/state":
             with STATE_LOCK:
                 state = _state_locked()
@@ -350,6 +469,26 @@ class Handler(BaseHTTPRequestHandler):
             self._next(parse_qs(urlparse(self.path).query))
         else:
             self._json({"error": "not found", "path": path}, 404)
+
+    def _whiteboard_working_get(self, raw_id):
+        whiteboard_id = _validated_whiteboard_id(raw_id)
+        if whiteboard_id is None:
+            self._json({"error": "bad whiteboard id"}, 400)
+            return
+        path = _working_whiteboard_path(whiteboard_id)
+        with STATE_LOCK:
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    saved = _normalise_working_record(json.load(fh))
+            except FileNotFoundError:
+                saved = None
+            except (OSError, ValueError, TypeError, json.JSONDecodeError,
+                    RecursionError) as error:
+                self._json({
+                    "error": f"cannot load working whiteboard: {error}"
+                }, 500)
+                return
+        self._json({"saved": saved})
 
     def _chrome(self):
         path = os.path.join(ASSET_DIR, "chrome.html")
@@ -428,6 +567,74 @@ class Handler(BaseHTTPRequestHandler):
             state = _state_locked()
         self._json(state)
 
+    # -- PUT ---------------------------------------------------------------
+    def do_PUT(self):
+        if not self._guard():
+            return
+        path = urlparse(self.path).path
+        if not path.startswith("/whiteboard/"):
+            self._json({"error": "not found", "path": path}, 404)
+            return
+        body = self._body()
+        if body is None:
+            return
+        self._whiteboard_working_put(path[len("/whiteboard/"):], body)
+
+    def _whiteboard_working_put(self, raw_id, body):
+        whiteboard_id = _validated_whiteboard_id(raw_id)
+        if whiteboard_id is None:
+            self._json({"error": "bad whiteboard id"}, 400)
+            return
+        scene = body.get("scene")
+        baseline = body.get("baseline")
+        source_hash = _validated_source_hash(body.get("source_hash"))
+        metrics_version = body.get("text_metrics_version")
+        if not isinstance(scene, dict):
+            self._json({
+                "error": "whiteboard scene must be an object"
+            }, 400)
+            return
+        if baseline is not None and not isinstance(baseline, dict):
+            self._json({
+                "error": "whiteboard baseline must be an object or null"
+            }, 400)
+            return
+        if source_hash is None:
+            self._json({
+                "error": "source_hash must be 16-64 lowercase hex characters"
+            }, 400)
+            return
+        if (not isinstance(metrics_version, int)
+                or isinstance(metrics_version, bool)):
+            self._json({
+                "error": "text_metrics_version must be an integer"
+            }, 400)
+            return
+        updated_at = _utc_timestamp()
+        record = {
+            "source_hash": source_hash,
+            "text_metrics_version": metrics_version,
+            "updated_at": updated_at,
+            "scene": scene,
+            "baseline": baseline,
+        }
+        with EVENTS_COND:
+            # The shared state lock orders autosaves with /end and with every
+            # other filesystem write made by this session process.
+            if STATE["ended"]:
+                self._json({"error": "session ended"}, 409)
+                return
+            try:
+                _whiteboard_dir_locked()
+                _write_private_json(
+                    _working_whiteboard_path(whiteboard_id), record)
+            except OSError as error:
+                self._json({
+                    "error": f"cannot save working whiteboard: {error}"
+                }, 500)
+                return
+        self._json({"ok": True, "updated_at": updated_at})
+
     # -- POST --------------------------------------------------------------
     def do_POST(self):
         if not self._guard():
@@ -450,8 +657,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _queue(self, body):
         item = body.get("item") or {}
+        if not isinstance(item, dict):
+            self._json({"error": "item must be an object"}, 400)
+            return
         if item.get("kind") not in ("text", "element", "control", "chat", "whiteboard"):
             self._json({"error": "bad item kind"}, 400)
+            return
+        try:
+            _normalise_feedback_item(item)
+        except ValueError as error:
+            self._json({"error": str(error)}, 400)
             return
         with EVENTS_COND:
             if STATE["ended"]:
@@ -490,10 +705,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _send(self, body):
         item = body.get("item")
-        if item and item.get("kind") not in (
-                "text", "element", "control", "chat", "whiteboard"):
-            self._json({"error": "bad item kind"}, 400)
-            return
+        if item is not None:
+            if not isinstance(item, dict):
+                self._json({"error": "item must be an object"}, 400)
+                return
+            if item.get("kind") not in (
+                    "text", "element", "control", "chat", "whiteboard"):
+                self._json({"error": "bad item kind"}, 400)
+                return
+            try:
+                _normalise_feedback_item(item)
+            except ValueError as error:
+                self._json({"error": str(error)}, 400)
+                return
         with EVENTS_COND:
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
@@ -641,23 +865,29 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": True})
 
     def _whiteboard(self, body):
-        with STATE_LOCK:
-            if STATE["ended"]:
-                self._json({"error": "session ended"}, 409)
-                return
-        raw_id = body.get("id")
-        if (not isinstance(raw_id, str)
-                or "/" in raw_id or "\\" in raw_id
-                or raw_id in (".", "..")):
+        wid = _validated_whiteboard_id(body.get("id"))
+        if wid is None:
             self._json({"error": "bad whiteboard id"}, 400)
             return
-        wid = re.sub(r"[^a-zA-Z0-9_-]", "", raw_id)
-        if not wid or len(wid) > MAX_WHITEBOARD_ID_LENGTH:
-            self._json({"error": "bad whiteboard id"}, 400)
-            return
-        scene = body.get("scene") or {}
+        scene = body.get("scene")
         if not isinstance(scene, dict):
             self._json({"error": "whiteboard scene must be an object"}, 400)
+            return
+        if "source_hash" in body:
+            source_hash = _validated_source_hash(body.get("source_hash"))
+            if source_hash is None:
+                self._json({
+                    "error": "source_hash must be 16-64 lowercase hex characters"
+                }, 400)
+                return
+        else:
+            source_hash = None
+        if ("image_fallback" in body
+                and not isinstance(body.get("image_fallback"), bool)):
+            self._json({"error": "image_fallback must be a boolean"}, 400)
+            return
+        if "stats" in body and not isinstance(body.get("stats"), dict):
+            self._json({"error": "stats must be an object"}, 400)
             return
         png_bytes = None
         encoded_png = body.get("png_base64")
@@ -679,28 +909,28 @@ class Handler(BaseHTTPRequestHandler):
                     "max_bytes": MAX_WHITEBOARD_PNG_BYTES,
                 }, 413)
                 return
-        wdir = os.path.join(SESSION_DIR, "whiteboards")
-        scene_path = os.path.join(wdir, wid + ".excalidraw")
-        png_path = os.path.join(wdir, wid + ".png") if png_bytes is not None else None
         with EVENTS_COND:
             # Serialize the final state check with /end so no filesystem write
             # can begin after the session has ended.
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            os.makedirs(wdir, exist_ok=True)
             try:
-                os.chmod(wdir, 0o700)
-            except OSError:
-                pass
-            try:
+                wdir = _whiteboard_dir_locked()
+                scene_path, png_path = _new_whiteboard_snapshot_paths_locked(
+                    wdir, wid, png_bytes is not None)
                 _write_private_json(scene_path, scene)
                 if png_path:
                     _write_private_bytes(png_path, png_bytes)
             except OSError as error:
                 self._json({"error": f"cannot save whiteboard: {error}"}, 500)
                 return
-        self._json({"ok": True, "scene_path": scene_path, "png_path": png_path})
+        self._json({
+            "ok": True,
+            "scene_path": scene_path,
+            "png_path": png_path,
+            "source_hash": source_hash,
+        })
 
 
 def main():

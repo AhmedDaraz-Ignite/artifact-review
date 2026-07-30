@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diagram feature fixture</title>
+<style>
+  :root { color-scheme:light dark }
+  * { box-sizing:border-box }
+  body {
+    max-width:1100px;
+    margin:0 auto;
+    padding:24px;
+    background:Canvas;
+    color:CanvasText;
+    font:15px/1.5 system-ui,sans-serif;
+  }
+  h1, h2 { line-height:1.2 }
+  section { margin:0 0 28px }
+  pre.mermaid {
+    max-width:100%;
+    overflow:auto;
+    border:1px solid #b8becb;
+    border-radius:10px;
+    padding:16px;
+    background:#f7f8fa;
+    color:#171a20;
+  }
+  .rendered-node-map {
+    width:min(100%,620px);
+    height:auto;
+    border:1px solid #b8becb;
+    border-radius:10px;
+    background:#fff;
+  }
+  .rendered-node-map .node rect {
+    fill:#eef3ff;
+    stroke:#3557c0;
+    stroke-width:2;
+  }
+  .rendered-node-map .label {
+    fill:#171a20;
+    font:600 15px system-ui,sans-serif;
+    text-anchor:middle;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <p>Artifact Review acceptance artifact</p>
+    <h1>Editable architecture and data model</h1>
+    <p>Both diagrams remain authoritative Mermaid source in this file.</p>
+  </header>
+
+  <section aria-labelledby="flowTitle">
+    <h2 id="flowTitle">Request flow</h2>
+    <pre class="mermaid" id="request-flow">flowchart LR
+      Browser[Browser] --> API[Review API]
+      API --> Store[(Private scene store)]
+      Store --> Agent[Agent poll]
+      API -. autosave .-> Store</pre>
+  </section>
+
+  <section aria-labelledby="erTitle">
+    <h2 id="erTitle">Review persistence model</h2>
+    <pre class="mermaid" id="review-er">erDiagram
+      SESSION ||--o{ WHITEBOARD : owns
+      SESSION ||--o{ FEEDBACK_EVENT : emits
+      WHITEBOARD ||--o{ FEEDBACK_EVENT : snapshots
+      SESSION {
+        string id PK
+        string artifact_path
+      }
+      WHITEBOARD {
+        string diagram_id PK
+        string source_hash
+        json scene
+      }
+      FEEDBACK_EVENT {
+        string event_id PK
+        string scene_path
+        string preview_path
+      }</pre>
+  </section>
+
+  <section aria-labelledby="nodeTitle">
+    <h2 id="nodeTitle">Rendered Mermaid node annotation target</h2>
+    <p>This representative Mermaid SVG proves exact node annotations independently of editing.</p>
+    <svg id="rendered-flow-map" class="rendered-node-map"
+         viewBox="0 0 620 190" role="img"
+         aria-label="Rendered service flow"
+         aria-roledescription="flowchart-v2">
+      <g class="nodes">
+        <g class="node default" id="node-browser" transform="translate(105 95)">
+          <rect x="-70" y="-28" width="140" height="56" rx="8"></rect>
+          <text class="label" y="5">Browser</text>
+        </g>
+        <g class="node default" id="node-api-service" transform="translate(310 95)">
+          <rect x="-78" y="-28" width="156" height="56" rx="8"></rect>
+          <text class="label" y="5">API Service</text>
+        </g>
+        <g class="node default" id="node-private-store" transform="translate(515 95)">
+          <rect x="-78" y="-28" width="156" height="56" rx="8"></rect>
+          <text class="label" y="5">Private Store</text>
+        </g>
+      </g>
+      <path d="M175 95H232" fill="none" stroke="#3557c0" stroke-width="2"></path>
+      <path d="M388 95H437" fill="none" stroke="#3557c0" stroke-width="2"></path>
+    </svg>
+  </section>
+  <script>
+    window.addEventListener("DOMContentLoaded", function () {
+      var block = document.getElementById("request-flow");
+      block.setAttribute("data-fixture-rendered-before-load", "true");
+      block.innerHTML =
+        '<svg viewBox="0 0 620 160" role="img" aria-roledescription="flowchart-v2">' +
+        '<g class="nodes">' +
+        '<g class="node default" id="flow-browser"><text>Browser</text></g>' +
+        '<g class="node default" id="flow-api"><text>Review API</text></g>' +
+        '<g class="node default" id="flow-store"><text>Private scene store</text></g>' +
+        '</g></svg>';
+    });
+  </script>
+</body>
+</html>

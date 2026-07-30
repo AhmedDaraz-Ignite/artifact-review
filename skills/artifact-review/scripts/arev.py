@@ -429,7 +429,9 @@ def cmd_doctor(args):
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),
         "sdk": os.path.isfile(os.path.join(ASSET_DIR, "sdk.js")),
         "offline_whiteboard": all(os.path.isfile(os.path.join(ASSET_DIR, name))
-                                  for name in ("whiteboard.js", "whiteboard.css")),
+                                  for name in ("whiteboard-frame.html",
+                                               "whiteboard.js",
+                                               "whiteboard.css")),
     }
     checks["ok"] = all(value for key, value in checks.items()
                        if key not in ("python", "skill_dir", "state_dir"))

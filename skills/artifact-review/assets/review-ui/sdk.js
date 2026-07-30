@@ -15,6 +15,9 @@
   var annotating = false;
   var hoverEl = null;
   var swallowClick = false; // the click that completes a text selection is not an element pick
+  var inlineBoards = Object.create(null);
+  var fullscreenBoardId = null;
+  var fullscreenOverflow = null;
 
   function send(msg) {
     msg.arev = true;
@@ -65,6 +68,153 @@
     return "<" + el.tagName.toLowerCase() + "> " + text;
   }
 
+  function safeDiagramId(authoredId, index) {
+    if (/^[A-Za-z0-9_-]{1,128}$/.test(authoredId || ""))
+      return authoredId;
+    if (!authoredId) return "arev-mermaid-" + index;
+    var hash = 2166136261;
+    for (var i = 0; i < authoredId.length; i += 1) {
+      hash ^= authoredId.charCodeAt(i);
+      hash +=
+        (hash << 1) +
+        (hash << 4) +
+        (hash << 7) +
+        (hash << 8) +
+        (hash << 24);
+    }
+    var slug = authoredId
+      .replace(/[^A-Za-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 96);
+    return (
+      (slug || "mermaid") +
+      "-" +
+      ("00000000" + (hash >>> 0).toString(16)).slice(-8)
+    );
+  }
+
+  function normalizedText(el) {
+    if (!el) return "";
+    var clone = el.cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll("br"), function (br) {
+      br.parentNode.replaceChild(document.createTextNode(" "), br);
+    });
+    return (clone.innerText || clone.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function mermaidSvgFor(el) {
+    if (!el || !el.closest) return null;
+    var svg = el.closest("svg");
+    if (!svg) return null;
+    var role = (svg.getAttribute("aria-roledescription") || "").toLowerCase();
+    var id = (svg.id || "").toLowerCase();
+    var inMermaid = svg.closest(
+      ".mermaid,[data-arev-diagram-id],[id^='arev-board-']",
+    );
+    if (
+      !inMermaid &&
+      id.indexOf("mermaid") === -1 &&
+      role.indexOf("diagram") === -1 &&
+      !svg.querySelector("g.nodes")
+    )
+      return null;
+    return svg;
+  }
+
+  function mermaidNodeGroup(el) {
+    if (!el || el.nodeType !== 1 || !el.closest) return null;
+    var group = el.closest("g.node");
+    if (!group) {
+      var candidate = el.closest("g");
+      while (candidate) {
+        if (
+          candidate.parentElement &&
+          candidate.parentElement.matches("g.nodes")
+        ) {
+          group = candidate;
+          break;
+        }
+        candidate = candidate.parentElement
+          ? candidate.parentElement.closest("g")
+          : null;
+      }
+    }
+    return group && mermaidSvgFor(group) ? group : null;
+  }
+
+  function diagramIdFor(group) {
+    var svg = mermaidSvgFor(group);
+    if (!svg) return "";
+    var holder = svg.closest(
+      "[data-arev-diagram-id],.mermaid,[id^='arev-board-']",
+    );
+    if (holder) {
+      var explicit = holder.getAttribute("data-arev-diagram-id");
+      if (explicit) return explicit;
+      if (holder.id.indexOf("arev-board-") === 0)
+        return holder.id.slice("arev-board-".length);
+      if (holder.id) return holder.id;
+    }
+    return svg.id || "mermaid";
+  }
+
+  function selectorForMermaidNode(group) {
+    if (group.id) return "#" + cssEscape(group.id);
+    var svg = mermaidSvgFor(group);
+    var holder = svg
+      ? svg.closest(
+          "[data-arev-diagram-id],.mermaid,[id^='arev-board-']",
+        )
+      : null;
+    var prefix = holder && holder.id ? "#" + cssEscape(holder.id) + " " : "";
+    if (group.parentElement && group.parentElement.matches("g.nodes")) {
+      var siblings = Array.prototype.filter.call(
+        group.parentElement.children,
+        function (child) {
+          return child.tagName && child.tagName.toLowerCase() === "g";
+        },
+      );
+      return (
+        prefix +
+        "g.nodes > g:nth-of-type(" +
+        (siblings.indexOf(group) + 1) +
+        ")"
+      );
+    }
+    return prefix + selectorFor(group);
+  }
+
+  function mermaidNodeTarget(el) {
+    var group = mermaidNodeGroup(el);
+    if (!group) return null;
+    var svg = mermaidSvgFor(group);
+    var labelEl = group.querySelector(
+      ".nodeLabel,.label,foreignObject,text,[aria-label]",
+    );
+    var label =
+      normalizedText(labelEl) ||
+      group.getAttribute("aria-label") ||
+      normalizedText(group);
+    var nodeId = group.getAttribute("data-id") || group.id;
+    if (!nodeId && svg) {
+      var groups = svg.querySelectorAll("g.node,g.nodes > g");
+      var unique = [];
+      Array.prototype.forEach.call(groups, function (candidate) {
+        if (unique.indexOf(candidate) === -1) unique.push(candidate);
+      });
+      nodeId = "node-" + Math.max(0, unique.indexOf(group));
+    }
+    return {
+      type: "mermaid-node",
+      diagramId: diagramIdFor(group),
+      nodeId: nodeId || "node",
+      label: label.slice(0, 160),
+      selector: selectorForMermaidNode(group),
+    };
+  }
+
   /* Text-range anchor: the selected text plus surrounding context, so the
    * agent can find the exact spot even after the element re-renders. */
   function textAnchor(sel) {
@@ -88,7 +238,12 @@
   var css = document.createElement("style");
   css.textContent =
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
-    ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}";
+    ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
+    ".arev-inline-board{position:relative;width:100%;max-height:420px;background:#fff;border:1px solid #d8dbe0;border-radius:8px;overflow:hidden;box-sizing:border-box}" +
+    ".arev-inline-board>iframe{display:block;width:100%;height:100%;border:0;background:#fff}" +
+    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(255,255,255,.08);color:#20242a;font:600 13px/1.3 sans-serif;cursor:pointer;text-shadow:0 1px 2px #fff}" +
+    ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid #c9cdd3;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 2px 8px rgba(0,0,0,.12)}" +
+    ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}";
   document.documentElement.appendChild(css);
 
   function setAnnotate(on) {
@@ -103,8 +258,13 @@
     "mouseover",
     function (e) {
       if (!annotating) return;
+      if (e.target.closest && e.target.closest("[data-arev-internal]")) {
+        if (hoverEl) hoverEl.classList.remove("arev-hover");
+        hoverEl = null;
+        return;
+      }
       if (hoverEl) hoverEl.classList.remove("arev-hover");
-      hoverEl = e.target;
+      hoverEl = mermaidNodeGroup(e.target) || e.target;
       hoverEl.classList.add("arev-hover");
     },
     true,
@@ -136,21 +296,26 @@
     "click",
     function (e) {
       if (!annotating) return;
+      if (e.target.closest && e.target.closest("[data-arev-internal]"))
+        return;
       e.preventDefault();
       e.stopPropagation();
       if (swallowClick) {
         swallowClick = false;
         return;
       } // text pick already sent
-      var el = e.target;
+      var target = mermaidNodeTarget(e.target);
+      var el = target ? mermaidNodeGroup(e.target) : e.target;
       el.classList.remove("arev-hover");
       var rect = el.getBoundingClientRect();
-      send({
+      var pick = {
         type: "pick-element",
-        selector: selectorFor(el),
-        label: labelFor(el),
+        selector: target ? target.selector : selectorFor(el),
+        label: target ? target.label : labelFor(el),
         rect: { top: rect.top, left: rect.left, bottom: rect.bottom },
-      });
+      };
+      if (target) pick.target = target;
+      send(pick);
     },
     true,
   );
@@ -227,6 +392,266 @@
     true,
   );
 
+  /* ------------------------------------------------ inline diagram editors */
+
+  function boardForSource(source) {
+    var ids = Object.keys(inlineBoards);
+    for (var i = 0; i < ids.length; i += 1) {
+      var board = inlineBoards[ids[i]];
+      if (
+        board.iframe &&
+        board.iframe.contentWindow &&
+        board.iframe.contentWindow === source
+      )
+        return board;
+    }
+    return null;
+  }
+
+  function postToBoard(board, message) {
+    if (!board || !board.iframe || !board.iframe.contentWindow) return;
+    board.iframe.contentWindow.postMessage(message, "*");
+  }
+
+  function unlockBoard(board, focus) {
+    if (!board) return;
+    board.iframe.style.pointerEvents = "auto";
+    board.unlocked = true;
+    board.overlay.hidden = true;
+    postToBoard(board, {
+      arevFrame: true,
+      channel: board.channel,
+      type: "unlock",
+    });
+    if (focus) {
+      try {
+        board.iframe.focus();
+      } catch (err) {}
+    }
+  }
+
+  function setBoardFullscreen(board, on) {
+    if (!board) return;
+    if (on && fullscreenBoardId && fullscreenBoardId !== board.id)
+      setBoardFullscreen(inlineBoards[fullscreenBoardId], false);
+    if (on && !fullscreenBoardId) {
+      fullscreenOverflow = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = "hidden";
+    }
+    board.fullscreen = !!on;
+    board.host.classList.toggle("arev-inline-fullscreen", !!on);
+    board.host.setAttribute(
+      "aria-label",
+      on
+        ? "Diagram editor in fullscreen mode"
+        : "Inline editable diagram",
+    );
+    board.overlay.setAttribute(
+      "aria-label",
+      on ? "Click to edit fullscreen diagram" : "Click to edit diagram",
+    );
+    if (on) {
+      fullscreenBoardId = board.id;
+      unlockBoard(board, true);
+    } else if (fullscreenBoardId === board.id) {
+      fullscreenBoardId = null;
+      document.documentElement.style.overflow = fullscreenOverflow || "";
+      fullscreenOverflow = null;
+    }
+    postToBoard(board, {
+      arevFrame: true,
+      channel: board.channel,
+      type: "fullscreen-state",
+      enabled: !!on,
+    });
+  }
+
+  function restoreBoardSource(board) {
+    if (!board || !board.block) return;
+    board.block.style.display = board.originalDisplay;
+  }
+
+  function markBoardReady(board) {
+    if (!board || !board.block) return;
+    board.ready = true;
+    board.host.hidden = false;
+    board.block.style.display = "none";
+  }
+
+  function mountInline(message) {
+    var id = String(message.id || "");
+    var channel = String(message.channel || "");
+    var selector = String(message.selector || "");
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || !channel || !selector)
+      return;
+    var block;
+    try {
+      block = document.querySelector(selector);
+    } catch (err) {
+      block = null;
+    }
+    if (!block) {
+      send({
+        type: "inline-mount-failed",
+        id: id,
+        error: "The Mermaid source element was not found.",
+      });
+      return;
+    }
+
+    var current = inlineBoards[id];
+    if (current) {
+      restoreBoardSource(current);
+      current.ready = false;
+      current.channel = channel;
+      current.block = block;
+      current.originalDisplay = block.style.display;
+      current.unlocked = false;
+      current.iframe.style.pointerEvents = "none";
+      current.overlay.hidden = false;
+      current.iframe.src =
+        "/whiteboard-frame?diagram=" +
+        encodeURIComponent(id) +
+        "&channel=" +
+        encodeURIComponent(channel);
+      return;
+    }
+
+    var host = document.getElementById("arev-board-" + id);
+    var createdHost = !host;
+    var originalDisplay = block.hasAttribute("data-arev-original-display")
+      ? block.getAttribute("data-arev-original-display")
+      : block.style.display;
+    try {
+      if (!host) {
+        host = document.createElement("section");
+        host.id = "arev-board-" + id;
+      } else {
+        host.replaceChildren();
+        host.style.cssText = "";
+      }
+      host.classList.add("arev-inline-board");
+      host.setAttribute("data-arev-internal", "");
+      host.setAttribute("data-arev-diagram-id", id);
+      host.setAttribute("aria-label", "Inline editable diagram");
+      var measuredHeight = Math.round(
+        block.getBoundingClientRect().height || 320,
+      );
+      host.style.height =
+        Math.max(300, Math.min(420, measuredHeight + 64)) + "px";
+
+      var iframe = document.createElement("iframe");
+      iframe.title = "Editable diagram " + id;
+      iframe.setAttribute("sandbox", "allow-scripts allow-popups");
+      iframe.style.pointerEvents = "none";
+
+      var overlay = document.createElement("button");
+      overlay.type = "button";
+      overlay.className = "arev-inline-unlock";
+      overlay.setAttribute("data-arev-internal", "");
+      overlay.setAttribute("aria-label", "Click to edit diagram");
+      var overlayLabel = document.createElement("span");
+      overlayLabel.textContent = "Click to edit diagram";
+      overlay.appendChild(overlayLabel);
+
+      var board = {
+        id: id,
+        channel: channel,
+        selector: selector,
+        block: block,
+        originalDisplay: originalDisplay,
+        host: host,
+        iframe: iframe,
+        overlay: overlay,
+        unlocked: false,
+        fullscreen: false,
+        ready: false,
+      };
+      overlay.addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        unlockBoard(board, true);
+      });
+      iframe.addEventListener("error", function () {
+        restoreBoardSource(board);
+        board.host.hidden = true;
+        send({
+          type: "inline-mount-failed",
+          id: id,
+          error: "The inline diagram editor could not be loaded.",
+        });
+      });
+
+      host.appendChild(iframe);
+      host.appendChild(overlay);
+      if (!host.parentNode)
+        block.parentNode.insertBefore(host, block.nextSibling);
+      else if (host.previousElementSibling !== block)
+        block.parentNode.insertBefore(host, block.nextSibling);
+      inlineBoards[id] = board;
+      iframe.src =
+        "/whiteboard-frame?diagram=" +
+        encodeURIComponent(id) +
+        "&channel=" +
+        encodeURIComponent(channel);
+    } catch (err) {
+      block.style.display = originalDisplay;
+      delete inlineBoards[id];
+      if (createdHost && host && host.parentNode)
+        host.parentNode.removeChild(host);
+      send({
+        type: "inline-mount-failed",
+        id: id,
+        error: err && err.message ? err.message : "Could not mount the editor.",
+      });
+    }
+  }
+
+  function focusInline(id) {
+    var board = inlineBoards[String(id || "")];
+    if (!board) return;
+    board.host.scrollIntoView({ block: "center", behavior: "smooth" });
+    unlockBoard(board, true);
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data || !event.data.arevFrame) return;
+    var board = boardForSource(event.source);
+    if (!board || event.data.channel !== board.channel) return;
+    if (event.data.type === "ready") markBoardReady(board);
+    if (
+      event.data.type === "fullscreen" ||
+      event.data.type === "request-fullscreen" ||
+      event.data.type === "set-fullscreen"
+    ) {
+      var requested =
+        typeof event.data.enabled === "boolean"
+          ? event.data.enabled
+          : typeof event.data.fullscreen === "boolean"
+            ? event.data.fullscreen
+            : typeof event.data.on === "boolean"
+              ? event.data.on
+              : !board.fullscreen;
+      setBoardFullscreen(board, requested);
+      return;
+    }
+    send({
+      type: "whiteboard-frame",
+      id: board.id,
+      channel: board.channel,
+      message: event.data,
+    });
+  });
+
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if (event.key === "Escape" && fullscreenBoardId)
+        setBoardFullscreen(inlineBoards[fullscreenBoardId], false);
+    },
+    true,
+  );
+
   /* ------------------------------------------------------------- utilities */
 
   window.addEventListener("message", function (e) {
@@ -235,6 +660,7 @@
     if (e.data.type === "flash") {
       var el = document.querySelector(e.data.selector);
       if (el) {
+        el = mermaidNodeGroup(el) || el;
         el.scrollIntoView({ block: "center" });
         el.classList.add("arev-flash");
         setTimeout(function () {
@@ -245,13 +671,26 @@
     if (e.data.type === "get-scroll")
       send({ type: "scroll", y: window.scrollY });
     if (e.data.type === "set-scroll") window.scrollTo(0, e.data.y || 0);
+    if (e.data.type === "mount-inline") mountInline(e.data);
+    if (e.data.type === "focus-inline") focusInline(e.data.id);
+    if (e.data.type === "whiteboard-frame") {
+      var board = inlineBoards[String(e.data.id || "")];
+      if (
+        board &&
+        e.data.channel === board.channel &&
+        e.data.message
+      )
+        postToBoard(board, e.data.message);
+    }
     if (e.data.type === "inject-svg") {
       var block = document.querySelector(e.data.selector);
       if (block) {
+        if (inlineBoards[String(e.data.id || "")]) return;
         var host = document.getElementById("arev-board-" + e.data.id);
         if (!host) {
           host = document.createElement("div");
           host.id = "arev-board-" + e.data.id;
+          block.setAttribute("data-arev-original-display", block.style.display);
           block.style.display = "none";
           block.parentNode.insertBefore(host, block.nextSibling);
         }
@@ -286,18 +725,67 @@
 
   /* -------------------------------------------------- mermaid + audit + boot */
 
-  function findMermaid() {
-    var blocks = [];
+  function captureMermaidSources() {
+    var holders = [];
     var nodes = document.querySelectorAll(
       "pre.mermaid, div.mermaid, pre > code.language-mermaid",
     );
-    Array.prototype.forEach.call(nodes, function (node, i) {
-      var holder = node.tagName === "CODE" ? node.parentElement : node;
-      if (!holder.id) holder.id = "arev-mermaid-" + i;
+    Array.prototype.forEach.call(nodes, function (node) {
+      var holder = node;
+      if (node.tagName === "CODE") {
+        holder = node.closest(".mermaid") || node.parentElement;
+      }
+      if (!holder || holders.indexOf(holder) !== -1) return;
+      holders.push(holder);
+      if (
+        holder.hasAttribute("data-mermaid-source") ||
+        holder.hasAttribute("data-arev-mermaid-source")
+      )
+        return;
+      var sourceNode =
+        node.tagName === "CODE"
+          ? node
+          : holder.querySelector("code.language-mermaid") || holder;
+      holder.setAttribute(
+        "data-arev-mermaid-source",
+        sourceNode.textContent || "",
+      );
+    });
+  }
+
+  function findMermaid() {
+    var blocks = [];
+    var holders = [];
+    var nodes = document.querySelectorAll(
+      "pre.mermaid, div.mermaid, pre > code.language-mermaid," +
+        "[data-mermaid-source],[data-arev-mermaid-source]",
+    );
+    Array.prototype.forEach.call(nodes, function (node) {
+      var holder = node;
+      if (node.tagName === "CODE") {
+        holder = node.closest(".mermaid") || node.parentElement;
+      }
+      if (!holder || holders.indexOf(holder) !== -1) return;
+      holders.push(holder);
+      var index = blocks.length;
+      var authoredId = holder.getAttribute("id");
+      var id = safeDiagramId(authoredId, index);
+      if (!authoredId) holder.id = id;
+      holder.setAttribute("data-arev-diagram-id", id);
+      var sourceNode =
+        node.tagName === "CODE"
+          ? node
+          : holder.querySelector("code.language-mermaid") || holder;
+      var source =
+        holder.getAttribute("data-mermaid-source") ||
+        holder.getAttribute("data-arev-mermaid-source") ||
+        sourceNode.textContent ||
+        "";
       blocks.push({
-        id: holder.id,
-        selector: "#" + holder.id,
-        source: (node.textContent || "").trim(),
+        id: id,
+        selector: "#" + cssEscape(holder.id),
+        source: source.trim(),
+        index: index,
       });
     });
     return blocks;
@@ -317,6 +805,11 @@
       title: document.title || "",
     });
   }
+
+  // Mermaid's start-on-load mode can replace source text with SVG before the
+  // review controller boots. Preserve the authored source while the document
+  // is still parsing so the inline editor always receives Mermaid syntax.
+  captureMermaidSources();
 
   if (document.readyState === "complete") setTimeout(boot, 50);
   else

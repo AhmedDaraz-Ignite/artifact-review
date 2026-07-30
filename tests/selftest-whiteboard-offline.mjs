@@ -2,7 +2,6 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 import {
   TestRun,
-  chooseAction,
   openSession,
   startPoll,
   stopSession,
@@ -20,13 +19,14 @@ const ART = process.argv[2];
 const test = new TestRun();
 const pageErrors = [];
 const externalRequests = [];
-const localControllerAssets = [];
+const localWhiteboardAssets = [];
 let browser;
 
 try {
   const artifactBefore = fs.readFileSync(ART, 'utf8');
   const url = openSession(ART);
   const allowedOrigin = new URL(url).origin;
+  const token = new URL(url).searchParams.get('t');
   browser = await chromium.launch();
   const context = await browser.newContext({ viewport:{ width:1500, height:980 } });
   await context.route('**/*', route => {
@@ -43,8 +43,8 @@ try {
   context.on('request', request => {
     const requestUrl = new URL(request.url());
     if (requestUrl.origin === allowedOrigin) {
-      if (/whiteboard\.(js|css)/.test(requestUrl.href)) {
-        localControllerAssets.push(requestUrl.href);
+      if (/whiteboard(?:-frame)?(?:\.js|\.css)?/.test(requestUrl.pathname)) {
+        localWhiteboardAssets.push(requestUrl.href);
       }
       return;
     }
@@ -58,18 +58,15 @@ try {
   await page.goto(url, { waitUntil:'domcontentloaded' });
   await page.locator('#curtain').waitFor({ state:'hidden', timeout:8000 });
 
-  const frame = await waitForInlineDiagram(page);
-  test.check(
-    'offline path renders Mermaid using bundled assets',
-    await frame.locator('[id^="arev-board-"] svg').first().isVisible(),
-  );
-  await openWhiteboard(page, frame);
-  const expectedRectangle = await drawLargeRectangle(page);
+  const diagram = await waitForInlineDiagram(page);
+  await openWhiteboard(page, diagram);
+  const expectedRectangle = await drawLargeRectangle(page, diagram);
 
   const poll = startPoll(ART, 30);
-  await page.locator('#boardSummaryText').fill('offline rectangle edit');
-  await chooseAction(page, '#boardAction', '#boardSend');
-  const event = await within(poll.result, 5000, 'offline whiteboard delivery');
+  await diagram.host.scrollIntoViewIfNeeded();
+  await diagram.editorFrame.locator('#wbSummary').fill('offline rectangle edit');
+  await diagram.editorFrame.locator('#wbSend').click();
+  const event = await within(poll.result, 10000, 'offline whiteboard delivery');
   const whiteboard = event.items.find(item => item.kind === 'whiteboard');
   test.check(
     'whiteboard Send now delivers directly without leaving a draft',
@@ -88,10 +85,16 @@ try {
   );
   test.check('offline preview is a valid PNG', isPng(whiteboard?.png_path), whiteboard?.png_path);
   test.check(
-    'offline whiteboard loads controller assets locally',
-    localControllerAssets.some(asset => asset.includes('/whiteboard.js')) &&
-      localControllerAssets.some(asset => asset.includes('/whiteboard.css')),
-    localControllerAssets.join(','),
+    'offline whiteboard loads frame, script, and styles locally',
+    localWhiteboardAssets.some(asset => new URL(asset).pathname === '/whiteboard-frame') &&
+      localWhiteboardAssets.some(asset => new URL(asset).pathname === '/whiteboard.js') &&
+      localWhiteboardAssets.some(asset => new URL(asset).pathname === '/whiteboard.css'),
+    localWhiteboardAssets.join(','),
+  );
+  test.check(
+    'token is absent from every nested-frame asset URL',
+    localWhiteboardAssets.every(asset => !asset.includes(token)),
+    localWhiteboardAssets.join(','),
   );
   test.check(
     'offline whiteboard attempts zero external network requests',

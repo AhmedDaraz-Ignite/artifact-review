@@ -1,42 +1,67 @@
 import fs from 'node:fs';
+import { eventually } from './test-helpers.mjs';
 
-export async function waitForInlineDiagram(page) {
-  const frame = page.frameLocator('#art');
-  // The artifact iframe intentionally has an opaque sandbox origin. Query it
-  // through Playwright's frame boundary rather than parent.contentDocument.
-  await frame.locator('[id^="arev-board-"] svg').first().waitFor({
+export async function waitForInlineDiagram(page, diagramId) {
+  const artifactFrame = page.frameLocator('#art');
+  const host = diagramId
+    ? artifactFrame.locator(`#arev-board-${diagramId}`)
+    : artifactFrame.locator('[id^="arev-board-"]').first();
+  await host.locator('iframe').waitFor({ state:'visible', timeout:30000 });
+  const resolvedId = diagramId || (await host.getAttribute('id')).slice('arev-board-'.length);
+  const editorFrame = await eventually(async () => {
+    const candidate = page.frames().find(frame => {
+      try {
+        const url = new URL(frame.url());
+        return url.pathname === '/whiteboard-frame' &&
+          url.searchParams.get('diagram') === resolvedId;
+      } catch {
+        return false;
+      }
+    });
+    if (!candidate) return null;
+    return await candidate.locator('.wb-shell').count() ? candidate : null;
+  }, { timeout:30000, label:`inline editor frame ${resolvedId}` });
+  return { artifactFrame, editorFrame, host, id:resolvedId };
+}
+
+export async function unlockWhiteboard(diagram) {
+  await diagram.host.scrollIntoViewIfNeeded();
+  await diagram.host.getByRole('button', { name:/Click to edit diagram/i }).click();
+}
+
+export async function openWhiteboard(page, diagram) {
+  await unlockWhiteboard(diagram);
+  await diagram.editorFrame.locator('.excalidraw').waitFor({
     state:'visible',
     timeout:30000,
   });
-  return frame;
 }
 
-export async function openWhiteboard(page, frame) {
-  await frame.getByRole('button', { name:/Expand/i }).first().click();
-  await page.waitForSelector('#board .excalidraw', { timeout:30000 });
-  await page.locator('#board [data-testid="toolbar-rectangle"]').waitFor({
-    state:'attached',
-    timeout:30000,
-  });
-}
-
-export async function drawLargeRectangle(page) {
-  const tool = page.locator('#board [data-testid="toolbar-rectangle"]');
-  await tool.check({ force:true });
-  const canvas = page.locator('#board canvas.excalidraw__canvas.interactive');
+export async function drawLargeRectangle(page, diagram) {
+  await diagram.host.scrollIntoViewIfNeeded();
+  const tool = diagram.editorFrame.locator('[data-testid="toolbar-rectangle"]');
+  await diagram.editorFrame.locator('body').press('r');
+  if (!(await tool.isChecked())) await tool.check({ force:true });
+  const canvas = diagram.editorFrame.locator('canvas.excalidraw__canvas.interactive');
   const box = await canvas.boundingBox();
   if (!box) throw new Error('interactive Excalidraw canvas has no bounding box');
 
-  const width = Math.min(180, Math.max(120, box.width * 0.18));
-  const height = Math.min(105, Math.max(76, box.height * 0.18));
-  const startX = box.x + Math.max(24, box.width - width - 48);
-  const startY = box.y + Math.max(96, box.height - height - 44);
-  await page.mouse.move(startX, startY);
+  const width = Math.min(150, Math.max(80, box.width * 0.15));
+  const height = Math.min(82, Math.max(48, box.height * 0.28));
+  const start = {
+    x:Math.max(12, box.width - width - 24),
+    y:Math.max(12, box.height - height - 18),
+  };
+  await canvas.hover({ position:start, force:true });
   await page.mouse.down();
-  await page.mouse.move(startX + width, startY + height, { steps:10 });
+  await canvas.hover({
+    position:{ x:start.x + width, y:start.y + height },
+    force:true,
+  });
   await page.mouse.up();
+  const completedAt = Date.now();
   await page.waitForTimeout(200);
-  return { width, height };
+  return { width, height, completedAt };
 }
 
 export function sceneHasDrawnRectangle(scene, expected) {

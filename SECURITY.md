@@ -16,10 +16,11 @@ The review server:
 
 - binds to `127.0.0.1` by default;
 - creates a random token for every artifact session;
-- requires that token for the controller, state, mutation, and whiteboard
-  asset requests;
-- serves only the exact `/artifact` and `/sdk.js` review-frame routes without
-  the token so the artifact never receives it;
+- requires that token for the controller, state, and every mutation or
+  whiteboard persistence request;
+- serves only the reviewed artifact, injected SDK, and inert whiteboard frame
+  code without the token so opaque nested frames can load without receiving
+  controller credentials;
 - validates Host headers on every request;
 - renders the artifact in a sandboxed iframe without `allow-same-origin`;
 - stores session state locally; and
@@ -35,6 +36,12 @@ The reviewed artifact is active HTML. Its iframe receives an opaque origin, so
 artifact JavaScript cannot read the parent controller, its bearer token,
 cookies, or storage through same-origin APIs. The injected SDK exchanges only
 structured review messages with the known parent frame.
+
+Inline whiteboards run in nested opaque-origin frames and receive no bearer
+token. They can request only typed save or submission operations over a random
+per-diagram message channel. The authenticated controller validates that
+channel and performs the HTTP request. Public whiteboard routes contain static
+code only; state reads and writes remain token-protected.
 
 This browser sandbox is a containment layer, not a promise that hostile HTML is
 safe. Artifact code can still render deceptive content, consume resources, and
