@@ -92,3 +92,21 @@ Keep each pull request focused. Include:
 
 Confirm that no artifact, review token, local path, credential, or private
 feedback was included in the change.
+
+## Releases
+
+Use GitHub Releases for user-visible updates. A merge to `main` is not itself
+an update notification and does not replace files that users already installed.
+
+For a release:
+
+1. Merge the focused pull request and wait for `main` CI to pass.
+2. Confirm `package.json`, `arev.py`, and `server.py` carry the release version.
+3. Create a `vX.Y.Z` GitHub Release from `main` with generated release notes.
+4. State any compatibility change and whether users need to restart their
+   coding agent.
+
+Keep distribution agent-agnostic. Publish the single
+`skills/artifact-review/` directory defined by the Agent Skills standard.
+Do not add provider-specific copies, a background update check, or a custom
+installer without a demonstrated compatibility need.

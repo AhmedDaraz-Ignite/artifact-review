@@ -50,6 +50,30 @@ Requirements:
 The installed review runtime itself uses only Python's standard library and
 bundled browser assets. It does not need an npm install.
 
+## Updates
+
+Merging a change into this repository does not update existing installations
+automatically. To receive update announcements, watch the GitHub repository and
+select **Custom**, then **Releases**.
+
+After a release is published, update Artifact Review in the scope where it was
+installed:
+
+```bash
+# Project installation
+npx skills update artifact-review --project
+
+# Global installation
+npx skills update artifact-review --global
+```
+
+Reload the coding agent after updating so it reads the refreshed `SKILL.md`,
+scripts, references, and browser assets.
+
+Artifact Review ships one standard Agent Skills directory for every compatible
+agent. It has no agent-specific updater and performs no background update
+checks.
+
 ## Use from an agent
 
 Ask the agent to invoke the skill by name:
