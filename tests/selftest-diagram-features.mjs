@@ -103,7 +103,7 @@ try {
   );
   test.check(
     'Mermaid runtime is exactly pinned for reproducible ER support',
-    manifest.devDependencies.mermaid === '11.12.1',
+    manifest.devDependencies.mermaid === '11.16.0',
     manifest.devDependencies.mermaid,
   );
 

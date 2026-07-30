@@ -110,6 +110,72 @@ const offlineExcalidrawFonts = {
   },
 };
 
+const mermaidERSelectorCompatibility = {
+  name: "mermaid-er-selector-compatibility",
+  setup(buildContext) {
+    let transformedSelectors = 0;
+
+    buildContext.onLoad(
+      {
+        filter:
+          /@excalidraw[\\/]mermaid-to-excalidraw[\\/]dist[\\/]parser[\\/]er\.js$/,
+      },
+      async ({ path: sourcePath }) => {
+        let contents = await readFile(sourcePath, "utf8");
+        const replacements = [
+          [
+            'const directPath = containerEl.querySelector(`path[id="${edge.id}"][data-edge="true"]`);',
+            'const directPath = containerEl.querySelector(`path[data-edge="true"][data-id="${edge.id}"]`) ||\n' +
+              '        containerEl.querySelector(`path[id="${edge.id}"][data-edge="true"]`);',
+          ],
+          [
+            '.map((pathId) => containerEl.querySelector(`path[id="${pathId}"][data-edge="true"]`))',
+            '.map((pathId) => containerEl.querySelector(`path[data-edge="true"][data-id="${pathId}"]`) ||\n' +
+              '        containerEl.querySelector(`path[id="${pathId}"][data-edge="true"]`))',
+          ],
+          [
+            'const domNode = containerEl.querySelector(`[id="${entity.id}"]`);',
+            'const svgId = containerEl.querySelector("svg")?.id;\n' +
+              '    const domNode = containerEl.querySelector(`[id="${entity.id}"]`) ||\n' +
+              '        (svgId && containerEl.querySelector(`[id="${svgId}-${entity.id}"]`));',
+          ],
+        ];
+
+        for (const [original, replacement] of replacements) {
+          const matches = contents.split(original).length - 1;
+          if (matches !== 1) {
+            throw new Error(
+              "Expected one Mermaid ER selector compatibility target, " +
+                `found ${matches}`,
+            );
+          }
+          contents = contents.replace(original, replacement);
+          transformedSelectors += matches;
+        }
+
+        return {
+          contents,
+          loader: "js",
+          resolveDir: path.dirname(sourcePath),
+        };
+      },
+    );
+
+    buildContext.onEnd(() => {
+      if (transformedSelectors !== 3) {
+        return {
+          errors: [{
+            text:
+              "Mermaid's ER selector compatibility transform did not match " +
+              "the expected converter source",
+          }],
+        };
+      }
+      return undefined;
+    });
+  },
+};
+
 const result = await build({
   entryPoints: [path.join(root, "tooling", "whiteboard-entry.mjs")],
   outfile: path.join(outdir, "whiteboard.js"),
@@ -131,7 +197,7 @@ const result = await build({
   define: {
     "process.env.NODE_ENV": "\"production\""
   },
-  plugins: [offlineExcalidrawFonts],
+  plugins: [offlineExcalidrawFonts, mermaidERSelectorCompatibility],
 });
 
 const metadataDir = path.join(root, "build");
