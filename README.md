@@ -52,7 +52,13 @@ bundled browser assets. It does not need an npm install.
 
 ## Use from an agent
 
-Ask the agent to invoke the skill by name:
+Once installed, the agent should reach for the skill on its own whenever it
+proposes new work: a feature design, an implementation plan, an approach
+comparison, or an idea it wants your opinion on. Instead of describing the
+proposal in chat, it builds the proposal as an HTML artifact and opens it for
+review, so you can annotate the parts you want changed.
+
+You can also invoke it by name:
 
 > Use `$artifact-review` to create or open this report for visual review, then
 > apply my feedback until I approve it.

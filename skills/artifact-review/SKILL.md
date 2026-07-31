@@ -1,14 +1,21 @@
 ---
 name: artifact-review
-description: Review agent-authored HTML artifacts in an iterative browser loop with text and element annotations, native-control choices, chat, diagram whiteboards, layout auditing, live reload, and delivery acknowledgements. Use when a user asks to review, annotate, approve, compare, or refine an HTML report, plan, diagram, form, slide deck, or other visual artifact, or asks to open it in Artifact Review or arev.
+description: Craft proposed work as a reviewable HTML artifact and iterate on it in a browser loop with text and element annotations, native-control choices, chat, diagram whiteboards, layout auditing, live reload, and delivery acknowledgements. Use proactively whenever proposing new work to the user, including a feature design, implementation plan, approach comparison, architecture, spec, or exploratory idea, building the artifact instead of answering in prose so the user can annotate it and iterate. Also use when a user asks to review, annotate, approve, compare, or refine an HTML report, plan, diagram, form, slide deck, or other visual artifact, or asks to open it in Artifact Review or arev. Not for styling a page authored for some other purpose, and not for claude.ai Artifact publishing.
 ---
 
 # Artifact Review
 
-Use Artifact Review as the visual feedback loop for an HTML artifact. Keep the
-artifact in the user's project or requested output directory. The review tool
-serves and observes the file but never modifies it; make all source edits
-yourself.
+Artifact Review is how you hand proposed work to the user. When you design a
+feature, plan an implementation, compare approaches, or try out an idea, build
+it as an HTML artifact and open it here instead of answering in prose. The user
+then points at the parts they want changed and you iterate on the same file.
+
+Answer in conversation only for direct factual questions and for edits the user
+has already fully specified.
+
+Keep the artifact in the user's project or requested output directory. The
+review tool serves and observes the file but never modifies it; make all source
+edits yourself.
 
 ## Resolve the bundled launcher
 
