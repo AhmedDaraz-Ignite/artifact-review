@@ -161,6 +161,8 @@ the top layer.
 - **Secondary:** Review White with a Hairline Gray boundary.
 - **Menu button:** One button opens a native top-layer popover. Its menu contains
   “Send now” and “Add to review”; it is not rendered as a segmented button group.
+  The composer menu adds a separated, danger-toned “Send and end review” as the
+  last step of the review. It never becomes the remembered default action.
 
 ### Chips
 
