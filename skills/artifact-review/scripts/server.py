@@ -70,6 +70,7 @@ STATE = {
     "feed": [],            # chrome-visible history: flushes + agent replies
     "events": [],          # durable events waiting for an agent poll + ack
     "agent": {"status": "offline", "last_seen": None},
+    "warned": [],          # severe findings already attached to an event
 }
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
@@ -155,6 +156,27 @@ def _queue_item_locked(item):
     return item
 
 
+def _warning_key(finding):
+    return "|".join(str(finding.get(field)) for field in
+                    ("selector", "kind", "axis", "severity"))
+
+
+def _undelivered_warnings_locked():
+    """Severe findings this session has not already sent to the agent.
+
+    Minor findings are the browser's business. Repeating either kind on every
+    feedback batch made the agent re-read warnings it had already handled.
+    """
+    fresh = []
+    for finding in _severe(STATE["audit"]["findings"]):
+        key = _warning_key(finding)
+        if key in STATE["warned"]:
+            continue
+        STATE["warned"].append(key)
+        fresh.append(finding)
+    return fresh
+
+
 def _feedback_event_locked():
     if not STATE["queue"]:
         return None
@@ -165,7 +187,7 @@ def _feedback_event_locked():
         "id": secrets.token_hex(8),
         "type": "feedback",
         "items": items,
-        "layout_warnings": STATE["audit"]["findings"],
+        "layout_warnings": _undelivered_warnings_locked(),
         "sent_at": sent_at,
     }
     STATE["feed"].append({
@@ -193,6 +215,9 @@ def _watch_file():
                 if last is not None:
                     # Content changed: previous audit no longer describes it.
                     STATE["audit"] = {"status": "pending", "findings": []}
+                    # A warning that survives an edit was not fixed, so let the
+                    # re-audit report it to the agent again.
+                    STATE["warned"] = []
                     STATE["events"] = [
                         event for event in STATE["events"]
                         if event.get("type") != "layout"

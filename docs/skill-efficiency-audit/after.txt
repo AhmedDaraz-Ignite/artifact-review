@@ -1,0 +1,23 @@
+artifact-review bench - 2026-07-31T17:14:05Z
+skill: /Users/ahmeddaraz/Work/open-source/worktrees/arev-efficiency/skills/artifact-review
+
+METRIC                                          BYTES    ~TOKENS
+------------------------------------------ ---------- ----------
+SKILL.md                                        10040       2510
+arev design                                      2400        600
+arev playbook (index)                             995        248
+arev playbook plan table                         4731       1182
+arev playbook (all 7)                           16386       4096
+TYPICAL SESSION, 4-call flow                    18166       4541
+WORST CASE, dumps every playbook                29821       7455
+arev brief plan table                            7481       1870
+TYPICAL SESSION, brief flow                     17521       4380
+
+METRIC                                          VALUE
+------------------------------------------ ----------
+prepare-phase arev calls in SKILL.md                3
+arev poll default --timeout (s)                   110
+  killed under a 120s harness ceiling              no
+arev open (s)                                    0.17
+idle poll 1 of 2, --timeout 6, actual (s)        6.12
+idle poll 2 of 2, --timeout 6, actual (s)        6.13

@@ -15,6 +15,7 @@ used explicitly; a tunnel-facing URL can be supplied with ``--public-url``.
 import argparse
 import hashlib
 import json
+import math
 import os
 import queue
 import secrets
@@ -35,6 +36,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 REFERENCE_DIR = os.path.join(SKILL_DIR, "references", "playbooks")
 ASSET_DIR = os.path.join(SKILL_DIR, "assets", "review-ui")
+# Authoring asset, deliberately outside the directory the server can serve.
+TEMPLATE = os.path.join(SKILL_DIR, "assets", "artifact-template.html")
 STATE_ROOT = os.path.abspath(os.path.expanduser(
     os.environ.get("ARTIFACT_REVIEW_HOME") or "~/.artifact-review"))
 REGISTRY = os.path.join(STATE_ROOT, "registry.json")
@@ -331,9 +334,14 @@ def cmd_poll(args):
     # the caller's timeout budget runs out.
     deadline = time.time() + timeout
     while True:
-        chunk = min(90, max(5, deadline - time.time()))
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            break
+        # Round the wait up, never down. Truncating 5.999 to 5 leaves a
+        # sub-second remainder that costs another whole server round trip.
+        chunk = min(90, math.ceil(remaining))
         try:
-            event = _api(entry, "GET", f"/next?timeout={int(chunk)}",
+            event = _api(entry, "GET", f"/next?timeout={chunk}",
                          timeout=chunk + 15)
         except urllib.error.URLError as err:
             sys.exit(f"session server unreachable: {err}")
@@ -347,10 +355,8 @@ def cmd_poll(args):
                 _update_entry(args.file, last_event_id=event["id"])
             print(json.dumps(event, indent=2))
             return
-        if time.time() >= deadline:
-            _api(entry, "POST", "/agent-status", {"status": "idle"})
-            print(json.dumps({"type": "idle"}))
-            return
+    _api(entry, "POST", "/agent-status", {"status": "idle"})
+    print(json.dumps({"type": "idle"}))
 
 
 def cmd_end(args):
@@ -398,28 +404,55 @@ def cmd_export(args):
           + (f"  skipped={result['skipped']}" if result.get("skipped") else ""))
 
 
-def cmd_playbook(args):
-    pdir = REFERENCE_DIR
-    books = sorted(f[:-3] for f in os.listdir(pdir)
-                   if f.endswith(".md") and f != "design.md")
-    if not args.id:
-        print("playbooks:", ", ".join(books))
-        print("usage: arev playbook <id> - open every playbook whose use_when matches")
-        return
-    for pid in args.id:
+def _playbook_ids():
+    return sorted(f[:-3] for f in os.listdir(REFERENCE_DIR)
+                  if f.endswith(".md") and f != "design.md")
+
+
+def _use_when(pid):
+    """Return a playbook's matcher. It is the first line of the file."""
+    with open(os.path.join(REFERENCE_DIR, pid + ".md"), encoding="utf-8") as fh:
+        first = fh.readline().strip()
+    if first.startswith("use_when:"):
+        return first.split(":", 1)[1].strip()
+    return ""
+
+
+def _print_playbook_index():
+    for pid in _playbook_ids():
+        print(f"{pid}: {_use_when(pid)}")
+    print()
+    print("usage: arev playbook <id> [<id> ...] - open every playbook whose "
+          "use_when matches the artifact")
+
+
+def _print_playbooks(ids):
+    books = _playbook_ids()
+    for pid in ids:
         if pid not in books:
             sys.exit(f"unknown playbook '{pid}' (have: {', '.join(books)})")
-        path = os.path.join(pdir, pid + ".md")
-        with open(path, encoding="utf-8") as fh:
+    for pid in ids:
+        with open(os.path.join(REFERENCE_DIR, pid + ".md"), encoding="utf-8") as fh:
             print(fh.read())
 
 
-def cmd_design(args):
+def cmd_playbook(args):
+    if not args.id:
+        _print_playbook_index()
+        return
+    _print_playbooks(args.id)
+
+
+def _design_text():
     with open(os.path.join(REFERENCE_DIR, "design.md"), encoding="utf-8") as fh:
-        print(fh.read())
+        return fh.read()
 
 
-def cmd_doctor(args):
+def cmd_design(args):
+    print(_design_text())
+
+
+def _doctor_checks():
     checks = {
         "python": sys.version.split()[0],
         "skill_dir": SKILL_DIR,
@@ -428,6 +461,7 @@ def cmd_doctor(args):
         "review_ui": os.path.isfile(os.path.join(ASSET_DIR, "chrome.html")),
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),
         "sdk": os.path.isfile(os.path.join(ASSET_DIR, "sdk.js")),
+        "template": os.path.isfile(TEMPLATE),
         "offline_whiteboard": all(os.path.isfile(os.path.join(ASSET_DIR, name))
                                   for name in ("whiteboard-frame.html",
                                                "whiteboard.js",
@@ -435,9 +469,67 @@ def cmd_doctor(args):
     }
     checks["ok"] = all(value for key, value in checks.items()
                        if key not in ("python", "skill_dir", "state_dir"))
+    return checks
+
+
+def cmd_doctor(args):
+    checks = _doctor_checks()
     print(json.dumps(checks, indent=2))
     if not checks["ok"]:
         sys.exit(1)
+
+
+def cmd_new(args):
+    """Write the themed artifact shell so no agent has to retype it.
+
+    The shell is the part that is identical in every artifact: theme
+    variables, both color schemes, the reading column, overflow containers,
+    and control styling. Generating it here costs the caller nothing.
+    """
+    path = os.path.abspath(os.path.expanduser(args.file))
+    if os.path.exists(path) and not args.force:
+        sys.exit(f"{path} already exists - pass --force to overwrite it")
+    if not os.path.isfile(TEMPLATE):
+        sys.exit(f"missing artifact template: {TEMPLATE}")
+    title = args.title or os.path.splitext(os.path.basename(path))[0]
+    title = title.replace("-", " ").replace("_", " ").strip() or "Artifact"
+    with open(TEMPLATE, encoding="utf-8") as fh:
+        html = fh.read()
+    html = html.replace("__AREV_TITLE__", _escape_html(title))
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    print(f"wrote {path}")
+    print("fill the region between <!-- arev:content --> and <!-- /arev:content -->")
+
+
+def _escape_html(value):
+    return (value.replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+def cmd_brief(args):
+    """Everything needed before writing an artifact, in one command.
+
+    Separate doctor, design, and playbook calls were four blocking round trips
+    whose output is always read together.
+    """
+    checks = _doctor_checks()
+    print("## install")
+    print(json.dumps(checks, indent=2))
+    if not checks["ok"]:
+        sys.exit(1)
+    print()
+    print("## design")
+    print(_design_text())
+    if args.id:
+        print("## playbooks")
+        _print_playbooks(args.id)
+        return
+    print("## playbooks available")
+    _print_playbook_index()
 
 
 def cmd_sessions(args):
@@ -492,8 +584,10 @@ def main():
         description="Long-poll until feedback, a layout warning, or an ended "
                     "event is available; acknowledged events are not replayed.")
     p.add_argument("file", help="artifact with a running review session")
-    p.add_argument("--timeout", type=int, default=300, metavar="SECONDS",
-                   help="overall wait budget (default: 300; minimum: 5)")
+    p.add_argument("--timeout", type=int, default=110, metavar="SECONDS",
+                   help="overall wait budget (default: 110; minimum: 5). The "
+                        "default fits inside a 120s agent tool timeout; raise "
+                        "it when the calling agent allows a longer one")
     p.add_argument("--agent-reply",
                    help="post this reply before waiting for the next event")
     p.set_defaults(fn=cmd_poll)
@@ -513,6 +607,23 @@ def main():
     p = sub.add_parser("export", help="write a portable single-file artifact")
     p.add_argument("file")
     p.add_argument("-o", "--output"); p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser(
+        "new", help="scaffold a themed, audit-clean artifact shell",
+        description="Write a self-contained HTML shell that already satisfies "
+                    "the theme, layout, and overflow rules. Fill the marked "
+                    "content region instead of writing a page from scratch.")
+    p.add_argument("file", help="path to create")
+    p.add_argument("--title", help="page title (default: derived from the filename)")
+    p.add_argument("--force", action="store_true", help="overwrite an existing file")
+    p.set_defaults(fn=cmd_new)
+
+    p = sub.add_parser(
+        "brief", help="install check, design guidance, and playbooks in one call",
+        description="Print everything needed before writing an artifact. Pass "
+                    "playbook ids when the artifact type is already known.")
+    p.add_argument("id", nargs="*")
+    p.set_defaults(fn=cmd_brief)
 
     p = sub.add_parser("playbook", help="print artifact-type design guidance")
     p.add_argument("id", nargs="*")
