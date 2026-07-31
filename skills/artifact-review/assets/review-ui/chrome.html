@@ -530,11 +530,6 @@
     <strong>Copy artifact path</strong>
     <small>Use the exact source path in another tool.</small>
   </button>
-  <div class="menu-separator" role="separator"></div>
-  <button class="menu-item danger" id="endBtn" type="button" role="menuitem">
-    <strong>End review</strong>
-    <small>Stop accepting feedback for this session.</small>
-  </button>
 </div>
 
 <div class="menu" id="chatMenu" popover role="menu" aria-label="Feedback action">
@@ -545,6 +540,11 @@
   <button class="menu-item" id="chatQueue" type="button" role="menuitem">
     <strong>Add to review</strong>
     <small>Keep this note as a draft for the next send.</small>
+  </button>
+  <div class="menu-separator" role="separator"></div>
+  <button class="menu-item danger" id="chatEnd" type="button" role="menuitem">
+    <strong id="chatEndLabel">Send and end review</strong>
+    <small id="chatEndHint">Deliver everything, then stop accepting feedback.</small>
   </button>
 </div>
 
@@ -651,20 +651,24 @@ function errorMessage(error) {
   return error && error.message ? error.message : "The action could not be completed.";
 }
 
+/* Measure the open menu instead of assuming a height. Menus hold a different
+   number of items, and the composer menu opens near the bottom edge. */
 function positionMenu(trigger, menu) {
   const rect = trigger.getBoundingClientRect();
-  const width = 244;
+  const height = menu.offsetHeight;
+  const width = menu.offsetWidth;
   const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width));
-  const above = rect.bottom + 160 > window.innerHeight;
+  const below = rect.bottom + 6;
+  const fits = below + height <= window.innerHeight - 8;
   menu.style.left = left + "px";
-  menu.style.top = (above ? Math.max(8, rect.top - 132) : rect.bottom + 6) + "px";
+  menu.style.top = (fits ? below : Math.max(8, rect.top - 6 - height)) + "px";
 }
 
 function attachMenu(trigger, menu) {
   const items = () => Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled)'));
   const open = (focusFirst = false) => {
-    positionMenu(trigger, menu);
     if (!menu.matches(":popover-open")) menu.showPopover();
+    positionMenu(trigger, menu);
     trigger.setAttribute("aria-expanded", "true");
     if (focusFirst) requestAnimationFrame(() => items()[0]?.focus());
   };
@@ -1074,12 +1078,12 @@ async function submitChat(mode) {
   if (mode === "queue" && !text) {
     actionState("composerState", "Failed", "Write a note before adding it to the review.");
     $("chat").focus();
-    return;
+    return false;
   }
   if (mode === "send" && !text && !drafts) {
     actionState("composerState", "Failed", "Write feedback or add a draft before sending.");
     $("chat").focus();
-    return;
+    return false;
   }
   setComposerBusy(true);
   actionState("composerState", mode === "send" ? "Sending" : "Draft",
@@ -1092,9 +1096,11 @@ async function submitChat(mode) {
     actionState("composerState", mode === "send" ? "Sent" : "Draft",
       mode === "send" ? "Feedback sent." : "Note added to the review.");
     showBanner("");
+    return true;
   } catch (error) {
     actionState("composerState", "Failed", `Feedback failed: ${errorMessage(error)}`);
     showBanner(`Your feedback is preserved. Try again: ${errorMessage(error)}`);
+    return false;
   } finally {
     setComposerBusy(false);
   }
@@ -1108,6 +1114,37 @@ $("chatQueue").addEventListener("click", () => {
   rememberChoice("queue");
   submitChat("queue");
 });
+
+function pendingFeedback() {
+  return !!$("chat").value.trim() || !!state?.queue?.length;
+}
+
+/* The last item names what it will actually deliver. With nothing drafted it
+   reads "End review". */
+$("chatMenu").addEventListener("beforetoggle", event => {
+  if (event.newState !== "open") return;
+  const pending = pendingFeedback();
+  $("chatEndLabel").textContent = pending ? "Send and end review" : "End review";
+  $("chatEndHint").textContent = pending
+    ? "Deliver everything, then stop accepting feedback."
+    : "Stop accepting feedback for this session.";
+});
+
+/* Ending is final, so it never becomes the remembered default action. */
+$("chatEnd").addEventListener("click", async () => {
+  const pending = pendingFeedback();
+  const question = pending
+    ? "Send your feedback and end this review? The agent receives every draft, then an ended event."
+    : "End this review? The agent will receive an ended event.";
+  if (!confirm(question)) return;
+  if (pending && !await submitChat("send")) return;
+  try {
+    await api("POST", "/end", { by:"user" });
+  } catch (error) {
+    showBanner(`The review was not ended: ${errorMessage(error)}`);
+  }
+});
+
 $("composer").addEventListener("submit", event => event.preventDefault());
 $("chat").addEventListener("keydown", event => {
   if (event.key === "Enter" && !event.shiftKey) {
@@ -1153,7 +1190,7 @@ function applyState(next) {
   }
   renderAgent(next.agent);
   const ended = !!next.ended;
-  [$("annBtn"), $("chat"), $("chatAction"), $("chatSend"), $("chatQueue"),
+  [$("annBtn"), $("chat"), $("chatAction"), $("chatSend"), $("chatQueue"), $("chatEnd"),
     $("popAction"), $("popSend"), $("popQueue"),
     $("boardAction"), $("boardSend"), $("boardQueue")]
     .forEach(control => { control.disabled = ended; });
@@ -1246,15 +1283,6 @@ $("copyPath").addEventListener("click", async () => {
     document.execCommand("copy");
     helper.remove();
     announce("Artifact path copied.");
-  }
-});
-
-$("endBtn").addEventListener("click", async () => {
-  if (!confirm("End this review? The agent will receive an ended event.")) return;
-  try {
-    await api("POST", "/end", { by:"user" });
-  } catch (error) {
-    showBanner(`The review was not ended: ${errorMessage(error)}`);
   }
 });
 

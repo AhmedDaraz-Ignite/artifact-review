@@ -44,13 +44,19 @@ try {
   test.check(
     'chat uses one menu action instead of separate send buttons',
     await page.locator('#chatAction[aria-haspopup="menu"]').count() === 1 &&
-      await page.locator('#chatMenu [role="menuitem"]').count() === 2 &&
+      await page.locator('#chatMenu [role="menuitem"]').count() === 3 &&
       await page.locator('#flushBtn').count() === 0,
   );
   test.check(
-    'chat menu names both delivery choices',
+    'chat menu names every delivery choice',
     (await page.locator('#chatMenu').textContent()).includes('Send now') &&
-      (await page.locator('#chatMenu').textContent()).includes('Add to review'),
+      (await page.locator('#chatMenu').textContent()).includes('Add to review') &&
+      (await page.locator('#chatMenu').textContent()).includes('end review'),
+  );
+  test.check(
+    'ending the review lives only in the composer menu',
+    await page.locator('#sessionMenu [role="menuitem"]').count() === 1 &&
+      await page.locator('#endBtn').count() === 0,
   );
 
   const desktopLayout = await page.evaluate(() => {
@@ -282,9 +288,29 @@ try {
     fs.readFileSync(ART, 'utf8').startsWith(sourceBefore),
   );
 
+  await page.locator('#chatAction').click();
+  test.check(
+    'the end action reads End review while nothing is drafted',
+    await page.locator('#chatEndLabel').textContent() === 'End review',
+  );
+  await page.keyboard.press('Escape');
+
+  const finalPoll = startPoll(ART, 30);
+  await page.locator('#chat').fill('approved, start implementing');
+  await page.locator('#chatAction').click();
+  test.check(
+    'the end action promises delivery while feedback is pending',
+    await page.locator('#chatEndLabel').textContent() === 'Send and end review',
+  );
+  await page.locator('#chatEnd').click();
+  const finalFeedback = await within(finalPoll.result, 5000, 'final feedback delivery');
+  test.check(
+    'Send and end review delivers the pending note before ending',
+    finalFeedback.type === 'feedback' &&
+      finalFeedback.items.some(item => item.text === 'approved, start implementing'),
+    finalFeedback.type,
+  );
   const endPoll = startPoll(ART, 30);
-  await page.locator('#sessionMenuBtn').click();
-  await page.locator('#endBtn').click();
   const endedEvent = await within(endPoll.result, 5000, 'ended event delivery');
   await page.locator('#banner').filter({ hasText:'read-only' }).waitFor({ timeout:3000 });
   test.check(
@@ -292,7 +318,8 @@ try {
     endedEvent.type === 'ended' && endedEvent.by === 'user' &&
       await page.locator('#annBtn').isDisabled() &&
       await page.locator('#chat').isDisabled() &&
-      await page.locator('#chatAction').isDisabled(),
+      await page.locator('#chatAction').isDisabled() &&
+      await page.locator('#chatEnd').isDisabled(),
   );
 
   let refused = false;
