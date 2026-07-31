@@ -16,7 +16,15 @@ trap cleanup EXIT
 run() {
   local name="$1" script="$2" fixture="$3"
   local art="$WORK/$name artifact.html"
-  cp "$ROOT/tests/fixtures/$fixture" "$art"
+  if [ "$fixture" = "-scaffold-" ]; then
+    # Prove the shipped shell passes the layout gate before any content exists.
+    if ! "$AREV" new "$art" --title "Scaffold check" --force >/dev/null; then
+      echo "FAIL $name could not scaffold the artifact" | tee -a "$OUT"
+      return
+    fi
+  else
+    cp "$ROOT/tests/fixtures/$fixture" "$art"
+  fi
   if [ "$name" = "loop" ]; then
     # the loop test needs a page tall enough to genuinely scroll
     python3 - "$art" <<'PY'
@@ -40,6 +48,7 @@ PY
 
 run loop selftest-loop.mjs clean.html
 run gate selftest-gate.mjs clean.html
+run scaffold selftest-gate.mjs -scaffold-
 run security selftest-security.mjs clean.html
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html

@@ -28,39 +28,42 @@ On POSIX systems:
 ```bash
 SKILL_ROOT="<absolute directory containing this SKILL.md>"
 AREV="$SKILL_ROOT/scripts/arev"
-"$AREV" doctor
 ```
 
 On Windows, invoke `scripts\arev.cmd` under the same resolved skill root.
 
 Require Python 3.9 or newer and a modern browser. The installed runtime has no
-third-party Python or Node dependency. If `doctor` reports a failed check, stop
-and report the missing installed component instead of reconstructing the
-runtime elsewhere.
+third-party Python or Node dependency. If the install check inside `brief`
+below fails, stop and report the missing installed component instead of
+reconstructing the runtime elsewhere.
 
 ## Prepare the artifact
 
-Before writing or substantially revising HTML:
+Get the install check, the design rules, and the matching playbooks in one
+command. Name the playbooks when the artifact type is already clear:
 
-1. Run `"$AREV" design`.
-2. Run `"$AREV" playbook` to list the available artifact playbooks.
-3. Run `"$AREV" playbook <id> [<id> ...]` for every playbook whose
-   `use_when` matches the artifact.
-4. Create the artifact outside `SKILL_ROOT`, in the user's workspace or
-   requested output directory.
+```bash
+"$AREV" brief plan table
+```
 
-Use the playbooks as requirements, not optional inspiration. In particular:
+Otherwise run `"$AREV" brief` alone. It ends with every playbook's `use_when`
+line; fetch the matching ids with `"$AREV" playbook <id> [<id> ...]`. Never
+read every playbook because choosing was unclear.
 
-- Make the artifact self-contained and useful without external services.
-- Support light and dark color schemes.
-- Keep page-level horizontal overflow at zero.
-- Use semantic native controls for human decisions.
-- Give controls stable `id`, `name`, and labels.
-- Use `<pre class="mermaid" id="stable-diagram-id">...</pre>` for Mermaid
-  source. Flowchart, sequence, class, ER, and state diagrams become editable
-  shapes; other valid types use a labeled image-annotation fallback.
-- Mark a genuinely custom clickable control with
-  `data-arev-action="<specific-name>"`.
+Run `brief` once per artifact, not again when resuming or revising.
+
+Scaffold the file outside `SKILL_ROOT`, in the user's workspace or requested
+output directory, then fill the region marked `<!-- arev:content -->`:
+
+```bash
+"$AREV" new "/absolute/path/to/artifact.html" --title "Rollout plan"
+```
+
+The shell already satisfies the theme, layout, and overflow rules. Treat the
+playbooks as requirements for everything you put inside the content region.
+Mermaid source goes in `<pre class="mermaid" id="stable-diagram-id">`:
+flowchart, sequence, class, ER, and state diagrams become editable shapes, and
+other valid types fall back to labeled image annotation.
 
 Keep the source artifact authoritative. Never copy generated review state,
 whiteboard scenes, or screenshots into the installed skill directory.
@@ -88,13 +91,18 @@ edits.
 Wait for feedback with one foreground long poll:
 
 ```bash
-"$AREV" poll "$ARTIFACT" --timeout 300
+"$AREV" poll "$ARTIFACT"
 ```
 
+The default `--timeout` is 110 seconds, which fits inside a 120-second agent
+tool timeout. A poll that outlives the caller's tool timeout is killed mid-wait
+and wastes the whole budget, so raise the tool timeout first and only then pass
+a larger `--timeout` below it, such as `--timeout 570` under a 600-second tool
+timeout.
+
 Do not background the poll, busy-wait, or replace it with repeated `open`
-calls. Use the longest foreground timeout supported by the calling agent. If
-the result is `{"type":"idle"}`, start another foreground poll when continuing
-to wait.
+calls. If the result is `{"type":"idle"}`, start another foreground poll. A
+queued event is durable, so an idle return never means feedback was lost.
 
 `poll` returns one JSON event:
 
@@ -111,6 +119,10 @@ command is needed.
 For a `layout` event, fix every proven severe warning and save the artifact
 before asking the human to review it. Continue polling after the browser
 re-audits the updated file.
+
+A `feedback` event's `layout_warnings` carries only severe findings this
+session has not sent before. An empty list means nothing new, not that the page
+is clean. A warning that reappears after an edit was not actually fixed.
 
 For a `feedback` event:
 
@@ -130,10 +142,11 @@ Use `reply --to <event-id>` only when replying to an event other than the last
 received one. Prefer an explicit reply after the edit is actually saved over
 `poll --agent-reply`, which sends a reply before waiting.
 
-For whiteboard feedback, inspect the returned `png_path` to understand the
-human's visible edit and use `scene_path` only as supporting structured data.
-Update the authoritative Mermaid or HTML source yourself. Never replace the
-artifact with the Excalidraw scene.
+For whiteboard feedback, start with the item's `summary` and `stats`. Read the
+`png_path` image only when those and `scene_path` leave the reviewer's intent
+ambiguous, because reading an image is far more expensive than reading the
+structured scene. Update the authoritative Mermaid or HTML source yourself.
+Never replace the artifact with the Excalidraw scene.
 
 Inline diagram editors start locked so page scrolling remains natural. The
 reviewer explicitly unlocks one editor, may expand it fullscreen, and can add

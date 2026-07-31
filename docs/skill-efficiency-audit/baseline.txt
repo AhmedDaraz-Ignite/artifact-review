@@ -1,0 +1,27 @@
+artifact-review bench - 2026-07-31T16:46:14Z
+skill: /Users/ahmeddaraz/Work/open-source/artifact-review/.claude/skills/artifact-review
+
+METRIC                                          BYTES    ~TOKENS
+------------------------------------------ ---------- ----------
+SKILL.md                                         9368       2342
+arev design                                      3634        908
+arev playbook (index)                             136         34
+arev playbook plan table                         4731       1182
+arev playbook (all 7)                           16386       4096
+TYPICAL SESSION TOTAL                           17869       4467
+WORST CASE TOTAL                                29524       7381
+
+METRIC                                          VALUE
+------------------------------------------ ----------
+prepare-phase arev calls in SKILL.md                4
+arev poll default --timeout (s)                   300
+  killed under a 120s harness ceiling             YES
+arev open (s)                                    0.16
+idle poll 1 of 2, --timeout 6, actual (s)       10.16
+idle poll 2 of 2, --timeout 6, actual (s)        6.12
+
+Not covered here, measure by hand:
+  - artifact emitted bytes: rebuild the same artifact with and without 'arev new',
+    compare the bytes the model had to write (content only, not final file size).
+  - repeated layout warnings: send two feedback batches on an unchanged page with a
+    known severe finding, compare the 'layout_warnings' bytes in each poll payload.

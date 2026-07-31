@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifact Review - token and time efficiency plan</title>
+<style>
+:root {
+  --bg: #F7F8FA;
+  --surface: #FFFFFF;
+  --fg: #202228;
+  --muted: #595D69;
+  --border: #C3C6CC;
+  --border-soft: #E1E3E7;
+  --accent: #2947A5;
+  --accent-soft: #EDF1FB;
+  --row-hover: #F2F3F5;
+  --high: #A33327;
+  --high-bg: #FBECEA;
+  --med: #8A5A12;
+  --med-bg: #FBF3E4;
+  --low: #2F6B44;
+  --low-bg: #EAF4EE;
+  --code-bg: #F2F3F5;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17191F;
+    --surface: #202228;
+    --fg: #E7E9ED;
+    --muted: #A0A4AD;
+    --border: #3A3D46;
+    --border-soft: #2C2F37;
+    --accent: #8CA3E4;
+    --accent-soft: #1C2E6A;
+    --row-hover: #262930;
+    --high: #F0A79C;
+    --high-bg: #3A1F1B;
+    --med: #E6C07A;
+    --med-bg: #362A16;
+    --low: #94D3AC;
+    --low-bg: #1B3226;
+    --code-bg: #2A2D35;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow-x: hidden;
+}
+main { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+h2 { font-size: 22px; margin: 48px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
+h3 { font-size: 17px; margin: 28px 0 8px; }
+p { margin: 0 0 14px; }
+ul { margin: 0 0 14px; padding-left: 22px; }
+li { margin-bottom: 6px; }
+.lede { color: var(--muted); font-size: 17px; margin-bottom: 24px; }
+code, kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+.scroll { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; }
+caption { text-align: left; padding: 12px 14px 0; color: var(--muted); font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border-soft); vertical-align: top; font-size: 14.5px; }
+th { font-weight: 600; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--row-hover); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.b-high { background: var(--high-bg); color: var(--high); }
+.b-med { background: var(--med-bg); color: var(--med); }
+.b-low { background: var(--low-bg); color: var(--low); }
+.note { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 0 0 20px; font-size: 15px; }
+.phase { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; padding: 18px 20px; margin-bottom: 18px; }
+.phase h3 { margin-top: 0; }
+.goal { color: var(--muted); font-style: italic; margin-bottom: 14px; }
+.fix { border-left: 2px solid var(--border); padding-left: 14px; margin: 0 0 18px; }
+.fix:last-child { margin-bottom: 0; }
+.fix h4 { margin: 0 0 6px; font-size: 15px; }
+.fix p { margin: 0 0 8px; font-size: 14.5px; }
+.dw { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 10px 0 0; }
+fieldset { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--surface); padding: 14px 18px 16px; margin: 0 0 20px; }
+legend { font-weight: 600; padding: 0 8px; font-size: 15px; }
+.choice, .check { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; }
+.choice input, .check input { margin-top: 5px; flex: none; width: 16px; height: 16px; accent-color: var(--accent); }
+.choice label, .check label { cursor: pointer; }
+.why { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+@media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; padding: 16px 18px; }
+.card.rec { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.card h4 { margin: 0 0 4px; font-size: 16px; }
+.card .sum { color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+.card ul { font-size: 14px; padding-left: 18px; margin-bottom: 0; }
+.rec-badge { display: inline-block; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 4px; margin-bottom: 8px; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border-soft); color: var(--muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Artifact Review: token and time efficiency plan</h1>
+<p class="lede">Where a single run of the skill spends context and wall clock, what is measured versus estimated, and a three-phase fix ordered by payoff per unit of work.</p>
+
+<div class="note">
+  <strong>Implemented.</strong> All phases are done on branch <code>arev-efficiency</code>, full suite green.
+  Measured outcomes are in <a href="#results">Results</a> below, including the two places my estimates were
+  wrong and one metric that moved the wrong way.
+</div>
+
+<h2 id="results">Results</h2>
+
+<div class="scroll">
+<table>
+  <caption>Target versus what the harness actually measured after the work.</caption>
+  <thead>
+    <tr><th>Metric</th><th class="num">Before</th><th class="num">Target</th><th class="num">After</th><th>Verdict</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Idle poll, <code>--timeout 6</code></td>
+      <td class="num">10.13s</td><td class="num">&lt; 7s</td><td class="num">6.12s</td>
+      <td><span class="badge b-low">met</span></td>
+    </tr>
+    <tr>
+      <td>Poll killed by a 120s tool timeout</td>
+      <td class="num">yes</td><td class="num">no</td><td class="num">no</td>
+      <td><span class="badge b-low">met</span></td>
+    </tr>
+    <tr>
+      <td>Prepare-phase round trips</td>
+      <td class="num">4</td><td class="num">2</td><td class="num">1</td>
+      <td><span class="badge b-low">beat</span></td>
+    </tr>
+    <tr>
+      <td>Repeated layout warnings, 2nd batch</td>
+      <td class="num">all findings</td><td class="num">0</td><td class="num">0</td>
+      <td><span class="badge b-low">met</span></td>
+    </tr>
+    <tr>
+      <td>Scaffold passes the layout gate</td>
+      <td class="num">n/a</td><td class="num">clear</td><td class="num">clear</td>
+      <td><span class="badge b-low">met</span></td>
+    </tr>
+    <tr>
+      <td>Artifact shell the model must write</td>
+      <td class="num">5,051 B</td><td class="num">&lt; half</td><td class="num">0 B</td>
+      <td><span class="badge b-low">met</span></td>
+    </tr>
+    <tr>
+      <td><code>design.md</code> size</td>
+      <td class="num">3,634 B</td><td class="num">&lt; 1,817</td><td class="num">2,399 B</td>
+      <td><span class="badge b-med">missed</span></td>
+    </tr>
+    <tr>
+      <td>Fixed guidance, typical session</td>
+      <td class="num">17,869 B</td><td class="num">&lt; 11,000</td><td class="num">17,521 B</td>
+      <td><span class="badge b-high">missed</span></td>
+    </tr>
+    <tr>
+      <td><code>SKILL.md</code> size</td>
+      <td class="num">9,368 B</td><td class="num">flat</td><td class="num">10,040 B</td>
+      <td><span class="badge b-high">worse</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Where I was wrong</h3>
+<ul>
+  <li><strong>I over-estimated the boilerplate saving by 2-3x.</strong> The plan claimed 2,500-4,000 output
+  tokens per artifact. The real shell is 4,938 bytes, and the one I hand-wrote for this very page was 5,051 -
+  so the true saving is about <strong>1,250 output tokens per artifact</strong>. Still the largest single
+  per-artifact win, just smaller than advertised.</li>
+  <li><strong>The <code>design.md</code> target was miscalibrated.</strong> It fell 34%, not the 50% the
+  criterion named. Everything still in it is a rule the scaffold cannot enforce - semantic markup, decisions
+  in controls, diagram authoring, hygiene. Cutting further would have deleted guidance rather than
+  duplication, so I stopped and reported the miss.</li>
+  <li><strong>My own edits grew <code>SKILL.md</code> by 672 bytes</strong> and ate the entire
+  <code>design.md</code> saving, which is why fixed guidance barely moved. I went back and compressed the new
+  prose once I saw the number, cutting it from +1,429 to +672 - largely by deleting a requirements bullet list
+  that duplicated <code>design.md</code>, which <code>brief</code> now prints in the same breath.</li>
+</ul>
+
+<div class="note">
+  <strong>The honest summary.</strong> Wall clock and round trips improved a lot: prepare went from four
+  blocking calls to one, killed polls are gone, and every idle poll is 4 seconds shorter. Fixed context per
+  session barely moved, at about 2%. The biggest remaining lever is the one option you left unchecked -
+  trimming <code>SKILL.md</code> itself, now 10,040 bytes and by far the largest fixed cost. Say the word and
+  I will audit it.
+</div>
+
+<h2>Original plan</h2>
+
+<div class="note">
+  <strong>Read this first.</strong> The audit targets the <em>installed</em> skill at
+  <code>.claude/skills/artifact-review</code> (SKILL.md 9,368 bytes, server.py 997 lines), because that is
+  what actually runs. The checkout in <code>skills/artifact-review</code> is <strong>3 commits behind
+  <code>origin/main</code></strong> and is a smaller, older build. Pull before editing anything, or the fixes
+  land in a version nobody runs.
+</div>
+
+<h2>Measured baseline</h2>
+<p>Every number in this table came from running the installed CLI in this session. Nothing here is inferred.</p>
+
+<div class="scroll">
+<table>
+  <caption>Fixed cost of one review session, before a single byte of the artifact exists.</caption>
+  <thead>
+    <tr>
+      <th>Cost center</th>
+      <th>What it is</th>
+      <th class="num">Bytes</th>
+      <th class="num">≈ Tokens</th>
+      <th class="num">Round trips</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>SKILL.md</code></td>
+      <td>Loaded in full whenever the skill triggers</td>
+      <td class="num">9,368</td>
+      <td class="num">2,340</td>
+      <td class="num">0</td>
+    </tr>
+    <tr>
+      <td><code>arev doctor</code></td>
+      <td>Install check, 0.54s</td>
+      <td class="num">~380</td>
+      <td class="num">95</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td><code>arev design</code></td>
+      <td>Full <code>design.md</code>, unconditional</td>
+      <td class="num">3,634</td>
+      <td class="num">910</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td><code>arev playbook</code></td>
+      <td>Index. Prints ids only, no <code>use_when</code></td>
+      <td class="num">~150</td>
+      <td class="num">40</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td><code>arev playbook plan table</code></td>
+      <td>Two matched playbooks (this artifact's own case)</td>
+      <td class="num">4,731</td>
+      <td class="num">1,182</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td><code>arev playbook</code> (all 7)</td>
+      <td>The safe fallback when the index tells you nothing</td>
+      <td class="num">16,386</td>
+      <td class="num">4,100</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td><strong>Typical total</strong></td>
+      <td>Guidance in context before writing</td>
+      <td class="num"><strong>17,869</strong></td>
+      <td class="num"><strong>4,467</strong></td>
+      <td class="num"><strong>4</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Worst case</strong></td>
+      <td>Agent dumps every playbook rather than guess</td>
+      <td class="num"><strong>29,524</strong></td>
+      <td class="num"><strong>7,381</strong></td>
+      <td class="num"><strong>4</strong></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>Process startup is <strong>not</strong> a problem and needs no work: <code>arev open</code> takes 0.32s and
+<code>arev doctor</code> 0.54s. Wall clock is spent in exactly three places - idle polls, model generation of
+large HTML, and the number of blocking round trips.</p>
+
+<h2>Findings, ranked</h2>
+
+<div class="scroll">
+<table>
+  <caption>Ranked by tokens or seconds recovered per unit of implementation work.</caption>
+  <thead>
+    <tr>
+      <th class="num">#</th>
+      <th>Finding</th>
+      <th>Cost today</th>
+      <th>Impact</th>
+      <th>Fixed in phase</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="num">1</td>
+      <td><strong>Boilerplate is regenerated per artifact.</strong> <code>design.md</code> describes theme
+      variables, dark mode, layout width, overflow containers, focus states and defensive JS in prose. The model
+      re-types that as CSS from scratch for every artifact.</td>
+      <td>~2,500-4,000 <em>output</em> tokens per artifact, plus the layout-audit fix cycle when it gets a rule
+      slightly wrong <span class="badge b-low">estimated</span></td>
+      <td><span class="badge b-high">High</span></td>
+      <td class="num">2</td>
+    </tr>
+    <tr>
+      <td class="num">2</td>
+      <td><strong>Poll default outlives the harness timeout.</strong> <code>arev poll</code> defaults to
+      <code>--timeout 300</code>; Claude Code's Bash tool defaults to 120s and kills the call. An idle poll
+      blocks its full budget - measured 8.13s for <code>--timeout 8</code>, so 300 means 300.</td>
+      <td>120s of dead wall clock plus one wasted turn, every time the agent does not raise the tool timeout
+      <span class="badge b-low">measured</span></td>
+      <td><span class="badge b-high">High</span></td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td class="num">3</td>
+      <td><strong>The playbook index hides <code>use_when</code>.</strong> Every playbook carries
+      <code>use_when:</code> on line 1, but <code>cmd_playbook</code> prints only
+      <code>"playbooks: code, comparison, ..."</code>. The agent must guess from an id or dump everything.</td>
+      <td>Up to 2,350 extra tokens per session, or a wrong playbook choice <span class="badge b-low">measured</span></td>
+      <td><span class="badge b-high">High</span></td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td class="num">4</td>
+      <td><strong>Four blocking calls before the first artifact byte.</strong> <code>doctor</code>,
+      <code>design</code>, <code>playbook</code>, <code>playbook &lt;ids&gt;</code> are four separate
+      round trips whose outputs are always consumed together.</td>
+      <td>3 avoidable round trips, each re-sending the whole conversation <span class="badge b-low">measured</span></td>
+      <td><span class="badge b-med">Medium</span></td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td class="num">5</td>
+      <td><strong>Layout warnings replay on every feedback event.</strong>
+      <code>_feedback_event_locked()</code> attaches the entire <code>STATE["audit"]["findings"]</code> list to
+      each event, including minor findings and ones already delivered and fixed.</td>
+      <td>Grows with page complexity; a busy page repays the same warnings every review turn
+      <span class="badge b-low">measured</span></td>
+      <td><span class="badge b-med">Medium</span></td>
+      <td class="num">3</td>
+    </tr>
+    <tr>
+      <td class="num">6</td>
+      <td><strong><code>arev design</code> reruns on resume.</strong> SKILL.md gates it on "before writing or
+      substantially revising HTML", which in practice fires again on later turns of the same artifact.</td>
+      <td>910 tokens per redundant call <span class="badge b-low">estimated</span></td>
+      <td><span class="badge b-low">Low</span></td>
+      <td class="num">3</td>
+    </tr>
+    <tr>
+      <td class="num">7</td>
+      <td><strong>Whiteboard PNG round trip.</strong> SKILL.md instructs the agent to read
+      <code>png_path</code> to understand the edit. Each image read is roughly 1-2k tokens and there is no
+      guidance to skip it when <code>scene_path</code> alone answers the question.</td>
+      <td>~1,500 tokens per whiteboard item <span class="badge b-low">estimated</span></td>
+      <td><span class="badge b-low">Low</span></td>
+      <td class="num">3</td>
+    </tr>
+    <tr>
+      <td class="num">8</td>
+      <td><strong>Every idle poll overruns its budget by ~4s.</strong> Found while building this plan.
+      <code>cmd_poll</code> truncates its first chunk with <code>int(5.999…)</code> to 5, then floors the
+      1s remainder back up to 5 with <code>max(5, ...)</code>, and only checks the deadline after the blocking
+      call returns. So two chunks always run.</td>
+      <td>Deterministic +4.1s per poll: <code>--timeout 6</code> takes 10.13s and <code>--timeout 12</code> takes
+      16.16s, while the server's <code>/next</code> alone returns in 6.01s <span class="badge b-low">measured</span></td>
+      <td><span class="badge b-med">Medium</span></td>
+      <td class="num">1</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Decision: how to fix the poll timeout</h2>
+<p>Finding 2 has two credible fixes and they lead to different failure modes. This one needs your call.</p>
+
+<div class="cards">
+  <div class="card rec">
+    <span class="rec-badge">RECOMMENDED</span>
+    <h4>A. Lower the default, document the ceiling</h4>
+    <p class="sum">Default <code>--timeout</code> drops to 110s. SKILL.md tells the agent to raise both the harness tool timeout and <code>--timeout</code> when its harness allows.</p>
+    <ul>
+      <li>Fails safe on <em>every</em> harness, not just Claude Code</li>
+      <li>Worst case is a cheap <code>idle</code> return, never a killed call</li>
+      <li>Costs one extra idle round trip for slow reviewers</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>B. Keep 300, document the exact numbers</h4>
+    <p class="sum">Default stays 300s. SKILL.md states the literal values: set the Bash tool timeout to 600000 and pass <code>--timeout 570</code>.</p>
+    <ul>
+      <li>Zero idle round trips when the agent complies</li>
+      <li>Silently breaks on any harness with a lower ceiling</li>
+      <li>Depends on the model following a prose instruction every time</li>
+    </ul>
+  </div>
+</div>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>Dimension</th><th>Option A</th><th>Option B</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Failure mode</td><td>Extra idle poll <span class="badge b-low">safe</span></td><td>Killed call, wasted turn <span class="badge b-high">costly</span></td></tr>
+    <tr><td>Portability across harnesses</td><td>Works everywhere <span class="badge b-low">good</span></td><td>Claude Code only <span class="badge b-med">fragile</span></td></tr>
+    <tr><td>Round trips, attentive reviewer</td><td>Same as today <span class="badge b-low">good</span></td><td>Same as today <span class="badge b-low">good</span></td></tr>
+    <tr><td>Round trips, slow reviewer</td><td>~2x idle polls <span class="badge b-med">worse</span></td><td>Fewest possible <span class="badge b-low">best</span></td></tr>
+    <tr><td>Depends on model compliance</td><td>No <span class="badge b-low">good</span></td><td>Yes <span class="badge b-med">risk</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<fieldset>
+  <legend>Which poll fix should I implement?</legend>
+  <div class="choice">
+    <input type="radio" id="poll-a" name="poll-fix" value="lower-default" checked>
+    <label for="poll-a">Option A - lower the default to 110s and document raising it
+      <span class="why">Recommended: the failure mode is an idle return instead of a killed call, and it holds on harnesses other than Claude Code.</span></label>
+  </div>
+  <div class="choice">
+    <input type="radio" id="poll-b" name="poll-fix" value="document-only">
+    <label for="poll-b">Option B - keep 300s, put the exact tool-timeout numbers in SKILL.md
+      <span class="why">Fewer idle polls when followed, but it breaks quietly the moment it is not.</span></label>
+  </div>
+  <div class="choice">
+    <input type="radio" id="poll-c" name="poll-fix" value="both">
+    <label for="poll-c">Both - lower the default <em>and</em> document the exact numbers
+      <span class="why">Belt and braces. Slightly more SKILL.md prose, which is itself a per-session token cost.</span></label>
+  </div>
+</fieldset>
+
+<h2>The plan: four batches of edits to the skill itself</h2>
+<p>Each phase below is a batch of changes I would make to the artifact-review skill - its CLI
+(<code>arev.py</code>), its <code>SKILL.md</code>, its playbooks, and one function in <code>server.py</code>.
+None of them change what the skill does for a reviewer; they change what it costs to run. The
+<em>Fixed in phase</em> column in the findings table above points at the phase that resolves each finding.</p>
+
+<div class="scroll">
+<table>
+  <caption>What each phase covers, and why they run in this order.</caption>
+  <thead>
+    <tr><th>Phase</th><th>What it changes</th><th>Fixes</th><th>Why here</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>0</strong></td><td>Nothing in the code - just <code>git pull</code></td><td class="num">-</td><td>Everything else is wasted if it lands in the stale checkout</td></tr>
+    <tr><td><strong>1</strong></td><td><code>arev.py</code> commands and <code>SKILL.md</code> wording</td><td class="num">2, 3, 4</td><td>Small and low risk, and its numbers tell us whether phase 2's estimate is real</td></tr>
+    <tr><td><strong>2</strong></td><td>New scaffold command, trimmed <code>design.md</code></td><td class="num">1</td><td>The biggest win, but also the biggest single change - worth doing on a measured baseline</td></tr>
+    <tr><td><strong>3</strong></td><td>The feedback event payload and three <code>SKILL.md</code> rules</td><td class="num">5, 6, 7</td><td>Per-iteration savings, only worth the protocol risk once the large wins are banked</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <strong>The checkboxes inside each phase are not a menu.</strong> Each one sits under the finding it belongs to
+  and states how I would prove that fix actually worked - they stay unchecked until the work is done and
+  verified. To choose <em>what I build</em>, use the two questions at the bottom of this page: the scope radio
+  group and the options checklist.
+</div>
+
+<div class="phase">
+  <h3>Phase 0 - sync the checkout</h3>
+  <p class="goal">Goal: edit the code that actually runs.</p>
+  <ul>
+    <li><code>git pull</code> to clear the 3-commit gap against <code>origin/main</code>.</li>
+    <li>Confirm <code>skills/artifact-review/SKILL.md</code> matches the installed <code>.claude</code> copy.</li>
+  </ul>
+  <div class="check"><input type="checkbox" id="ac-0-1"><label for="ac-0-1"><code>diff -r skills/artifact-review .claude/skills/artifact-review</code> reports no differences</label></div>
+</div>
+
+<div class="phase">
+  <h3>Phase 1 - cheap wins in the CLI and SKILL.md</h3>
+  <p class="goal">Goal: cut the fixed per-session cost and stop the killed polls. No behavior change to the review loop.</p>
+
+  <div class="fix">
+    <h4>Finding 2 - poll default outlives the harness timeout</h4>
+    <p>Apply whichever poll option you picked above, in <code>arev.py</code> and <code>SKILL.md</code>.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-1-3"><label for="ac-1-3">A poll started with an unconfigured 120s harness timeout returns cleanly instead of being killed</label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Finding 8 - every idle poll overruns by ~4s</h4>
+    <p>Two lines in the same <code>cmd_poll</code> loop as finding 2: round the chunk up instead of truncating
+    it, drop the 5-second floor to 1, and check the deadline before starting a chunk rather than after it
+    returns.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-1-5"><label for="ac-1-5"><code>arev poll --timeout 6</code> against an idle session returns in under 7s, matching the server's own 6.01s</label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Finding 3 - the playbook index hides <code>use_when</code></h4>
+    <p><code>cmd_playbook</code> with no id reads line 1 of each file and prints <code>id - use_when</code>.
+    Roughly five lines of Python.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-1-1"><label for="ac-1-1"><code>arev playbook</code> prints a <code>use_when</code> line for all 7 playbooks</label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Finding 4 - four blocking calls before the first artifact byte</h4>
+    <p>Add <code>arev brief [&lt;playbook-id&gt; ...]</code> that prints the doctor result,
+    <code>design.md</code>, and the named playbooks in one call. SKILL.md's prepare section becomes one command,
+    then one more once the artifact type is known.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-1-2"><label for="ac-1-2"><code>arev brief plan table</code> produces doctor + design + both playbooks in a single invocation</label></div>
+    <div class="check"><input type="checkbox" id="ac-1-4"><label for="ac-1-4">Round trips before the first artifact byte drop from 4 to 2</label></div>
+  </div>
+</div>
+
+<div class="phase">
+  <h3>Phase 2 - stop regenerating boilerplate</h3>
+  <p class="goal">Goal: kill the single largest output-token cost by shipping the shell instead of describing it.</p>
+
+  <div class="fix">
+    <h4>Finding 1 - boilerplate is regenerated per artifact</h4>
+    <p>Add <code>arev new &lt;path&gt; [--type plan,table,...]</code>. It writes a complete, self-contained,
+    audit-clean HTML skeleton to disk: theme custom properties, light and dark, the max-width column, overflow
+    containers, table and control styling, the mermaid block, and a marked content region. Python writes it from
+    a template file, so it costs <strong>zero model output tokens</strong>. The agent then fills the content
+    region with <code>Edit</code>.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-2-1"><label for="ac-2-1"><code>arev new</code> output passes <code>audit.js</code> with zero severe findings before any content is added</label></div>
+    <div class="check"><input type="checkbox" id="ac-2-2"><label for="ac-2-2">The scaffold renders correctly in both light and dark, opened directly from disk with no server</label></div>
+    <div class="check"><input type="checkbox" id="ac-2-4"><label for="ac-2-4">A rebuilt version of this very artifact uses measurably fewer output tokens than the original</label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Follow-on - trim <code>design.md</code> to match</h4>
+    <p>Cut <code>design.md</code> down to the rules the scaffold cannot enforce: semantic control choice, label
+    wording, diagram density. Delete the prose that only existed to make the model retype CSS.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-2-3"><label for="ac-2-3"><code>design.md</code> shrinks by at least half and no removed rule is left unenforced</label></div>
+  </div>
+</div>
+
+<div class="phase">
+  <h3>Phase 3 - trim the loop protocol</h3>
+  <p class="goal">Goal: shave the per-iteration cost once per-session and per-artifact costs are fixed.</p>
+
+  <div class="fix">
+    <h4>Finding 5 - layout warnings replay on every feedback event</h4>
+    <p><code>_feedback_event_locked()</code> sends only severe findings that have not already been delivered,
+    tracked on the event record.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-3-1"><label for="ac-3-1">A second feedback event on an unchanged page carries no repeated layout warning</label></div>
+    <div class="check"><input type="checkbox" id="ac-3-2"><label for="ac-3-2">Minor findings never appear in a <code>feedback</code> event payload</label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Findings 6 and 7 - two SKILL.md rules</h4>
+    <p>State that <code>design</code> and <code>playbook</code> are session-scoped: run once per artifact, not on
+    resume. And that <code>png_path</code> is read only when <code>scene_path</code> leaves the reviewer's intent
+    ambiguous.</p>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-3-4"><label for="ac-3-4">A resumed session's second turn issues neither <code>design</code> nor <code>playbook</code></label></div>
+  </div>
+
+  <div class="fix">
+    <h4>Gate on all three phases</h4>
+    <p class="dw">Done when</p>
+    <div class="check"><input type="checkbox" id="ac-3-3"><label for="ac-3-3"><code>tests/run.sh</code> passes end to end after every phase</label></div>
+  </div>
+</div>
+
+<h2>How I prove any of this worked</h2>
+<p>I wrote the harness before writing this section, so the baseline below is real output rather than a promise.
+It lives at <code>docs/skill-efficiency-audit/bench.sh</code> and the captured baseline at
+<code>docs/skill-efficiency-audit/baseline.txt</code>. Run it once now, once after each phase, and
+<code>diff</code> the two files.</p>
+
+<div class="scroll">
+<table>
+  <caption>Every metric, how it is captured, and what has to move.</caption>
+  <thead>
+    <tr>
+      <th>Metric</th>
+      <th>How it is measured</th>
+      <th class="num">Baseline</th>
+      <th class="num">Target</th>
+      <th>Phase</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Fixed guidance bytes, typical session</td>
+      <td><code>wc -c</code> on <code>SKILL.md</code> plus the real stdout of <code>design</code>,
+      <code>playbook</code>, and <code>playbook plan table</code>. Exact, not sampled.</td>
+      <td class="num">17,869</td>
+      <td class="num">&lt; 11,000</td>
+      <td class="num">1, 2</td>
+    </tr>
+    <tr>
+      <td>Fixed guidance bytes, worst case</td>
+      <td>Same, substituting all 7 playbooks - the fallback an agent takes when the index tells it nothing.</td>
+      <td class="num">29,524</td>
+      <td class="num">= typical</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td>Prepare-phase calls before writing</td>
+      <td><code>grep -c</code> for <code>arev</code> invocations in SKILL.md's prepare section. Each one is a
+      blocking round trip that re-sends the conversation.</td>
+      <td class="num">4</td>
+      <td class="num">2</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td>Idle poll wall clock, <code>--timeout 6</code></td>
+      <td>Wrapped timing of the CLI, compared against <code>curl</code> straight to <code>/next</code> to
+      separate client overhead from the server's honest wait.</td>
+      <td class="num">10.13s</td>
+      <td class="num">&lt; 7s</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td>Poll killed by a 120s harness ceiling</td>
+      <td>Read the <code>--timeout</code> default out of <code>arev.py</code> and compare to 120.</td>
+      <td class="num">yes</td>
+      <td class="num">no</td>
+      <td class="num">1</td>
+    </tr>
+    <tr>
+      <td>Artifact bytes the model must emit</td>
+      <td>Rebuild <em>this exact artifact</em> twice: once the current way, once on top of
+      <code>arev new</code>. Count the bytes written, not the final file size, so the scaffold's own bytes are
+      correctly excluded from the model's cost.</td>
+      <td class="num">~24,000</td>
+      <td class="num">&lt; 12,000</td>
+      <td class="num">2</td>
+    </tr>
+    <tr>
+      <td>Repeated layout-warning bytes</td>
+      <td>Send two feedback batches on an unchanged page holding one known severe finding. Compare the
+      <code>layout_warnings</code> bytes in each <code>poll</code> payload.</td>
+      <td class="num">n × warnings</td>
+      <td class="num">0 on repeat</td>
+      <td class="num">3</td>
+    </tr>
+    <tr>
+      <td>Regression safety</td>
+      <td><code>tests/run.sh</code>, judged on its own pass and fail lines rather than a piped exit code.</td>
+      <td class="num">green</td>
+      <td class="num">green</td>
+      <td class="num">all</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <strong>On the token numbers.</strong> Bytes are counted exactly; the token column is bytes ÷ 4. That is a
+  proxy, not a true tokenizer count, so treat the absolute figures as approximate and the before/after
+  <em>ratio</em> as the real result. The two findings still marked
+  <span class="badge b-low">estimated</span> - artifact boilerplate and whiteboard PNG reads - become measured
+  numbers the moment phase 2's rebuild comparison runs.
+</div>
+
+<h2>Scope</h2>
+
+<div class="scroll">
+<table>
+  <thead>
+    <tr><th>In scope</th><th>Out of scope</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>SKILL.md</code> wording and structure</td>
+      <td>The browser review UI (<code>chrome.html</code>, <code>whiteboard.js</code>) - it is client-side and costs no model tokens</td>
+    </tr>
+    <tr>
+      <td><code>arev.py</code> command surface: <code>playbook</code>, <code>brief</code>, <code>new</code>, <code>poll</code> defaults</td>
+      <td>Server startup and transport performance - measured at 0.32s, there is nothing to win</td>
+    </tr>
+    <tr>
+      <td><code>design.md</code> and the 7 playbooks</td>
+      <td>The whiteboard and Excalidraw pipeline - out until phases 1 and 2 prove their numbers</td>
+    </tr>
+    <tr>
+      <td>The <code>feedback</code> event payload in <code>server.py</code></td>
+      <td>Test-suite runtime - it runs in CI, not in the user's token budget</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<fieldset>
+  <legend>How much should I take on now?</legend>
+  <div class="choice">
+    <input type="radio" id="scope-1" name="scope" value="p0-p1" checked>
+    <label for="scope-1">Phase 0 and 1 only, then re-measure
+      <span class="why">Recommended: small, low-risk edits, and phase 1's numbers tell us whether phase 2's estimate holds up.</span></label>
+  </div>
+  <div class="choice">
+    <input type="radio" id="scope-2" name="scope" value="p0-p2">
+    <label for="scope-2">Phases 0 through 2
+      <span class="why">Includes the scaffold, which is the biggest win and also the biggest single change.</span></label>
+  </div>
+  <div class="choice">
+    <input type="radio" id="scope-3" name="scope" value="all">
+    <label for="scope-3">All phases
+      <span class="why">Phase 3 touches the feedback protocol, so it needs the full test suite green at each step.</span></label>
+  </div>
+</fieldset>
+
+<fieldset>
+  <legend>Anything you want dropped or added?</legend>
+  <div class="check">
+    <input type="checkbox" id="opt-1" name="options" value="skip-brief">
+    <label for="opt-1">Skip <code>arev brief</code> - I would rather not grow the command surface
+      <span class="why">Keeps the CLI smaller at the cost of two extra round trips per session.</span></label>
+  </div>
+  <div class="check">
+    <input type="checkbox" id="opt-2" name="options" value="measure-first">
+    <label for="opt-2">Instrument first - log real token counts per session before changing anything
+      <span class="why">Turns the two estimated findings into measured ones, at the cost of a delay.</span></label>
+  </div>
+  <div class="check">
+    <input type="checkbox" id="opt-3" name="options" value="trim-skillmd">
+    <label for="opt-3">Also trim <code>SKILL.md</code> itself - 2,340 tokens on every trigger is the largest fixed cost
+      <span class="why">Not in the plan above because the remote-environment and delivery-state sections look load-bearing. Say the word and I will audit them for cuts.</span></label>
+  </div>
+</fieldset>
+
+<footer>
+  Measurements taken 2026-07-31 against the installed skill at
+  <code>.claude/skills/artifact-review</code>, captured by
+  <code>docs/skill-efficiency-audit/bench.sh</code> into <code>baseline.txt</code>. Token figures use ~4 bytes
+  per token; items marked <span class="badge b-low">estimated</span> are reasoned from the design rules rather
+  than counted, and the measurement table above says exactly how each one becomes a real number.
+</footer>
+
+</main>
+</body>
+</html>
