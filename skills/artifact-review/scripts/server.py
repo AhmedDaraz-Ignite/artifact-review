@@ -22,6 +22,8 @@ import argparse
 import base64
 import binascii
 import copy
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -61,6 +63,9 @@ ARTIFACT = None          # absolute path of the reviewed file
 SESSION_DIR = None
 TOKEN = None
 ASSET_DIR = None
+ASSET_CACHE = {}
+ASSET_HASHES = {}
+ASSET_COMPRESSION_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
 STATE = {
     "version": 0,          # artifact file mtime_ns; chrome reloads on change
@@ -80,6 +85,77 @@ MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".png": "image/png", ".json": "application/json",
         ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
         ".wasm": "application/wasm"}
+
+REQUIRED_ASSETS = (
+    "audit.js",
+    "chrome.html",
+    "sdk.js",
+    "whiteboard-frame.html",
+    "whiteboard.js",
+    "whiteboard.css",
+)
+
+
+def _asset_entry(body, content_type):
+    digest = hashlib.sha256(body).hexdigest()
+    return {
+        "body": body,
+        "gzip": None,
+        "content_type": content_type,
+        "hash": digest,
+        "etag": '"' + digest + '"',
+        "gzip_etag": None,
+    }
+
+
+def _gzip_variant(entry):
+    if entry["gzip"] is None:
+        with ASSET_COMPRESSION_LOCK:
+            if entry["gzip"] is None:
+                compressed = gzip.compress(
+                    entry["body"], compresslevel=6, mtime=0)
+                entry["gzip"] = compressed
+                entry["gzip_etag"] = (
+                    '"' + hashlib.sha256(compressed).hexdigest() + '"')
+    return entry["gzip"], entry["gzip_etag"]
+
+
+def _load_asset_cache(asset_dir):
+    raw = {}
+    for name in REQUIRED_ASSETS:
+        path = os.path.join(asset_dir, name)
+        with open(path, "rb") as handle:
+            raw[name] = handle.read()
+
+    cache = {
+        "whiteboard.js": _asset_entry(
+            raw["whiteboard.js"], "application/javascript"),
+        "whiteboard.css": _asset_entry(raw["whiteboard.css"], "text/css"),
+    }
+    sdk = raw["audit.js"] + b"\n" + raw["sdk.js"]
+    cache["sdk.js"] = _asset_entry(sdk, "application/javascript")
+
+    frame = raw["whiteboard-frame.html"]
+    frame = frame.replace(
+        b'href="/whiteboard.css"',
+        ('href="/whiteboard.css?v=' + cache["whiteboard.css"]["hash"] + '"')
+        .encode("ascii"),
+    )
+    frame = frame.replace(
+        b'src="/whiteboard.js"',
+        ('src="/whiteboard.js?v=' + cache["whiteboard.js"]["hash"] + '"')
+        .encode("ascii"),
+    )
+    cache["whiteboard-frame"] = _asset_entry(
+        frame, "text/html; charset=utf-8")
+    cache["chrome.html"] = _asset_entry(
+        raw["chrome.html"], "text/html; charset=utf-8")
+    return cache
+
+
+def _asset_url(name):
+    entry = ASSET_CACHE[name]
+    return f"/{name}?v={entry['hash']}"
 
 
 def _persist_locked():
@@ -429,17 +505,60 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _accepts_gzip(self):
+        for item in (self.headers.get("Accept-Encoding") or "").split(","):
+            parts = [part.strip() for part in item.split(";")]
+            if not parts or parts[0].lower() not in ("gzip", "*"):
+                continue
+            quality = 1.0
+            for parameter in parts[1:]:
+                if parameter.lower().startswith("q="):
+                    try:
+                        quality = float(parameter[2:])
+                    except ValueError:
+                        quality = 0.0
+            if quality > 0:
+                return True
+        return False
+
+    def _static_entry(self, entry, public_static=False):
+        use_gzip = self._accepts_gzip()
+        if use_gzip:
+            compressed, compressed_etag = _gzip_variant(entry)
+            use_gzip = len(compressed) < len(entry["body"])
+        body = compressed if use_gzip else entry["body"]
+        etag = compressed_etag if use_gzip else entry["etag"]
+        version = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+        cache_control = (
+            "public, max-age=31536000, immutable"
+            if version == entry["hash"]
+            else "public, max-age=0, must-revalidate"
+        )
+
+        not_modified = self.headers.get("If-None-Match") == etag
+        self.send_response(304 if not_modified else 200)
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("ETag", etag)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if use_gzip:
+            self.send_header("Content-Encoding", "gzip")
+        if public_static:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        if not not_modified:
+            self.send_header("Content-Type", entry["content_type"])
+            self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not not_modified:
+            self.wfile.write(body)
+
     def _asset(self, name, public_static=False):
-        path = os.path.join(ASSET_DIR, name)
-        try:
-            with open(path, "rb") as fh:
-                body = fh.read()
-        except OSError:
+        entry = ASSET_CACHE.get(name)
+        if entry is None:
             self._json({"error": "asset not found", "asset": name}, 404)
             return
-        self._bytes(
-            body, MIME.get(os.path.splitext(name)[1], "text/plain"),
-            public_static=public_static)
+        self._static_entry(entry, public_static=public_static)
 
     def _body(self):
         raw_length = self.headers.get("Content-Length", "0")
@@ -481,7 +600,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/sdk.js":
             self._sdk()
         elif path == "/whiteboard-frame":
-            self._asset("whiteboard-frame.html", public_static=True)
+            self._asset("whiteboard-frame", public_static=True)
         elif path in ("/whiteboard.js", "/whiteboard.css"):
             self._asset(path.lstrip("/"), public_static=True)
         elif path.startswith("/whiteboard/"):
@@ -520,10 +639,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"saved": saved})
 
     def _chrome(self):
-        path = os.path.join(ASSET_DIR, "chrome.html")
-        html = open(path).read()
+        html = ASSET_CACHE["chrome.html"]["body"].decode("utf-8")
         boot = {"token": TOKEN, "artifact": ARTIFACT,
-                "name": os.path.basename(ARTIFACT)}
+                "name": os.path.basename(ARTIFACT),
+                "assets": ASSET_HASHES}
         html = html.replace("/*__AREV_BOOT__*/", "window.AREV = " + json.dumps(boot) + ";")
         self._bytes(html.encode(), "text/html; charset=utf-8")
 
@@ -533,7 +652,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as err:
             self._bytes(f"<h1>cannot read artifact</h1><p>{err}</p>".encode(), "text/html")
             return
-        tag = '<script src="/sdk.js"></script>'
+        tag = f'<script src="{_asset_url("sdk.js")}"></script>'
         # Inject before </body> when present, else append. The disk file is
         # untouched, so the artifact opened directly stays identical.
         if re.search(r"</body>", raw, re.I):
@@ -543,10 +662,7 @@ class Handler(BaseHTTPRequestHandler):
         self._bytes(raw.encode(), "text/html; charset=utf-8")
 
     def _sdk(self):
-        sdk = open(os.path.join(ASSET_DIR, "sdk.js")).read()
-        audit_path = os.path.join(ASSET_DIR, "audit.js")
-        audit = open(audit_path).read() if os.path.exists(audit_path) else "window.__arevAudit=function(){return []};"
-        self._bytes((audit + "\n" + sdk).encode(), "application/javascript")
+        self._asset("sdk.js")
 
     def _next(self, qs):
         try:
@@ -984,6 +1100,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     global ARTIFACT, SESSION_DIR, TOKEN, ASSET_DIR, ALLOWED_HOSTS
+    global ASSET_CACHE, ASSET_HASHES
     ap = argparse.ArgumentParser(
         description="Internal artifact-review session server. Prefer the "
                     "public `arev open` command.")
@@ -1006,6 +1123,15 @@ def main():
         ap.error(f"artifact is not a file: {ARTIFACT}")
     if not os.path.isdir(ASSET_DIR):
         ap.error(f"asset directory does not exist: {ASSET_DIR}")
+    try:
+        ASSET_CACHE = _load_asset_cache(ASSET_DIR)
+    except OSError as error:
+        ap.error(f"cannot load review runtime assets: {error}")
+    ASSET_HASHES = {
+        name: entry["hash"]
+        for name, entry in ASSET_CACHE.items()
+        if name != "chrome.html"
+    }
     if args.port < 0 or args.port > 65535:
         ap.error("--port must be between 0 and 65535")
     try:

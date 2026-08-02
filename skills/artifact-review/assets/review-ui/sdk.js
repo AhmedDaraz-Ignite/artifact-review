@@ -553,7 +553,9 @@
     iframe.style.pointerEvents = "none";
     board.host.insertBefore(iframe, board.overlay);
     iframe.src =
-      "/whiteboard-frame?diagram=" +
+      "/whiteboard-frame?" +
+      (board.frameVersion ? "v=" + board.frameVersion + "&" : "") +
+      "diagram=" +
       encodeURIComponent(board.id) +
       "&channel=" +
       encodeURIComponent(board.channel);
@@ -564,8 +566,10 @@
     var id = String(message.id || "");
     var channel = String(message.channel || "");
     var selector = String(message.selector || "");
+    var frameVersion = String(message.frameVersion || "");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || !channel || !selector)
       return;
+    if (frameVersion && !/^[0-9a-f]{64}$/.test(frameVersion)) return;
     var block;
     try {
       block = document.querySelector(selector);
@@ -634,6 +638,7 @@
         overlay: overlay,
         overlayLabel: overlayLabel,
         editorHeight: editorHeight,
+        frameVersion: frameVersion,
         unlocked: false,
         wantsUnlock: false,
         fullscreen: false,

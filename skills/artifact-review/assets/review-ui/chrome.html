@@ -1689,6 +1689,7 @@ async function prepareInlineDiagrams(blocks) {
       id:block.id,
       selector:block.selector,
       channel:record.channel,
+      frameVersion:String(B.assets?.["whiteboard-frame"] || ""),
     }, "*");
   }));
 

@@ -55,6 +55,15 @@ else
   tail -20 "$CLI_RAW"
 fi
 
+echo "== asset-delivery"
+ASSET_RAW="$WORK/asset-delivery.log"
+if python3 "$ROOT/tests/test_asset_delivery.py" > "$ASSET_RAW" 2>&1; then
+  echo "PASS hashed, compressed, conditional asset delivery" | tee -a "$OUT"
+else
+  echo "FAIL asset delivery - see $ASSET_RAW" | tee -a "$OUT"
+  tail -20 "$ASSET_RAW"
+fi
+
 run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html
