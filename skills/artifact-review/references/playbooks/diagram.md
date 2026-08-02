@@ -3,14 +3,14 @@ use_when: architecture diagram, flow chart, sequence diagram, system design arti
 ## Structure
 
 - One idea per diagram. If you're tempted to add a second concern (e.g. both the happy path and every error branch), split it into a second diagram instead.
-- Max 2-4 diagrams total in one artifact. More than that means the artifact needs sectioning, not more pictures.
+- Keep it to 2-4 diagrams per section. A rich artifact with many sections carries many diagrams; what it must not do is stack five pictures under one heading.
 - Give each diagram a one-line caption above it stating what it shows, in plain words.
 
 ## Markup
 
-- Always `<pre class="mermaid">...</pre>`, never `<div class="mermaid">`. `pre` preserves the whitespace mermaid's parser needs.
-- Load mermaid.js once, at the end of the body, and call `mermaid.initialize` after DOM content is present.
-- Wrap the render call in try/catch or listen for mermaid's error event - a syntax error in one diagram shouldn't blank the rest of the page.
+- Always `<pre class="mermaid" id="stable-id">...</pre>`, never a `<div>`. `pre` preserves the whitespace mermaid's parser needs, and the stable id keeps reviewer annotations attached across edits.
+- Never approximate a diagram with styled divs and arrow characters. Only Mermaid blocks render as real diagrams under review, open in the editable Excalidraw whiteboard, and accept node-level annotations.
+- Do not load mermaid.js yourself - no CDN script, no initialize call. The review server renders every Mermaid block offline with its own pinned Mermaid. Outside a review session the block shows its readable source text, which is the intended degraded form.
 - Put each diagram's container in `overflow-x: auto` with a sane max-width so a wide graph scrolls internally instead of blowing out the page.
 
 ## Labels

@@ -104,6 +104,29 @@ try {
       erIds.length === new Set(erIds).size,
     `flow=${flowIds.length}/${new Set(flowIds).size} er=${erIds.length}/${new Set(erIds).size}`,
   );
+  const conversionCoverage = await page.evaluate(async sources => {
+    const mod = await import('/whiteboard.js');
+    const results = {};
+    for (const [name, source] of Object.entries(sources)) {
+      const parsed = await mod.parseMermaidToExcalidraw(source);
+      const converted = mod.convertToExcalidrawElements(parsed.elements);
+      const live = converted.filter(element => !element.isDeleted);
+      results[name] = {
+        count: live.length,
+        image: live.length === 1 && live[0].type === 'image',
+      };
+    }
+    return results;
+  }, {
+    subgraphFlow: 'flowchart LR\n  A["one"] --> P\n  subgraph S["box"]\n    P["proc"]\n  end',
+    state: 'stateDiagram-v2\n  [*] --> queued\n  queued --> active\n  active --> [*]',
+    classDiagram: 'classDiagram\n  class Job {\n    +id\n  }\n  Job <|-- Run',
+  });
+  test.check(
+    'subgraph, state, and class diagrams convert to native shapes on Mermaid 11',
+    Object.values(conversionCoverage).every(result => !result.image && result.count > 4),
+    JSON.stringify(conversionCoverage),
+  );
   const manifest = JSON.parse(
     fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   );

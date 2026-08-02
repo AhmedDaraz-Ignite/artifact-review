@@ -683,6 +683,8 @@ def _doctor_checks():
                                   for name in ("whiteboard-frame.html",
                                                "whiteboard.js",
                                                "whiteboard.css")),
+        "offline_mermaid": os.path.isfile(
+            os.path.join(ASSET_DIR, "mermaid.js")),
     }
     checks["ok"] = all(value for key, value in checks.items()
                        if key not in ("python", "skill_dir", "state_dir"))

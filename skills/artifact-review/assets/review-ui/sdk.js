@@ -852,6 +852,23 @@
     return blocks;
   }
 
+  function renderMermaidLocally(blocks) {
+    var pending = blocks.some(function (block) {
+      var holder = document.getElementById(block.id);
+      return (
+        holder &&
+        !holder.querySelector("svg") &&
+        !holder.getAttribute("data-processed")
+      );
+    });
+    if (!pending) return;
+    // The review server bundles the same pinned Mermaid the whiteboard uses,
+    // so diagrams render with no CDN and no network at all.
+    import(window.location.origin + "/mermaid.js").catch(function (err) {
+      console.warn("arev: local Mermaid renderer failed to load", err);
+    });
+  }
+
   function boot() {
     var findings = [];
     try {
@@ -860,9 +877,11 @@
       /* a crashed audit must never block review */
     }
     send({ type: "audit-done", findings: findings });
+    var mermaidBlocks = findMermaid();
+    renderMermaidLocally(mermaidBlocks);
     send({
       type: "sdk-ready",
-      mermaid: findMermaid(),
+      mermaid: mermaidBlocks,
       title: document.title || "",
     });
   }

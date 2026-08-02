@@ -58,6 +58,17 @@ try {
   await page.goto(url, { waitUntil:'domcontentloaded' });
   await page.locator('#curtain').waitFor({ state:'hidden', timeout:8000 });
 
+  let pageMermaidRendered = false;
+  try {
+    await page.frameLocator('#art').locator('pre.mermaid svg').first()
+      .waitFor({ state:'visible', timeout:15000 });
+    pageMermaidRendered = true;
+  } catch {}
+  test.check(
+    'offline artifact page renders Mermaid source to SVG without a CDN',
+    pageMermaidRendered,
+  );
+
   const diagram = await waitForInlineDiagram(page);
   await openWhiteboard(page, diagram);
   const expectedRectangle = await drawLargeRectangle(page, diagram);

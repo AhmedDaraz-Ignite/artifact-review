@@ -29,8 +29,11 @@ the type is unclear, inspect the index and fetch only matching ids:
 "$AREV" new "/absolute/path/to/review.html" --title "Review title"
 ```
 
-Fill only the scaffold's `<!-- arev:content -->` region. Put Mermaid in
-`<pre class="mermaid" id="stable-id">`. Then open the absolute path once:
+Fill only the scaffold's `<!-- arev:content -->` region. Every diagram is
+Mermaid in `<pre class="mermaid" id="stable-id">` - never hand-built div
+boxes, and never a CDN script; the review server renders Mermaid offline and
+attaches the editable whiteboard only to those blocks. Then open the absolute
+path once:
 
 ```bash
 ARTIFACT="/absolute/path/to/review.html"
