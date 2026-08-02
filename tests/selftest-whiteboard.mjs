@@ -199,8 +199,12 @@ try {
     JSON.stringify(delivered),
   );
   test.check(
-    'feedback snapshots are immutable and uniquely named',
-    delivered[0].scene_path !== delivered[1].scene_path &&
+    'byte-identical feedback snapshots reuse immutable content-addressed blobs',
+    delivered[0].scene_path === delivered[1].scene_path &&
+      delivered[0].png_path === delivered[1].png_path &&
+      delivered[0].scene_hash === delivered[1].scene_hash &&
+      delivered[0].png_hash === delivered[1].png_hash &&
+      delivered[0].scene_path.includes('/whiteboards/blobs/') &&
       fs.readFileSync(firstQueued.scene_path).equals(firstSnapshot),
     delivered.map(item => item.scene_path).join(','),
   );

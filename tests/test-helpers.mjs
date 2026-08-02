@@ -124,7 +124,10 @@ export function sessionApi(url) {
     });
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error || `request failed (${response.status})`);
+      const error = new Error(data.error || `request failed (${response.status})`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
     }
     return data;
   };

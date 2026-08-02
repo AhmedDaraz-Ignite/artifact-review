@@ -236,6 +236,33 @@ try {
     JSON.stringify(badge),
   );
 
+  for (let start = 100; start < 500; start += 20) {
+    await Promise.all(Array.from({ length:20 }, (_, offset) =>
+      api('POST', '/queue', {
+        item:{ kind:'chat', text:`queue boundary draft ${start + offset + 1}` },
+      })
+    ));
+  }
+  await waitForQueueCount(page, 500, 8000);
+  let queueOverflow;
+  try {
+    await api('POST', '/queue', {
+      item:{ kind:'chat', text:'one draft past the boundary' },
+    });
+  } catch (error) {
+    queueOverflow = error;
+  }
+  const queueAfterOverflow = await api('GET', '/state');
+  test.check(
+    'queue quota accepts its boundary and rejects one more without mutation',
+    queueOverflow?.status === 413 &&
+      queueOverflow?.data?.resource === 'queue_items' &&
+      queueOverflow?.data?.limit === 500 &&
+      queueOverflow?.data?.current === 501 &&
+      queueAfterOverflow.queue.length === 500,
+    JSON.stringify(queueOverflow?.data),
+  );
+
   await page.locator('#draftDockBtn').click();
   await page.waitForTimeout(200);
   const draftScroll = await page.locator('#queue').evaluate(element => {

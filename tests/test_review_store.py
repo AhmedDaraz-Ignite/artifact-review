@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -16,7 +17,8 @@ SCRIPTS = ROOT / "skills" / "artifact-review" / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from review_store import ReviewStore
+from review_store import QuotaExceeded, ReviewStore
+import server as SERVER
 from versioning import STATE_SCHEMA
 
 
@@ -239,6 +241,141 @@ class ReviewStoreTests(unittest.TestCase):
         self.assertEqual(newest["total"], 125)
         self.assertTrue(newest["has_more"])
         self.assertFalse(oldest["has_more"])
+
+    def test_fixed_quotas_accept_the_boundary_and_describe_overflow(self):
+        SERVER._require_quota("queue_items", 500, 500)
+        SERVER._require_quota("pending_events", 1000, 1000)
+        with self.assertRaises(QuotaExceeded) as raised:
+            SERVER._require_quota("pending_events", 1001, 1000)
+        self.assertEqual(raised.exception.payload(), {
+            "error": "pending_events limit exceeded",
+            "resource": "pending_events",
+            "limit": 1000,
+            "current": 1001,
+        })
+
+        previous_state = copy.deepcopy(SERVER.STATE)
+        previous_feed_limit = SERVER.MAX_FEED_ITEMS
+        try:
+            SERVER.STATE["queue"] = [{
+                "qid": "waiting", "kind": "chat", "text": "keep me",
+            }]
+            SERVER.STATE["events"] = [
+                {"id": f"event-{index}", "type": "feedback"}
+                for index in range(1000)
+            ]
+            with self.assertRaises(QuotaExceeded):
+                SERVER._feedback_event_locked()
+            self.assertEqual(SERVER.STATE["queue"][0]["qid"], "waiting")
+
+            SERVER.MAX_FEED_ITEMS = 2
+            SERVER.STATE["feed"] = [{"id": "one"}, {"id": "two"}]
+            SERVER._append_feed_locked({"id": "three"})
+            self.assertEqual(
+                [item["id"] for item in SERVER.STATE["feed"]],
+                ["two", "three"],
+            )
+        finally:
+            SERVER.STATE.clear()
+            SERVER.STATE.update(previous_state)
+            SERVER.MAX_FEED_ITEMS = previous_feed_limit
+
+    def test_feed_retention_keeps_newest_rows_and_records_trimmed_count(self):
+        store = self.open_store()
+        try:
+            state = sample_state()
+            store.sync(state)
+            state["feed"] = state["feed"][1:]
+            store.sync(state)
+            self.assertEqual(store.load()["feed"], state["feed"])
+            self.assertEqual(store.usage()["feed_trimmed"], 1)
+        finally:
+            store.close()
+
+    def test_snapshots_deduplicate_enforce_limits_and_prune_by_reference(self):
+        store = self.open_store()
+        previous = {
+            "session": SERVER.SESSION_DIR,
+            "store": SERVER.STORE,
+            "blob_limit": SERVER.MAX_SNAPSHOT_BLOBS,
+            "byte_limit": SERVER.MAX_SNAPSHOT_BYTES,
+        }
+        SERVER.SESSION_DIR = str(self.session_dir)
+        SERVER.STORE = store
+        png = b"\x89PNG\r\n\x1a\n" + b"preview" * 20
+        try:
+            first = SERVER._save_whiteboard_blobs_locked(
+                {"type": "excalidraw", "elements": [{"id": "one"}]}, png)
+            duplicate = SERVER._save_whiteboard_blobs_locked(
+                {"elements": [{"id": "one"}], "type": "excalidraw"}, png)
+            different = SERVER._save_whiteboard_blobs_locked(
+                {"type": "excalidraw", "elements": [{"id": "two"}]}, png)
+            self.assertEqual(first, duplicate)
+            self.assertNotEqual(first["scene_path"], different["scene_path"])
+            self.assertEqual(first["png_path"], different["png_path"])
+            self.assertEqual(store.usage()["snapshot_blobs"], 3)
+
+            SERVER.MAX_SNAPSHOT_BLOBS = 3
+            SERVER._save_whiteboard_blobs_locked(
+                {"type": "excalidraw", "elements": [{"id": "one"}]}, png)
+            with self.assertRaises(QuotaExceeded) as raised:
+                SERVER._save_whiteboard_blobs_locked(
+                    {"type": "excalidraw", "elements": [{"id": "three"}]}, png)
+            self.assertEqual(raised.exception.resource, "snapshot_blobs")
+            self.assertEqual(raised.exception.current, 4)
+
+            state = ReviewStore.empty_state()
+            state["queue"] = [{
+                "qid": "keep-blob",
+                "kind": "whiteboard",
+                "scene_path": first["scene_path"],
+                "png_path": first["png_path"],
+                "scene_hash": first["scene_hash"],
+                "png_hash": first["png_hash"],
+            }]
+            store.sync(state)
+            pruned = store.prune_unreferenced_blobs()
+            self.assertEqual(pruned["removed_count"], 1)
+            self.assertTrue(pathlib.Path(first["scene_path"]).is_file())
+            self.assertTrue(pathlib.Path(first["png_path"]).is_file())
+            self.assertFalse(pathlib.Path(different["scene_path"]).exists())
+        finally:
+            SERVER.SESSION_DIR = previous["session"]
+            SERVER.STORE = previous["store"]
+            SERVER.MAX_SNAPSHOT_BLOBS = previous["blob_limit"]
+            SERVER.MAX_SNAPSHOT_BYTES = previous["byte_limit"]
+            store.close()
+
+    def test_partial_snapshot_failure_removes_new_blobs_and_temps(self):
+        store = self.open_store()
+        previous_session = SERVER.SESSION_DIR
+        previous_store = SERVER.STORE
+        SERVER.SESSION_DIR = str(self.session_dir)
+        SERVER.STORE = store
+        original_write = SERVER._write_blob_atomic
+        calls = 0
+
+        def fail_second_write(path, value, digest):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("forced PNG failure")
+            return original_write(path, value, digest)
+
+        try:
+            with mock.patch.object(
+                    SERVER, "_write_blob_atomic", side_effect=fail_second_write):
+                with self.assertRaises(OSError):
+                    SERVER._save_whiteboard_blobs_locked(
+                        {"type": "excalidraw", "elements": [{"id": "partial"}]},
+                        b"\x89PNG\r\n\x1a\npartial",
+                    )
+            blob_dir = self.session_dir / "whiteboards" / "blobs"
+            self.assertEqual(list(blob_dir.iterdir()), [])
+        finally:
+            SERVER.SESSION_DIR = previous_session
+            SERVER.STORE = previous_store
+            store.close()
 
 
 if __name__ == "__main__":

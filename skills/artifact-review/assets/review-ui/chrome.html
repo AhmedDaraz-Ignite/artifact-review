@@ -1903,6 +1903,8 @@ async function submitInlineDiagram(record, message) {
         summary,
         scene_path:saved.scene_path,
         png_path:saved.png_path,
+        scene_hash:saved.scene_hash,
+        png_hash:saved.png_hash,
         source_hash:saved.source_hash || sourceHashValue,
         image_fallback:!!message.image_fallback,
         stats:message.stats || {},

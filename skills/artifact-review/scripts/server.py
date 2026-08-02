@@ -41,7 +41,7 @@ from urllib.parse import urlparse, parse_qs
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
-from review_store import ReviewStore
+from review_store import QuotaExceeded, ReviewStore
 from versioning import EVENT_SCHEMA, STATE_SCHEMA, TOOL_VERSION, event_envelope
 
 VERSION = TOOL_VERSION
@@ -49,6 +49,11 @@ INSTANCE_ID = str(uuid.uuid4())
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_WHITEBOARD_PNG_BYTES = 20 * 1024 * 1024
 MAX_WHITEBOARD_ID_LENGTH = 128
+MAX_QUEUE_ITEMS = 500
+MAX_PENDING_EVENTS = 1000
+MAX_FEED_ITEMS = 10000
+MAX_SNAPSHOT_BLOBS = 1000
+MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
@@ -182,6 +187,8 @@ def _restore():
     for key in ("queue", "feed"):
         if isinstance(saved.get(key), list):
             STATE[key] = saved[key]
+    if len(STATE["feed"]) > MAX_FEED_ITEMS:
+        STATE["feed"] = STATE["feed"][-MAX_FEED_ITEMS:]
     restored_events = saved.get("events")
     if isinstance(restored_events, list):
         # Feedback remains durable. Layout and ended events describe the prior
@@ -288,6 +295,13 @@ def _delta_since_locked(after):
 
 
 def _queue_item_locked(item):
+    proposed = [
+        queued for queued in STATE["queue"]
+        if not (item.get("kind") == "control"
+                and queued.get("kind") == "control"
+                and queued.get("selector") == item.get("selector"))
+    ]
+    _require_quota("queue_items", len(proposed) + 1, MAX_QUEUE_ITEMS)
     item["qid"] = secrets.token_hex(4)
     item["ts"] = time.time()
     if item["kind"] == "control":
@@ -298,6 +312,17 @@ def _queue_item_locked(item):
         ]
     STATE["queue"].append(item)
     return item
+
+
+def _require_quota(resource, proposed, limit):
+    if proposed > limit:
+        raise QuotaExceeded(resource, limit, proposed)
+
+
+def _append_feed_locked(item):
+    STATE["feed"].append(item)
+    if len(STATE["feed"]) > MAX_FEED_ITEMS:
+        del STATE["feed"][:-MAX_FEED_ITEMS]
 
 
 def _warning_key(finding):
@@ -324,6 +349,8 @@ def _undelivered_warnings_locked():
 def _feedback_event_locked():
     if not STATE["queue"]:
         return None
+    _require_quota(
+        "pending_events", len(STATE["events"]) + 1, MAX_PENDING_EVENTS)
     items = STATE["queue"]
     STATE["queue"] = []
     sent_at = time.time()
@@ -334,7 +361,7 @@ def _feedback_event_locked():
         layout_warnings=_undelivered_warnings_locked(),
         sent_at=sent_at,
     )
-    STATE["feed"].append({
+    _append_feed_locked({
         "id": event["id"],
         "role": "human",
         "ts": sent_at,
@@ -384,24 +411,6 @@ def _write_private_json(path, value):
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(value, fh, indent=2)
-            fh.flush()
-        try:
-            os.chmod(tmp, 0o600)
-        except OSError:
-            pass
-        os.replace(tmp, path)
-    finally:
-        try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-
-
-def _write_private_bytes(path, value):
-    tmp = path + ".tmp"
-    try:
-        with open(tmp, "wb") as fh:
-            fh.write(value)
             fh.flush()
         try:
             os.chmod(tmp, 0o600)
@@ -493,17 +502,115 @@ def _normalise_working_record(value):
     }
 
 
-def _new_whiteboard_snapshot_paths_locked(
-        directory, whiteboard_id, include_png):
-    for _ in range(16):
-        suffix = f"{time.time_ns():x}-{secrets.token_hex(8)}"
-        stem = f"{whiteboard_id}.{suffix}"
-        scene_path = os.path.join(directory, stem + ".excalidraw")
-        png_path = os.path.join(directory, stem + ".png") if include_png else None
-        if (not os.path.exists(scene_path)
-                and (png_path is None or not os.path.exists(png_path))):
-            return scene_path, png_path
-    raise OSError("cannot allocate a unique whiteboard snapshot")
+def _whiteboard_blob_dir_locked():
+    path = os.path.join(_whiteboard_dir_locked(), "blobs")
+    os.makedirs(path, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    return path
+
+
+def _digest_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_blob_atomic(path, value, digest):
+    if os.path.exists(path):
+        if os.path.getsize(path) != len(value) or _digest_file(path) != digest:
+            raise OSError(f"content-addressed blob is corrupt: {path}")
+        return False
+    tmp = os.path.join(
+        os.path.dirname(path),
+        f".{os.path.basename(path)}.{secrets.token_hex(8)}.tmp",
+    )
+    try:
+        with open(tmp, "xb") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+        return True
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def _save_whiteboard_blobs_locked(scene, png_bytes):
+    scene_bytes = json.dumps(
+        scene, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    scene_hash = hashlib.sha256(scene_bytes).hexdigest()
+    png_hash = (
+        hashlib.sha256(png_bytes).hexdigest()
+        if png_bytes is not None else None
+    )
+    directory = _whiteboard_blob_dir_locked()
+    targets = [(
+        os.path.join(directory, scene_hash + ".excalidraw"),
+        scene_bytes,
+        scene_hash,
+    )]
+    if png_bytes is not None:
+        targets.append((
+            os.path.join(directory, png_hash + ".png"),
+            png_bytes,
+            png_hash,
+        ))
+
+    added = []
+    added_bytes = 0
+    for path, value, digest in targets:
+        if os.path.exists(path):
+            if os.path.getsize(path) != len(value) or _digest_file(path) != digest:
+                raise OSError(f"content-addressed blob is corrupt: {path}")
+        else:
+            added.append((path, value, digest))
+            added_bytes += len(value)
+    usage = STORE.usage()
+    _require_quota(
+        "snapshot_blobs",
+        usage["snapshot_blobs"] + len(added),
+        MAX_SNAPSHOT_BLOBS,
+    )
+    _require_quota(
+        "snapshot_bytes",
+        usage["snapshot_bytes"] + added_bytes,
+        MAX_SNAPSHOT_BYTES,
+    )
+
+    created = []
+    try:
+        for path, value, digest in added:
+            if _write_blob_atomic(path, value, digest):
+                created.append(path)
+    except Exception:
+        for path in created:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        raise
+    return {
+        "scene_path": targets[0][0],
+        "png_path": targets[1][0] if len(targets) > 1 else None,
+        "scene_hash": scene_hash,
+        "png_hash": png_hash,
+    }
 
 
 def _normalise_host(value):
@@ -556,6 +663,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
+
+    def _quota(self, error):
+        self._json(error.payload(), 413)
 
     def _bytes(self, body, ctype, public_static=False):
         self.send_response(200)
@@ -912,7 +1022,11 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            _queue_item_locked(item)
+            try:
+                _queue_item_locked(item)
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "qid": item["qid"], "queued": len(STATE["queue"])})
@@ -934,7 +1048,11 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            event = _feedback_event_locked()
+            try:
+                event = _feedback_event_locked()
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             if not event:
                 self._json({"error": "queue empty"}, 400)
                 return
@@ -962,9 +1080,18 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            if item:
-                _queue_item_locked(item)
-            event = _feedback_event_locked()
+            try:
+                # Check the event boundary before adding a supplied item so a
+                # rejected send never changes the existing draft queue.
+                _require_quota(
+                    "pending_events", len(STATE["events"]) + 1,
+                    MAX_PENDING_EVENTS)
+                if item:
+                    _queue_item_locked(item)
+                event = _feedback_event_locked()
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             if not event:
                 self._json({"error": "queue empty"}, 400)
                 return
@@ -986,7 +1113,7 @@ class Handler(BaseHTTPRequestHandler):
                         entry["status"] = "answered"
                         entry["answered_at"] = time.time()
                         break
-            STATE["feed"].append({
+            _append_feed_locked({
                 "id": secrets.token_hex(8),
                 "role": "agent",
                 "ts": time.time(),
@@ -1048,10 +1175,20 @@ class Handler(BaseHTTPRequestHandler):
                 return
             STATE["ended"] = True
             STATE["ended_by"] = by
-            STATE["events"] = [
+            remaining_events = [
                 event for event in STATE["events"]
                 if event.get("type") != "layout"
             ]
+            try:
+                _require_quota(
+                    "pending_events", len(remaining_events) + 1,
+                    MAX_PENDING_EVENTS)
+            except QuotaExceeded as error:
+                STATE["ended"] = False
+                STATE["ended_by"] = None
+                self._quota(error)
+                return
+            STATE["events"] = remaining_events
             event = event_envelope(
                 "ended",
                 id=secrets.token_hex(8),
@@ -1095,16 +1232,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "session ended"}, 409)
                 return
             severe = _severe(findings)
+            remaining_events = [
+                event for event in STATE["events"]
+                if event.get("type") != "layout"
+            ]
+            if severe:
+                try:
+                    _require_quota(
+                        "pending_events", len(remaining_events) + 1,
+                        MAX_PENDING_EVENTS)
+                except QuotaExceeded as error:
+                    self._quota(error)
+                    return
             STATE["audit"] = {
                 "status": "blocked" if severe else "clear",
                 "findings": findings,
             }
             # A report supersedes every older layout event. This also removes a
             # stale severe event when a re-audit of changed content is clean.
-            STATE["events"] = [
-                event for event in STATE["events"]
-                if event.get("type") != "layout"
-            ]
+            STATE["events"] = remaining_events
             if severe:
                 # The agent hears about a proven failure immediately. It can
                 # fix and re-check before the human ever sees the page.
@@ -1180,19 +1326,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "session ended"}, 409)
                 return
             try:
-                wdir = _whiteboard_dir_locked()
-                scene_path, png_path = _new_whiteboard_snapshot_paths_locked(
-                    wdir, wid, png_bytes is not None)
-                _write_private_json(scene_path, scene)
-                if png_path:
-                    _write_private_bytes(png_path, png_bytes)
+                saved = _save_whiteboard_blobs_locked(scene, png_bytes)
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             except OSError as error:
                 self._json({"error": f"cannot save whiteboard: {error}"}, 500)
                 return
         self._json({
             "ok": True,
-            "scene_path": scene_path,
-            "png_path": png_path,
+            **saved,
             "source_hash": source_hash,
         })
 

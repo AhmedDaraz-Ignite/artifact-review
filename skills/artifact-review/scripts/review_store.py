@@ -34,6 +34,24 @@ def _legacy_id(kind, index, value):
     return f"legacy-{kind}-{digest}"
 
 
+class QuotaExceeded(Exception):
+    """A stable quota failure that HTTP and CLI callers can render alike."""
+
+    def __init__(self, resource, limit, current):
+        self.resource = resource
+        self.limit = int(limit)
+        self.current = int(current)
+        super().__init__(f"{resource} limit exceeded")
+
+    def payload(self):
+        return {
+            "error": str(self),
+            "resource": self.resource,
+            "limit": self.limit,
+            "current": self.current,
+        }
+
+
 class ReviewStore:
     """A normalized, transactional store for one in-memory review state.
 
@@ -161,7 +179,7 @@ class ReviewStore:
             if stored is not None and _decode(stored[0]) != self.state_schema:
                 raise RuntimeError(
                     "review store schema does not match this tool version")
-            values = {"state_schema": self.state_schema}
+            values = {"state_schema": self.state_schema, "feed_trimmed": 0}
             values.update({key: empty[key] for key in SCALAR_KEYS})
             for key, value in values.items():
                 self._conn.execute(
@@ -300,7 +318,8 @@ class ReviewStore:
     def _sync_feed(self, current, previous):
         current_ids = {item["id"] for item in current}
         previous_by_id = {item["id"]: item for item in previous}
-        for old_id in set(previous_by_id) - current_ids:
+        removed = set(previous_by_id) - current_ids
+        for old_id in removed:
             self._conn.execute(
                 "DELETE FROM feed_items WHERE item_id=?", (old_id,))
         for item in current:
@@ -313,6 +332,7 @@ class ReviewStore:
                 "payload_json=excluded.payload_json",
                 (item_id, _json(item)),
             )
+        return len(removed)
 
     def sync(self, state):
         normalised = self._normalise_state(state)
@@ -325,7 +345,19 @@ class ReviewStore:
                 self._sync_ordered(
                     "queue_items", "qid", normalised["queue"],
                     self._last_state["queue"])
-                self._sync_feed(normalised["feed"], self._last_state["feed"])
+                trimmed = self._sync_feed(
+                    normalised["feed"], self._last_state["feed"])
+                if trimmed:
+                    row = self._conn.execute(
+                        "SELECT value_json FROM meta WHERE key='feed_trimmed'"
+                    ).fetchone()
+                    total_trimmed = (_decode(row[0]) if row else 0) + trimmed
+                    self._conn.execute(
+                        "INSERT INTO meta(key, value_json) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET "
+                        "value_json=excluded.value_json",
+                        ("feed_trimmed", _json(total_trimmed)),
+                    )
                 self._sync_ordered(
                     "agent_events", "id", normalised["events"],
                     self._last_state["events"])
@@ -378,6 +410,96 @@ class ReviewStore:
             if before is None and limit == 50:
                 self._activity_cache = copy.deepcopy(page)
             return page
+
+    def usage(self):
+        with self._lock:
+            self._ensure_open()
+            counts = {}
+            for resource, table in (
+                    ("queue_items", "queue_items"),
+                    ("pending_events", "agent_events"),
+                    ("feed_items", "feed_items")):
+                counts[resource] = self._conn.execute(
+                    f"SELECT count(*) FROM {table}").fetchone()[0]
+            row = self._conn.execute(
+                "SELECT value_json FROM meta WHERE key='feed_trimmed'"
+            ).fetchone()
+            counts["feed_trimmed"] = _decode(row[0]) if row else 0
+            blob_count = 0
+            blob_bytes = 0
+            whiteboards = os.path.join(self.session_dir, "whiteboards")
+            for directory in (whiteboards, os.path.join(whiteboards, "blobs")):
+                try:
+                    entries = list(os.scandir(directory))
+                except FileNotFoundError:
+                    entries = []
+                for entry in entries:
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    if not (entry.name.endswith(".excalidraw")
+                            or entry.name.endswith(".png")):
+                        continue
+                    blob_count += 1
+                    blob_bytes += entry.stat(follow_symlinks=False).st_size
+            counts["snapshot_blobs"] = blob_count
+            counts["snapshot_bytes"] = blob_bytes
+            return counts
+
+    @staticmethod
+    def _referenced_blob_names(value):
+        names = set()
+
+        def visit(node):
+            if isinstance(node, dict):
+                for key, child in node.items():
+                    if key in ("scene_path", "png_path") and isinstance(child, str):
+                        names.add(os.path.basename(child))
+                    elif key == "scene_hash" and isinstance(child, str):
+                        names.add(child + ".excalidraw")
+                    elif key == "png_hash" and isinstance(child, str):
+                        names.add(child + ".png")
+                    visit(child)
+            elif isinstance(node, list):
+                for child in node:
+                    visit(child)
+
+        visit(value)
+        return names
+
+    def prune_unreferenced_blobs(self):
+        with self._lock:
+            self._ensure_open()
+            state = self._load_unlocked()
+            referenced = self._referenced_blob_names({
+                "queue": state["queue"],
+                "feed": state["feed"],
+                "events": state["events"],
+            })
+            directory = os.path.join(
+                self.session_dir, "whiteboards", "blobs")
+            removed = []
+            removed_bytes = 0
+            try:
+                entries = list(os.scandir(directory))
+            except FileNotFoundError:
+                entries = []
+            for entry in entries:
+                if entry.name in referenced:
+                    continue
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                if not (entry.name.endswith(".excalidraw")
+                        or entry.name.endswith(".png")):
+                    continue
+                size = entry.stat(follow_symlinks=False).st_size
+                os.unlink(entry.path)
+                removed.append(entry.path)
+                removed_bytes += size
+            return {
+                "removed": removed,
+                "removed_count": len(removed),
+                "removed_bytes": removed_bytes,
+            }
 
     def _ensure_open(self):
         if self._closed:
