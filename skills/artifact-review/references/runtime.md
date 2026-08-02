@@ -15,6 +15,8 @@ dark mode, overflow, focus, and reading-width rules. Treat every selected
 playbook as a requirement for content inside the marked region. Do not write
 review state, generated whiteboard scenes, or screenshots into the skill.
 
+The review server renders every `<pre class="mermaid">` block in the page
+offline with its own pinned Mermaid; artifacts must not load a Mermaid CDN.
 Flowchart, sequence, class, ER, and state Mermaid diagrams become editable
 shapes. Other valid Mermaid types use a labeled image-annotation fallback.
 

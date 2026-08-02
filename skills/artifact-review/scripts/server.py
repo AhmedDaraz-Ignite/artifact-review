@@ -58,6 +58,7 @@ END_SHUTDOWN_DELAY = 300.0
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
+    "/mermaid.js",
 ))
 WHITEBOARD_ID_RE = re.compile(
     rf"^[a-zA-Z0-9_-]{{1,{MAX_WHITEBOARD_ID_LENGTH}}}$")
@@ -110,6 +111,7 @@ REQUIRED_ASSETS = (
     "whiteboard-frame.html",
     "whiteboard.js",
     "whiteboard.css",
+    "mermaid.js",
 )
 
 
@@ -148,6 +150,8 @@ def _load_asset_cache(asset_dir):
         "whiteboard.js": _asset_entry(
             raw["whiteboard.js"], "application/javascript"),
         "whiteboard.css": _asset_entry(raw["whiteboard.css"], "text/css"),
+        "mermaid.js": _asset_entry(
+            raw["mermaid.js"], "application/javascript"),
     }
     sdk = raw["audit.js"] + b"\n" + raw["sdk.js"]
     cache["sdk.js"] = _asset_entry(sdk, "application/javascript")
@@ -809,7 +813,7 @@ class Handler(BaseHTTPRequestHandler):
             self._sdk()
         elif path == "/whiteboard-frame":
             self._asset("whiteboard-frame", public_static=True)
-        elif path in ("/whiteboard.js", "/whiteboard.css"):
+        elif path in ("/whiteboard.js", "/whiteboard.css", "/mermaid.js"):
             self._asset(path.lstrip("/"), public_static=True)
         elif path.startswith("/whiteboard/"):
             self._whiteboard_working_get(path[len("/whiteboard/"):])
