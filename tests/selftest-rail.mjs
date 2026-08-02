@@ -15,11 +15,89 @@ let browser;
 try {
   const url = openSession(ART);
   const api = sessionApi(url);
+  for (let index = 0; index < 125; index += 1) {
+    await api('POST', '/agent-reply', { text:`History entry ${index}` });
+  }
+  const bounded = await api('GET', '/state');
+  test.check(
+    'initial state bounds activity to the newest 50 entries',
+    bounded.feed.length === 50 &&
+      bounded.feed[0].text === 'History entry 75' &&
+      bounded.feed.at(-1).text === 'History entry 124' &&
+      bounded.activity?.total === 125 &&
+      bounded.activity?.has_more === true &&
+      Number.isInteger(bounded.activity?.next_before),
+    JSON.stringify({ feed:bounded.feed.length, activity:bounded.activity }),
+  );
+  const middle = await api(
+    'GET', `/activity?before=${bounded.activity?.next_before}&limit=50`);
+  const oldest = await api(
+    'GET', `/activity?before=${middle.next_before}&limit=50`);
+  const historyIds = [...oldest.items, ...middle.items, ...bounded.feed]
+    .map(entry => entry.id);
+  test.check(
+    'activity pages have no gaps or overlaps',
+    oldest.items.length === 25 && middle.items.length === 50 &&
+      historyIds.length === 125 && new Set(historyIds).size === 125 &&
+      oldest.has_more === false,
+    JSON.stringify({ oldest:oldest.items.length, middle:middle.items.length }),
+  );
+
+  const deltaStart = bounded.revision;
+  const queued = await api('POST', '/queue', {
+    item:{ kind:'chat', text:'delta-only draft' },
+  });
+  const delta = await api(
+    'GET', `/state/next?after=${deltaStart}&timeout=1&mode=delta`);
+  test.check(
+    'queue-only state change returns a compact revision delta',
+    delta.mode === 'delta' && delta.revision > deltaStart &&
+      delta.changes?.queue?.some(item => item.qid === queued.qid) &&
+      !('feed' in (delta.changes || {})) &&
+      !('feed_upserts' in (delta.changes || {})),
+    JSON.stringify(delta),
+  );
+  await api('POST', '/unqueue', { qid:queued.qid });
+
+  for (let start = 0; start < 260; start += 20) {
+    await Promise.all(Array.from(
+      { length:Math.min(20, 260 - start) },
+      () => api('POST', '/agent-status', { status:'working' }),
+    ));
+  }
+  const reset = await api(
+    'GET', `/state/next?after=${deltaStart}&timeout=1&mode=delta`);
+  test.check(
+    'clients older than the delta window receive one bounded reset',
+    reset.mode === 'reset' && reset.state?.feed?.length === 50 &&
+      reset.state?.activity?.total === 125,
+    JSON.stringify({ mode:reset.mode, feed:reset.state?.feed?.length }),
+  );
+
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport:{ width:1440, height:950 } });
   page.on('pageerror', error => pageErrors.push(error.message));
   await page.goto(url, { waitUntil:'domcontentloaded' });
   await page.locator('#curtain').waitFor({ state:'hidden', timeout:8000 });
+
+  await page.locator('#loadEarlierActivity').click();
+  await page.locator('#feed .feed-entry').nth(99).waitFor({ timeout:5000 });
+  await page.locator('#loadEarlierActivity').click();
+  await page.locator('#feed .feed-entry').nth(124).waitFor({ timeout:5000 });
+  const loadedHistory = await page.evaluate(() => ({
+    entries:document.querySelectorAll('#feed .feed-entry').length,
+    first:document.querySelector('#feed .feed-entry pre')?.textContent,
+    last:[...document.querySelectorAll('#feed .feed-entry pre')].at(-1)?.textContent,
+    loadHidden:document.getElementById('loadEarlierActivity').hidden,
+  }));
+  test.check(
+    'Load earlier activity restores complete history in stable order',
+    loadedHistory.entries === 125 &&
+      loadedHistory.first === 'History entry 0' &&
+      loadedHistory.last === 'History entry 124' &&
+      loadedHistory.loadHidden === true,
+    JSON.stringify(loadedHistory),
+  );
 
   const controls = await page.locator([
     '#railToggle',
@@ -71,7 +149,8 @@ try {
   test.check(
     'collapse keeps the live composer DOM and text intact',
     await page.locator('#reviewRailPanel').count() === 1 &&
-      await page.locator('#chat').inputValue() === 'preserve this unsent panel note',
+      await page.locator('#chat').inputValue() === 'preserve this unsent panel note' &&
+      await page.locator('#feed .feed-entry').count() === 125,
   );
 
   async function activateDockTarget(button, expectedFocus) {

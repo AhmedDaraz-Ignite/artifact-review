@@ -56,6 +56,7 @@ class ReviewStore:
         new_store = new_store or recovered
         self._configure()
         self._initialise_schema()
+        self._activity_cache = None
         self._last_state = self._load_unlocked()
         if new_store:
             self._migrate_legacy()
@@ -262,6 +263,7 @@ class ReviewStore:
             self._ensure_open()
             state = self._load_unlocked()
             self._last_state = copy.deepcopy(state)
+            self._activity_cache = None
             return state
 
     def _sync_scalars(self, state):
@@ -316,6 +318,7 @@ class ReviewStore:
         normalised = self._normalise_state(state)
         with self._lock:
             self._ensure_open()
+            feed_changed = normalised["feed"] != self._last_state["feed"]
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._sync_scalars(normalised)
@@ -331,6 +334,8 @@ class ReviewStore:
                 self._conn.execute("ROLLBACK")
                 raise
             self._last_state = copy.deepcopy(normalised)
+            if feed_changed:
+                self._activity_cache = None
 
     def activity(self, before=None, limit=50):
         if not isinstance(limit, int) or isinstance(limit, bool):
@@ -338,6 +343,8 @@ class ReviewStore:
         limit = max(1, min(limit, 50))
         with self._lock:
             self._ensure_open()
+            if before is None and limit == 50 and self._activity_cache is not None:
+                return copy.deepcopy(self._activity_cache)
             if before is None:
                 rows = self._conn.execute(
                     "SELECT sequence, payload_json FROM feed_items "
@@ -362,12 +369,15 @@ class ReviewStore:
             else:
                 cursor = None
                 has_more = False
-            return {
+            page = {
                 "items": items,
                 "total": total,
                 "next_before": cursor if has_more else None,
                 "has_more": has_more,
             }
+            if before is None and limit == 50:
+                self._activity_cache = copy.deepcopy(page)
+            return page
 
     def _ensure_open(self):
         if self._closed:

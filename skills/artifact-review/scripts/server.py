@@ -33,6 +33,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -86,6 +87,8 @@ STATE = {
     "agent": {"status": "offline", "last_seen": None},
     "warned": [],          # severe findings already attached to an event
 }
+REVISION_HISTORY = deque(maxlen=256)
+PUBLISHED_STATE = None
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
@@ -204,16 +207,84 @@ def _restore():
 
 
 def _changed_locked():
+    global PUBLISHED_STATE
+    previous = PUBLISHED_STATE or _state_locked()
     STATE["revision"] += 1
+    current = _state_locked()
+    changes = {}
+    for key in ("version", "ended", "ended_by", "queue", "audit", "agent",
+                "activity"):
+        if current[key] != previous.get(key):
+            changes[key] = copy.deepcopy(current[key])
+    previous_feed = {item.get("id"): item for item in previous.get("feed", [])}
+    upserts = [
+        copy.deepcopy(item) for item in current["feed"]
+        if previous_feed.get(item.get("id")) != item
+    ]
+    if upserts:
+        changes["feed_upserts"] = upserts
+    REVISION_HISTORY.append({
+        "revision": STATE["revision"],
+        "changes": changes,
+    })
+    PUBLISHED_STATE = current
     EVENTS_COND.notify_all()
 
 
 def _state_locked():
-    return copy.deepcopy({
+    if STORE is None:
+        activity = {
+            "items": STATE["feed"][-50:],
+            "total": len(STATE["feed"]),
+            "next_before": None,
+            "has_more": len(STATE["feed"]) > 50,
+        }
+    else:
+        activity = STORE.activity(before=None, limit=50)
+    public = {
         key: STATE[key]
-        for key in ("version", "revision", "ended", "ended_by",
-                    "queue", "audit", "feed", "agent")
-    })
+        for key in ("version", "revision", "ended", "ended_by", "queue",
+                    "audit", "agent")
+    }
+    public["feed"] = activity["items"]
+    public["activity"] = {
+        key: activity[key]
+        for key in ("total", "next_before", "has_more")
+    }
+    return copy.deepcopy(public)
+
+
+def _reset_publication_locked():
+    global PUBLISHED_STATE
+    REVISION_HISTORY.clear()
+    PUBLISHED_STATE = _state_locked()
+
+
+def _delta_since_locked(after):
+    revision = STATE["revision"]
+    if after > revision or after < 0:
+        return {"mode": "reset", "revision": revision,
+                "state": _state_locked()}
+    if after == revision:
+        return {"mode": "delta", "revision": revision, "changes": {}}
+    if not REVISION_HISTORY or after < REVISION_HISTORY[0]["revision"] - 1:
+        return {"mode": "reset", "revision": revision,
+                "state": _state_locked()}
+
+    merged = {}
+    feed_upserts = {}
+    for record in REVISION_HISTORY:
+        if record["revision"] <= after:
+            continue
+        for key, value in record["changes"].items():
+            if key == "feed_upserts":
+                for item in value:
+                    feed_upserts[item["id"]] = copy.deepcopy(item)
+            else:
+                merged[key] = copy.deepcopy(value)
+    if feed_upserts:
+        merged["feed_upserts"] = list(feed_upserts.values())
+    return {"mode": "delta", "revision": revision, "changes": merged}
 
 
 def _queue_item_locked(item):
@@ -613,6 +684,8 @@ class Handler(BaseHTTPRequestHandler):
             })
         elif path == "/state/next":
             self._state_next(parse_qs(urlparse(self.path).query))
+        elif path == "/activity":
+            self._activity(parse_qs(urlparse(self.path).query))
         elif path == "/next":
             self._next(parse_qs(urlparse(self.path).query))
         else:
@@ -712,8 +785,26 @@ class Handler(BaseHTTPRequestHandler):
                 if remaining <= 0:
                     break
                 EVENTS_COND.wait(timeout=remaining)
-            state = _state_locked()
-        self._json(state)
+            if (qs.get("mode") or [""])[0] == "delta":
+                response = _delta_since_locked(after)
+            else:
+                response = _state_locked()
+        self._json(response)
+
+    def _activity(self, qs):
+        try:
+            raw_before = (qs.get("before") or [None])[0]
+            before = None if raw_before in (None, "") else int(raw_before)
+            limit = int((qs.get("limit") or ["50"])[0])
+        except (TypeError, ValueError):
+            self._json({"error": "before and limit must be integers"}, 400)
+            return
+        if limit < 1 or limit > 50:
+            self._json({"error": "limit must be between 1 and 50"}, 400)
+            return
+        with STATE_LOCK:
+            page = STORE.activity(before=before, limit=limit)
+        self._json(page)
 
     # -- PUT ---------------------------------------------------------------
     def do_PUT(self):
@@ -1162,6 +1253,8 @@ def main():
         pass
     STORE = ReviewStore(SESSION_DIR, STATE_SCHEMA)
     _restore()
+    with STATE_LOCK:
+        _reset_publication_locked()
 
     threading.Thread(target=_watch_file, daemon=True).start()
     server_class = ReviewHTTPServer

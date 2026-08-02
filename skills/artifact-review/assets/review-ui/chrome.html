@@ -459,6 +459,20 @@
   .diagram-row:last-child { border-bottom:0 }
   .diagram-row:hover { background:var(--surface-subtle) }
   .diagram-icon { color:var(--accent) }
+  .load-earlier {
+    width:calc(100% - 24px);
+    min-height:32px;
+    margin:8px 12px 0;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--surface);
+    color:var(--accent);
+    cursor:pointer;
+    font-size:11px;
+    font-weight:650;
+  }
+  .load-earlier:hover { background:var(--surface-subtle) }
+  .load-earlier:disabled { cursor:progress; color:var(--muted) }
   .activity { min-height:96px; flex:1; overflow:auto }
   .feed-entry { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px }
   .feed-entry.agent { background:var(--accent-soft) }
@@ -673,6 +687,9 @@
       <h2 id="activitySectionTitle" tabindex="-1">Activity</h2>
       <span class="hint" id="activityHint">No messages yet</span>
     </div>
+    <button class="load-earlier" id="loadEarlierActivity" type="button" hidden>
+      Load earlier activity
+    </button>
     <div class="activity" id="feed">
       <div class="empty">Feedback and agent replies appear here.</div>
     </div>
@@ -1297,8 +1314,10 @@ function feedText(entry) {
   }).join("\n");
 }
 
-function renderFeed(feed) {
+function renderFeed(feed, { preserveOffset = false } = {}) {
   const host = $("feed");
+  const previousHeight = host.scrollHeight;
+  const previousTop = host.scrollTop;
   host.textContent = "";
   if (!feed.length) {
     const empty = document.createElement("div");
@@ -1306,36 +1325,71 @@ function renderFeed(feed) {
     empty.textContent = "Feedback and agent replies appear here.";
     host.appendChild(empty);
     $("activityHint").textContent = "No messages yet";
-    return;
+  } else {
+    feed.forEach(entry => {
+      const container = document.createElement("article");
+      container.className = "feed-entry" + (entry.role === "agent" ? " agent" : "");
+      const meta = document.createElement("div");
+      meta.className = "feed-meta";
+      const who = document.createElement("span");
+      who.className = "feed-who";
+      who.textContent = entry.role === "agent" ? "Agent" : "You";
+      meta.appendChild(who);
+      if (entry.role !== "agent") {
+        const delivery = deliveryLabel(entry);
+        const status = document.createElement("span");
+        status.className = `state-chip ${delivery.toLowerCase()}`;
+        status.textContent = delivery;
+        meta.appendChild(status);
+      }
+      const time = document.createElement("time");
+      time.className = "feed-time";
+      time.textContent = formatTime(entry.ts);
+      meta.appendChild(time);
+      const content = document.createElement("pre");
+      content.textContent = feedText(entry);
+      container.append(meta, content);
+      host.appendChild(container);
+    });
+    const total = state?.activity?.total ?? feed.length;
+    $("activityHint").textContent = total > feed.length
+      ? `${feed.length} of ${total} entries`
+      : `${feed.length} ${feed.length === 1 ? "entry" : "entries"}`;
   }
-  feed.forEach(entry => {
-    const container = document.createElement("article");
-    container.className = "feed-entry" + (entry.role === "agent" ? " agent" : "");
-    const meta = document.createElement("div");
-    meta.className = "feed-meta";
-    const who = document.createElement("span");
-    who.className = "feed-who";
-    who.textContent = entry.role === "agent" ? "Agent" : "You";
-    meta.appendChild(who);
-    if (entry.role !== "agent") {
-      const delivery = deliveryLabel(entry);
-      const status = document.createElement("span");
-      status.className = `state-chip ${delivery.toLowerCase()}`;
-      status.textContent = delivery;
-      meta.appendChild(status);
-    }
-    const time = document.createElement("time");
-    time.className = "feed-time";
-    time.textContent = formatTime(entry.ts);
-    meta.appendChild(time);
-    const content = document.createElement("pre");
-    content.textContent = feedText(entry);
-    container.append(meta, content);
-    host.appendChild(container);
-  });
-  $("activityHint").textContent = `${feed.length} ${feed.length === 1 ? "entry" : "entries"}`;
-  host.scrollTop = host.scrollHeight;
+  $("loadEarlierActivity").hidden = !state?.activity?.has_more;
+  host.scrollTop = preserveOffset
+    ? previousTop + host.scrollHeight - previousHeight
+    : host.scrollHeight;
 }
+
+$("loadEarlierActivity").addEventListener("click", async () => {
+  const control = $("loadEarlierActivity");
+  const before = state?.activity?.next_before;
+  if (!before || control.disabled) return;
+  control.disabled = true;
+  control.textContent = "Loading…";
+  try {
+    const page = await api("GET", `/activity?before=${before}&limit=50`);
+    const known = new Set((state.feed || []).map(entry => entry.id));
+    const earlier = page.items.filter(entry => !known.has(entry.id));
+    state = {
+      ...state,
+      feed:[...earlier, ...(state.feed || [])],
+      activity:{
+        total:page.total,
+        next_before:page.next_before,
+        has_more:page.has_more,
+      },
+    };
+    paintedFeed = JSON.stringify(state.feed);
+    renderFeed(state.feed, { preserveOffset:true });
+  } catch (error) {
+    showBanner(`Earlier activity could not be loaded: ${errorMessage(error)}`);
+  } finally {
+    control.disabled = false;
+    control.textContent = "Load earlier activity";
+  }
+});
 
 function setComposerBusy(busy) {
   [$("chat"), $("chatAction")].forEach(control => {
@@ -1445,6 +1499,39 @@ function renderAgent(agent) {
     : labels[status];
 }
 
+function applyStateDelta(current, response) {
+  if (response.mode === "reset") return response.state;
+  const changes = response.changes || {};
+  const next = { ...current, revision:response.revision };
+  Object.entries(changes).forEach(([key, value]) => {
+    if (key === "feed_upserts") return;
+    if (key === "activity" && (current.feed || []).length > 50) {
+      next.activity = {
+        ...value,
+        next_before:current.activity?.next_before,
+        has_more:current.activity?.has_more,
+      };
+      return;
+    }
+    next[key] = value;
+  });
+  if (changes.feed_upserts?.length) {
+    const feed = [...(current.feed || [])];
+    const positions = new Map(feed.map((entry, index) => [entry.id, index]));
+    changes.feed_upserts.forEach(entry => {
+      const position = positions.get(entry.id);
+      if (position === undefined) {
+        positions.set(entry.id, feed.length);
+        feed.push(entry);
+      } else {
+        feed[position] = entry;
+      }
+    });
+    next.feed = feed;
+  }
+  return next;
+}
+
 function applyState(next) {
   const previousVersion = lastVersion;
   const wasEnded = !!state?.ended;
@@ -1487,8 +1574,9 @@ async function stateLoop() {
     try {
       const path = revision < 0
         ? "/state"
-        : `/state/next?after=${revision}&timeout=25`;
-      const next = await api("GET", path);
+        : `/state/next?after=${revision}&timeout=25&mode=delta`;
+      const response = await api("GET", path);
+      const next = revision < 0 ? response : applyStateDelta(state, response);
       revision = next.revision;
       deadPolls = 0;
       if (!next.ended && $("banner").textContent.includes("server is not responding")) showBanner("");
