@@ -17,7 +17,6 @@
   }
 </script>
 <title>Artifact Review</title>
-<link rel="stylesheet" id="whiteboardCss">
 <style>
   :root {
     color-scheme: light;
@@ -859,7 +858,6 @@ $("newFeedbackDockBtn").addEventListener("click", () => {
 setRailCollapsed(
   document.documentElement.dataset.reviewRail === "collapsed",
   { persist:false });
-$("whiteboardCss").href = "/whiteboard.css";
 let state = null;
 let lastVersion = null;
 let annotating = false;
@@ -1106,7 +1104,7 @@ window.addEventListener("message", async event => {
       showBanner(`The page choice was not saved: ${errorMessage(error)}`);
     }
   }
-  if (message.type === "want-board") focusInlineDiagram(message.id);
+  if (message.type === "want-board") await focusInlineDiagram(message.id);
   if (message.type === "inline-mount-failed") {
     showBanner(
       `Diagram editor ${String(message.id || "")} could not mount: ${String(message.error || "Unknown error")}`,
@@ -1715,13 +1713,14 @@ function renderDiagramList() {
   });
 }
 
-function focusInlineDiagram(id) {
+async function focusInlineDiagram(id) {
   if (state?.ended) return;
   const record = inlineDiagrams.get(String(id || ""));
   if (!record) {
     showBanner("That diagram editor is not ready yet.");
     return;
   }
+  await flushInlineDiagrams("diagram-switch");
   art.contentWindow.postMessage({
     arev:true,
     type:"focus-inline",
