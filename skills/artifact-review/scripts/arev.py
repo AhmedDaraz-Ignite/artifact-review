@@ -30,9 +30,13 @@ import urllib.request
 import webbrowser
 from contextlib import contextmanager
 
-VERSION = "0.1.0"
-MINIMUM_PYTHON = (3, 9)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from versioning import EVENT_SCHEMA, TOOL_VERSION, event_envelope
+
+VERSION = TOOL_VERSION
+MINIMUM_PYTHON = (3, 9)
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 REFERENCE_DIR = os.path.join(SKILL_DIR, "references", "playbooks")
 ASSET_DIR = os.path.join(SKILL_DIR, "assets", "review-ui")
@@ -434,7 +438,7 @@ def cmd_poll(args):
                 _print_event(event, getattr(args, "pretty", False))
                 return
         _api(entry, "POST", "/agent-status", {"status": "idle"})
-        _print_event({"type": "idle"}, getattr(args, "pretty", False))
+        _print_event(event_envelope("idle"), getattr(args, "pretty", False))
     except (OSError, ValueError, KeyError) as error:
         try:
             _api(entry, "POST", "/agent-status", {"status": "offline"})
@@ -562,6 +566,7 @@ def _doctor_checks():
         "python": sys.version.split()[0],
         "skill_dir": SKILL_DIR,
         "state_dir": STATE_ROOT,
+        "manifest": os.path.isfile(os.path.join(SKILL_DIR, "manifest.json")),
         "server": os.path.isfile(os.path.join(SCRIPT_DIR, "server.py")),
         "review_ui": os.path.isfile(os.path.join(ASSET_DIR, "chrome.html")),
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),

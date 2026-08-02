@@ -37,7 +37,12 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "0.1.0"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from versioning import EVENT_SCHEMA, TOOL_VERSION, event_envelope
+
+VERSION = TOOL_VERSION
 INSTANCE_ID = str(uuid.uuid4())
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_WHITEBOARD_PNG_BYTES = 20 * 1024 * 1024
@@ -261,13 +266,13 @@ def _feedback_event_locked():
     items = STATE["queue"]
     STATE["queue"] = []
     sent_at = time.time()
-    event = {
-        "id": secrets.token_hex(8),
-        "type": "feedback",
-        "items": items,
-        "layout_warnings": _undelivered_warnings_locked(),
-        "sent_at": sent_at,
-    }
+    event = event_envelope(
+        "feedback",
+        id=secrets.token_hex(8),
+        items=items,
+        layout_warnings=_undelivered_warnings_locked(),
+        sent_at=sent_at,
+    )
     STATE["feed"].append({
         "id": event["id"],
         "role": "human",
@@ -610,7 +615,12 @@ class Handler(BaseHTTPRequestHandler):
                 state = _state_locked()
             self._json(state)
         elif path == "/health":
-            self._json({"ok": True, "instance_id": INSTANCE_ID})
+            self._json({
+                "ok": True,
+                "instance_id": INSTANCE_ID,
+                "tool_version": VERSION,
+                "event_schema": EVENT_SCHEMA,
+            })
         elif path == "/state/next":
             self._state_next(parse_qs(urlparse(self.path).query))
         elif path == "/next":
@@ -687,10 +697,13 @@ class Handler(BaseHTTPRequestHandler):
                         key: value for key, value in event.items()
                         if key != "claimed_at"
                     }
+                    # Sessions created before public event schemas were added
+                    # remain consumable after an in-place tool upgrade.
+                    response.setdefault("schema", EVENT_SCHEMA)
                     break
                 remaining = deadline - time.time()
                 if remaining <= 0:
-                    response = {"type": "idle"}
+                    response = event_envelope("idle")
                     break
                 EVENTS_COND.wait(timeout=min(remaining, 30.0))
         self._json(response)
@@ -957,8 +970,12 @@ class Handler(BaseHTTPRequestHandler):
                 event for event in STATE["events"]
                 if event.get("type") != "layout"
             ]
-            event = {"id": secrets.token_hex(8), "type": "ended",
-                     "by": by, "sent_at": time.time()}
+            event = event_envelope(
+                "ended",
+                id=secrets.token_hex(8),
+                by=by,
+                sent_at=time.time(),
+            )
             STATE["events"].append(event)
             _persist_locked()
             _changed_locked()
@@ -1009,12 +1026,12 @@ class Handler(BaseHTTPRequestHandler):
             if severe:
                 # The agent hears about a proven failure immediately. It can
                 # fix and re-check before the human ever sees the page.
-                STATE["events"].append({
-                    "id": secrets.token_hex(8),
-                    "type": "layout",
-                    "layout_warnings": findings,
-                    "sent_at": time.time(),
-                })
+                STATE["events"].append(event_envelope(
+                    "layout",
+                    id=secrets.token_hex(8),
+                    layout_warnings=findings,
+                    sent_at=time.time(),
+                ))
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "status": STATE["audit"]["status"]})

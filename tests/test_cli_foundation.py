@@ -22,6 +22,7 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 AREV_PATH = ROOT / "skills" / "artifact-review" / "scripts" / "arev.py"
+MANIFEST_PATH = ROOT / "skills" / "artifact-review" / "manifest.json"
 SPEC = importlib.util.spec_from_file_location("arev_cli", AREV_PATH)
 AREV = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AREV)
@@ -55,6 +56,33 @@ def registry_entry_updater(path, state_root, artifact, value, ready, start):
     if not start.wait(timeout=10):
         raise RuntimeError("registry updater start timed out")
     module._update_entry(artifact, last_event_id=value)
+
+
+class VersionManifestTests(unittest.TestCase):
+    def test_one_manifest_drives_cli_server_package_and_public_schemas(self):
+        self.assertTrue(MANIFEST_PATH.is_file(), "installable skill needs a manifest")
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(AREV.VERSION, manifest["tool_version"])
+        package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(package["version"], manifest["tool_version"])
+        self.assertRegex(manifest["event_schema"], r"^artifact-review/event/v[1-9][0-9]*$")
+        self.assertRegex(manifest["report_schema"], r"^artifact-review/report/v[1-9][0-9]*$")
+        self.assertIsInstance(manifest["state_schema"], int)
+
+        version = subprocess.run(
+            [sys.executable, str(AREV_PATH), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        self.assertEqual(version, f"arev {manifest['tool_version']}")
+
+    def test_event_envelope_has_one_fixed_public_shape(self):
+        self.assertTrue(hasattr(AREV, "event_envelope"))
+        self.assertEqual(
+            AREV.event_envelope("idle"),
+            {"schema": AREV.EVENT_SCHEMA, "type": "idle"},
+        )
 
 
 class ControlUrlTests(unittest.TestCase):
@@ -553,7 +581,10 @@ class PollHeartbeatTests(unittest.TestCase):
         ]
         self.assertEqual(poll_count, 3)
         self.assertEqual(statuses, ["listening"] * 4 + ["idle"])
-        self.assertEqual(json.loads(output.getvalue()), {"type": "idle"})
+        self.assertEqual(
+            json.loads(output.getvalue()),
+            AREV.event_envelope("idle"),
+        )
 
     def test_poll_error_attempts_offline_without_masking_the_original_failure(self):
         statuses = []

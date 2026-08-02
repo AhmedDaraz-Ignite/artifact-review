@@ -36,7 +36,9 @@ try {
   const health = await api('GET', '/health');
   test.check(
     'health exposes a stable server identity',
-    /^[a-f0-9-]{36}$/.test(health.instance_id),
+    /^[a-f0-9-]{36}$/.test(health.instance_id) &&
+      /^\d+\.\d+\.\d+$/.test(health.tool_version) &&
+      /^artifact-review\/event\/v\d+$/.test(health.event_schema),
     JSON.stringify(health),
   );
   browser = await chromium.launch();
@@ -190,7 +192,8 @@ try {
   const annotationKinds = annotationEvent.items.map(item => item.kind).sort();
   test.check(
     'annotation Send now includes all existing drafts exactly once',
-    JSON.stringify(annotationKinds) === JSON.stringify(['chat', 'control', 'element', 'text']),
+    annotationEvent.schema === health.event_schema &&
+      JSON.stringify(annotationKinds) === JSON.stringify(['chat', 'control', 'element', 'text']),
     annotationKinds.join(','),
   );
   const anchor = annotationEvent.items.find(item => item.kind === 'text')?.anchor;
@@ -383,7 +386,8 @@ try {
   await page.locator('#banner').filter({ hasText:'read-only' }).waitFor({ timeout:3000 });
   test.check(
     'ended session becomes read-only and notifies agent',
-    endedEvent.type === 'ended' && endedEvent.by === 'user' &&
+    endedEvent.schema === health.event_schema &&
+      endedEvent.type === 'ended' && endedEvent.by === 'user' &&
       await page.locator('#annBtn').isDisabled() &&
       await page.locator('#chat').isDisabled() &&
       await page.locator('#chatAction').isDisabled() &&
