@@ -393,6 +393,13 @@ def cmd_open(args):
               file=sys.stderr)
 
 
+def _print_event(value, pretty=False):
+    if pretty:
+        print(json.dumps(value, indent=2))
+    else:
+        print(json.dumps(value, separators=(",", ":")))
+
+
 def cmd_poll(args):
     entry = _entry_for(args.file)
     try:
@@ -424,10 +431,10 @@ def cmd_poll(args):
                         "received_at": time.time(),
                     })
                     _update_entry(args.file, last_event_id=event["id"])
-                print(json.dumps(event, indent=2))
+                _print_event(event, getattr(args, "pretty", False))
                 return
         _api(entry, "POST", "/agent-status", {"status": "idle"})
-        print(json.dumps({"type": "idle"}))
+        _print_event({"type": "idle"}, getattr(args, "pretty", False))
     except (OSError, ValueError, KeyError) as error:
         try:
             _api(entry, "POST", "/agent-status", {"status": "offline"})
@@ -615,10 +622,11 @@ def cmd_brief(args):
     whose output is always read together.
     """
     checks = _doctor_checks()
-    print("## install")
-    print(json.dumps(checks, indent=2))
     if not checks["ok"]:
+        print("INSTALL failed")
+        print(json.dumps(checks, indent=2))
         sys.exit(1)
+    print(f"INSTALL ok python={checks['python']}")
     print()
     print("## design")
     print(_design_text())
@@ -692,6 +700,8 @@ def main():
                         "it when the calling agent allows a longer one")
     p.add_argument("--agent-reply",
                    help="post this reply before waiting for the next event")
+    p.add_argument("--pretty", action="store_true",
+                   help="pretty-print the event JSON instead of one compact line")
     p.set_defaults(fn=cmd_poll)
 
     p = sub.add_parser("end", help="end a review session as the agent")

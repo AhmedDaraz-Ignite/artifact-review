@@ -579,5 +579,81 @@ class PollHeartbeatTests(unittest.TestCase):
         self.assertIn("synthetic disconnect", str(caught.exception))
 
 
+class CliOutputEfficiencyTests(unittest.TestCase):
+    def _poll_output(self, pretty):
+        def fake_api(entry, method, path, body=None, timeout=10):
+            if path.startswith("/next?"):
+                return {
+                    "type": "feedback",
+                    "items": [{"kind": "chat", "text": "concise"}],
+                    "layout_warnings": [],
+                }
+            return {"ok": True}
+
+        output = io.StringIO()
+        with mock.patch.object(AREV, "_entry_for", return_value={"token": "test"}):
+            with mock.patch.object(AREV, "_api", side_effect=fake_api):
+                with redirect_stdout(output):
+                    AREV.cmd_poll(SimpleNamespace(
+                        file="artifact.html",
+                        agent_reply=None,
+                        timeout=5,
+                        pretty=pretty,
+                    ))
+        return output.getvalue().rstrip("\n")
+
+    def test_poll_defaults_to_one_machine_readable_line_with_opt_in_pretty(self):
+        compact = self._poll_output(pretty=False)
+        pretty = self._poll_output(pretty=True)
+        self.assertEqual(len(compact.splitlines()), 1)
+        self.assertEqual(json.loads(compact)["type"], "feedback")
+        self.assertGreater(len(pretty.splitlines()), 1)
+        self.assertEqual(json.loads(pretty)["type"], "feedback")
+
+    def test_successful_brief_uses_one_compact_install_line(self):
+        checks = {
+            "ok": True,
+            "python": "3.13.5",
+            "skill_dir": "/private/large/skill/path",
+            "state_dir": "/private/large/state/path",
+        }
+        output = io.StringIO()
+        with mock.patch.object(AREV, "_doctor_checks", return_value=checks):
+            with mock.patch.object(AREV, "_design_text", return_value="design rules"):
+                with mock.patch.object(AREV, "_print_playbooks") as playbooks:
+                    with redirect_stdout(output):
+                        AREV.cmd_brief(SimpleNamespace(id=["plan"]))
+
+        lines = output.getvalue().splitlines()
+        self.assertEqual(lines[0], "INSTALL ok python=3.13.5")
+        self.assertNotIn(checks["skill_dir"], output.getvalue())
+        self.assertNotIn(checks["state_dir"], output.getvalue())
+        playbooks.assert_called_once_with(["plan"])
+
+    def test_always_loaded_skill_is_a_compact_router(self):
+        skill = ROOT / "skills" / "artifact-review" / "SKILL.md"
+        text = skill.read_text(encoding="utf-8")
+        self.assertLessEqual(
+            skill.stat().st_size,
+            5500,
+            "move situational guidance into lazy references",
+        )
+        self.assertRegex(
+            text,
+            r"(?s)^---\nname: artifact-review\ndescription: Use when ",
+        )
+        expected_routes = {
+            "references/events.md": ("## Feedback", "## Layout"),
+            "references/runtime.md": ("## End and reopen", "## Whiteboard lifecycle"),
+            "references/remote.md": ("--public-url", "portable copy"),
+        }
+        for relative, markers in expected_routes.items():
+            path = skill.parent / relative
+            self.assertTrue(path.is_file(), relative)
+            reference = path.read_text(encoding="utf-8")
+            for marker in markers:
+                self.assertIn(marker, reference, f"{relative} must contain {marker}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
