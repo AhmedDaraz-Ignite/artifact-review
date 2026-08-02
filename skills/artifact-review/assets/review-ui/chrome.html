@@ -1176,6 +1176,7 @@ function renderAgent(agent) {
 
 function applyState(next) {
   const previousVersion = lastVersion;
+  const wasEnded = !!state?.ended;
   state = next;
   lastVersion = next.version;
   const queueKey = JSON.stringify(next.queue || []);
@@ -1201,7 +1202,8 @@ function applyState(next) {
     setAnnotate(false);
     showBanner(`Review ended by ${next.ended_by}. This session is read-only.`);
   }
-  if (previousVersion !== null && previousVersion !== next.version) reloadArtifact();
+  if (wasEnded && !ended) reloadArtifact();
+  else if (previousVersion !== null && previousVersion !== next.version) reloadArtifact();
 }
 
 async function stateLoop() {

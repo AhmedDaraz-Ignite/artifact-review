@@ -30,11 +30,13 @@ import socket
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 VERSION = "0.1.0"
+INSTANCE_ID = str(uuid.uuid4())
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_WHITEBOARD_PNG_BYTES = 20 * 1024 * 1024
 MAX_WHITEBOARD_ID_LENGTH = 128
@@ -488,6 +490,8 @@ class Handler(BaseHTTPRequestHandler):
             with STATE_LOCK:
                 state = _state_locked()
             self._json(state)
+        elif path == "/health":
+            self._json({"ok": True, "instance_id": INSTANCE_ID})
         elif path == "/state/next":
             self._state_next(parse_qs(urlparse(self.path).query))
         elif path == "/next":
@@ -672,6 +676,7 @@ class Handler(BaseHTTPRequestHandler):
             "/queue": self._queue, "/unqueue": self._unqueue, "/flush": self._flush,
             "/send": self._send, "/agent-reply": self._agent_reply,
             "/agent-status": self._agent_status, "/ack": self._ack, "/end": self._end,
+            "/reopen": self._reopen, "/shutdown": self._shutdown,
             "/audit": self._audit, "/audit/override": self._audit_override,
             "/whiteboard": self._whiteboard,
         }.get(path)
@@ -842,6 +847,25 @@ class Handler(BaseHTTPRequestHandler):
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "id": event["id"]})
+
+    def _reopen(self, body):
+        with EVENTS_COND:
+            STATE["ended"] = False
+            STATE["ended_by"] = None
+            STATE["events"] = [
+                event for event in STATE["events"]
+                if event.get("type") not in ("ended", "layout")
+            ]
+            STATE["audit"] = {"status": "pending", "findings": []}
+            STATE["warned"] = []
+            _persist_locked()
+            _changed_locked()
+            state = _state_locked()
+        self._json(state)
+
+    def _shutdown(self, body):
+        self._json({"ok": True, "instance_id": INSTANCE_ID})
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _audit(self, body):
         findings = body.get("findings")

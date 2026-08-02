@@ -33,6 +33,12 @@ try {
   const sourceBefore = fs.readFileSync(ART, 'utf8');
   const url = openSession(ART);
   const api = sessionApi(url);
+  const health = await api('GET', '/health');
+  test.check(
+    'health exposes a stable server identity',
+    /^[a-f0-9-]{36}$/.test(health.instance_id),
+    JSON.stringify(health),
+  );
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport:{ width:1440, height:950 } });
   page.on('pageerror', error => pageErrors.push(error.message));
@@ -321,6 +327,7 @@ try {
       await page.locator('#chatAction').isDisabled() &&
       await page.locator('#chatEnd').isDisabled(),
   );
+  const endedState = await api('GET', '/state');
 
   let refused = false;
   try {
@@ -331,6 +338,51 @@ try {
   test.check('user-ended review refuses accidental reopen', refused);
   const reopened = runArev(['open', ART, '--no-browser', '--reopen']);
   test.check('explicit reopen is accepted', reopened.includes('SESSION'));
+  let reopenWrite;
+  try {
+    reopenWrite = await api('POST', '/queue', {
+      item:{ kind:'chat', text:'feedback after live reopen' },
+    });
+  } catch {
+    reopenWrite = null;
+  }
+  const reopenedState = await api('GET', '/state');
+  test.check(
+    'live reopen resets lifecycle and accepts new feedback',
+    reopenedState.ended === false &&
+      reopenedState.ended_by === null &&
+      reopenedState.audit.status === 'pending' &&
+      reopenedState.feed.length === endedState.feed.length &&
+      reopenWrite?.ok === true,
+    JSON.stringify({
+      ended:reopenedState.ended,
+      ended_by:reopenedState.ended_by,
+      audit:reopenedState.audit.status,
+      feedBefore:endedState.feed.length,
+      feedAfter:reopenedState.feed.length,
+      write:reopenWrite,
+    }),
+  );
+  const reauditState = await eventually(async () => {
+    const next = await api('GET', '/state');
+    return next.audit.status !== 'pending' ? next : null;
+  }, { timeout:3000, label:'browser re-audit after live reopen' });
+  test.check(
+    'open browser re-audits a live reopened session',
+    reauditState.audit.status === 'clear',
+    reauditState.audit.status,
+  );
+  const idempotentReopen = await api('POST', '/reopen', {});
+  test.check(
+    'reopen endpoint is idempotent',
+    idempotentReopen.ended === false && idempotentReopen.ended_by === null,
+    JSON.stringify({
+      ended:idempotentReopen.ended,
+      ended_by:idempotentReopen.ended_by,
+      queued:idempotentReopen.queue.length,
+      feed:idempotentReopen.feed.length,
+    }),
+  );
 
   const unexpectedErrors = pageErrors.filter(message =>
     !/subset-worker|Failed to use workers/.test(message)
@@ -340,6 +392,23 @@ try {
     unexpectedErrors.length === 0,
     unexpectedErrors.join(' | '),
   );
+  await browser.close();
+  browser = null;
+  const shutdown = await api('POST', '/shutdown', {});
+  test.check(
+    'authenticated shutdown identifies the stopped server',
+    shutdown.ok === true && shutdown.instance_id === health.instance_id,
+    JSON.stringify(shutdown),
+  );
+  const stopped = await eventually(async () => {
+    try {
+      await api('GET', '/health');
+      return null;
+    } catch {
+      return true;
+    }
+  }, { timeout:3000, label:'server shutdown' });
+  test.check('authenticated shutdown stops the server', stopped === true);
 } catch (error) {
   test.check('review loop drive completed', false, error.stack || error.message);
 } finally {

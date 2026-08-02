@@ -255,6 +255,11 @@ def cmd_open(args):
     reg = _load_registry()
     entry = reg.get(path)
     if entry and _alive(entry):
+        if args.reopen:
+            try:
+                _api(entry, "POST", "/reopen", {})
+            except urllib.error.URLError as err:
+                sys.exit(f"session server could not reopen: {err}")
         url = _session_url(entry)
         print(f"SESSION {url}")
         if not args.no_browser and not _open_browser(url):
