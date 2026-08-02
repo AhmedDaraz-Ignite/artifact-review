@@ -289,6 +289,64 @@ try {
     'Mermaid diagram exposes one edit entry',
     diagramCount >= 1,
   );
+  if (await page.locator('#annBtn').getAttribute('aria-pressed') !== 'true') {
+    await page.locator('#annBtn').click();
+  }
+  await frame.locator('html').evaluate(() => window.scrollTo(0, 420));
+  let rapidReloadRequests = 0;
+  let markFirstReloadSeen;
+  let releaseFirstReload;
+  const firstReloadSeen = new Promise(resolve => { markFirstReloadSeen = resolve; });
+  const firstReloadHold = new Promise(resolve => { releaseFirstReload = resolve; });
+  const holdFirstReload = async route => {
+    rapidReloadRequests += 1;
+    if (rapidReloadRequests !== 1) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    markFirstReloadSeen();
+    await firstReloadHold;
+    try {
+      await route.fulfill({ response });
+    } catch {
+      // A broken overlapping implementation can cancel this route. The
+      // request-count assertion below still records that regression.
+    }
+  };
+  await page.route('**/artifact?v=*', holdFirstReload);
+  fs.appendFileSync(ART, '\n<p id="rapid-save-a">RAPID SAVE A</p>\n');
+  await within(firstReloadSeen, 5000, 'first rapid-save artifact reload');
+  const versionA = (await api('GET', '/state')).version;
+  fs.appendFileSync(ART, '\n<p id="rapid-save-b">RAPID SAVE B</p>\n');
+  await eventually(async () => {
+    const next = await api('GET', '/state');
+    return next.version !== versionA ? next : null;
+  }, { timeout:5000, label:'second rapid-save version' });
+  await page.waitForTimeout(100);
+  test.check(
+    'rapid saves never overlap iframe reloads',
+    rapidReloadRequests === 1,
+    `requests before first load settled=${rapidReloadRequests}`,
+  );
+  releaseFirstReload();
+  await frame.locator('#rapid-save-b').waitFor({ timeout:8000 });
+  await eventually(
+    () => rapidReloadRequests === 2 ? rapidReloadRequests : null,
+    { timeout:3000, label:'coalesced second artifact reload' },
+  );
+  const rapidScrollY = await eventually(async () => {
+    const position = await frame.locator('html').evaluate(() => window.scrollY);
+    return position > 100 ? position : null;
+  }, { timeout:3000, label:'rapid-save scroll restoration' });
+  test.check(
+    'rapid saves settle on newest content with review context preserved',
+    rapidReloadRequests === 2 &&
+      rapidScrollY > 100 &&
+      await page.locator('#annBtn').getAttribute('aria-pressed') === 'true',
+    JSON.stringify({ requests:rapidReloadRequests, scrollY:rapidScrollY }),
+  );
+  await page.unroute('**/artifact?v=*', holdFirstReload);
   test.check(
     'review tooling never rewrites the artifact source',
     fs.readFileSync(ART, 'utf8').startsWith(sourceBefore),
