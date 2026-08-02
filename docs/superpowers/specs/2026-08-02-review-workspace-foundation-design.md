@@ -34,6 +34,13 @@ browser matrix. Those are explicit later slices, not omitted requirements.
 
 ## Workspace interaction design
 
+This is an Impeccable **Operate** surface. The visual authority remains Artifact
+Review's existing "Review Desk" system: neutral working surfaces, restrained
+blue selection, compact system typography, flat dividers, and explicit state
+language. Chrome is the interaction reference for reflowing a full side panel
+into an icon dock; its dark palette, product icons, and browser-specific chrome
+are not copied.
+
 ### Desktop and tablet
 
 The workspace remains a horizontal layout. The artifact stage occupies all
@@ -43,15 +50,18 @@ remaining width and the review pane remains on the right.
 - Collapsed pane width: 64px, leaving room for 44px controls plus 10px side
   spacing in the same proportions as Chrome's collapsed side panel.
 - The stage flexes immediately into the released 296px.
-- A persistent icon dock stays visible on the far right in both states. In the
-  expanded state, the full review content opens immediately to its left, just
-  as Chrome's side panel opens beside its icon rail.
-- The dock stacks an expand/collapse control, Draft feedback, Activity, and New
-  feedback controls. A divider separates navigation from the compose action.
+- In the expanded state, the pane header contains the collapse control and the
+  compact section controls in a horizontal toolbar. The panel is 360px total;
+  there is no second icon strip beside it.
+- In the collapsed state, those same controls reflow into a vertical dock on
+  the far right, matching Chrome's panel-to-rail transformation.
+- The collapsed dock stacks Expand, Draft feedback, Activity, and New feedback
+  controls. A divider separates section navigation from the compose action.
 - The selected section uses a quiet filled square treatment matching the
   reference behavior; hover and keyboard focus never rely on color alone.
-- Draft and unread activity counts appear as compact badges without changing
-  button geometry.
+- The draft count appears as a compact badge without changing button geometry.
+  Activity has no invented unread state; its existing delivery labels remain
+  the source of truth.
 - Activating a section control expands the pane, scrolls its existing section
   into view, and moves focus to the section heading or composer as appropriate.
 - The toggle exposes `aria-controls="reviewRail"` and an accurate
@@ -66,6 +76,21 @@ remaining width and the review pane remains on the right.
 No automatic collapse occurs when a diagram enters fullscreen. The reviewer
 controls the workspace and can expand the pane without losing diagram work.
 
+### States and realistic ranges
+
+- With zero drafts, the Draft icon has no numeric badge and its accessible name
+  says "Draft feedback, empty".
+- Counts render as `1` through `99`, then `99+`; the full count remains in the
+  accessible name and tooltip.
+- Long activity histories and large draft batches retain their existing
+  internal scrolling. Collapsing and expanding preserve both scroll positions.
+- Failed and sending states remain visible in the expanded content. Collapsing
+  does not imply cancellation, retry, acknowledgement, or delivery.
+- Ended sessions keep Draft and Activity navigation available for inspection;
+  only New feedback remains disabled.
+- If the artifact is auditing or reloading, rail controls remain usable because
+  the audit curtain belongs only to the stage.
+
 ### Narrow screens
 
 At widths at or below the current 780px breakpoint, the stage remains full
@@ -76,9 +101,9 @@ smaller.
 The collapsed 64px dock remains attached to the right edge. Expanding overlays
 the artifact rather than squeezing it into an unusably narrow column. A subtle
 scrim closes the drawer when activated, while the explicit toggle remains the
-primary control. Focus stays inside the drawer only when a keyboard user enters
-it; closing returns focus to the toggle. The pane never moves below or left of
-the artifact.
+primary control. The narrow-screen drawer behaves modally: focus is contained,
+Escape collapses it, and closing returns focus to the toggle. The pane never
+moves below or left of the artifact.
 
 ### Motion and failure handling
 
@@ -86,6 +111,15 @@ Width and transform transitions are short and use only compositor-friendly
 properties where possible. `prefers-reduced-motion` disables them. Failure to
 read or write local storage leaves the pane expanded and does not affect review
 delivery.
+
+### Explicit anti-goals
+
+- Do not make the rail resizable in this slice.
+- Do not duplicate Send now, Add to review, or End review in the icon dock.
+- Do not auto-collapse on diagram fullscreen, artifact reload, feedback send,
+  or session end.
+- Do not replace text delivery states with icon-only status.
+- Do not copy Chrome's dark theme or left-side placement.
 
 ## Session and process reliability
 
