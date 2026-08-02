@@ -71,7 +71,38 @@ addressed and a new review is appropriate. Then use:
 
 Agent completion uses `"$AREV" end "$ARTIFACT"`. Process cleanup uses
 `"$AREV" stop "$ARTIFACT"`; use `stop --all` only when stopping every review
-server is intentionally in scope.
+server is intentionally in scope. An ended server shuts itself down after five
+minutes. Reopening within that window cancels the shutdown.
+
+## Durable history, reports, and retention
+
+Session state is normalized in a private SQLite database. Browser state starts
+with the newest 50 activity entries, loads older entries in 50-entry pages, and
+uses bounded revision deltas after that. Identical diagram snapshots share
+content-addressed files. Queue, event, history, snapshot-count, and snapshot-byte
+limits prevent one long review from growing without bound.
+
+Create a reusable record without opening the browser:
+
+```bash
+"$AREV" report "$ARTIFACT" --format markdown -o review.md
+"$AREV" archive "$ARTIFACT" -o review.zip
+```
+
+Reports include artifact and Git identity, ordered feedback/replies, delivery
+timestamps, and diagram snapshot hashes. Archives include the report, a
+consistent database copy, and referenced snapshot blobs—not the source
+artifact. End or stop a live review before archiving.
+
+Retention is explicit and safe by default:
+
+```bash
+"$AREV" prune --older-than 30       # preview only
+"$AREV" prune --older-than 30 --apply
+```
+
+Only ended, stopped sessions older than the threshold are candidates. Symlinks
+and paths outside the direct sessions directory are refused.
 
 State defaults to `~/.artifact-review` and may contain feedback, replies,
 scenes, previews, and logs. Override `ARTIFACT_REVIEW_HOME` only for another

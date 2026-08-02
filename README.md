@@ -165,6 +165,11 @@ arev design                  print general artifact design guidance
 arev playbook                list artifact-specific playbooks
 arev sessions                list known local sessions
 arev export FILE [-o FILE]   create a portable single-file HTML export
+arev report FILE             print a versioned JSON review report
+arev report FILE --format markdown -o REVIEW.md
+arev archive FILE -o REVIEW.zip
+arev prune --older-than 30   preview old ended sessions
+arev prune --older-than 30 --apply
 arev end FILE                end the review as the agent
 arev stop FILE               stop one local server
 arev stop --all              stop every local Artifact Review server
@@ -176,6 +181,24 @@ delay feedback pickup.
 
 Default poll output is compact, single-line JSON for agent consumption. Pass
 `--pretty` only when a person needs expanded output.
+
+## Durable and reusable reviews
+
+Each artifact session uses a private normalized SQLite store with transactional
+updates, legacy JSON migration, corruption quarantine, and bounded history.
+The browser initially receives only the newest 50 activity entries, loads older
+entries on demand, and follows subsequent changes through compact revision
+deltas. Identical diagram scenes and previews reuse SHA-256-addressed blobs.
+
+`arev report` turns a session into stable JSON or Markdown containing artifact
+and Git identity, ordered feedback and replies, delivery timestamps, and
+snapshot hashes. `arev archive` writes a consistent database snapshot, JSON
+report, and referenced blobs to a ZIP without copying the source artifact.
+
+`arev prune` is a dry run unless `--apply` is present. It only removes ended,
+stopped sessions older than the selected threshold, refuses symlinks or escaped
+paths, and cleans unreferenced content-addressed blobs. Ending a review schedules
+its local server to stop after five minutes; reopening cancels that timer.
 
 ## Runtime efficiency
 

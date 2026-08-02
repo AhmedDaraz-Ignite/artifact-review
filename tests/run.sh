@@ -73,6 +73,15 @@ else
   tail -20 "$STORE_RAW"
 fi
 
+echo "== reports-retention"
+REPORT_RAW="$WORK/reports-retention.log"
+if python3 "$ROOT/tests/test_reports_retention.py" > "$REPORT_RAW" 2>&1; then
+  echo "PASS reusable reports, archives, retention, and delayed shutdown" | tee -a "$OUT"
+else
+  echo "FAIL reports and retention - see $REPORT_RAW" | tee -a "$OUT"
+  tail -20 "$REPORT_RAW"
+fi
+
 run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html

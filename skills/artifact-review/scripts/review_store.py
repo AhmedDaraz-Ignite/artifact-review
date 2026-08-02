@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import threading
+import urllib.parse
 from datetime import datetime, timezone
 
 
@@ -60,21 +61,44 @@ class ReviewStore:
     each logical server mutation one small SQLite transaction.
     """
 
-    def __init__(self, session_dir, state_schema):
+    def __init__(self, session_dir, state_schema, read_only=False):
         if not isinstance(state_schema, int) or state_schema < 1:
             raise ValueError("state_schema must be a positive integer")
         self.session_dir = os.path.realpath(session_dir)
         self.path = os.path.join(self.session_dir, DATABASE_NAME)
         self.state_schema = state_schema
+        self.read_only = bool(read_only)
         self._lock = threading.RLock()
         self._closed = False
+        self._activity_cache = None
+        if os.path.islink(self.path):
+            raise OSError("review database cannot be a symbolic link")
+        if self.read_only:
+            if not os.path.isfile(self.path):
+                raise FileNotFoundError(self.path)
+            encoded = urllib.parse.quote(self.path, safe="/")
+            self._conn = sqlite3.connect(
+                f"file:{encoded}?mode=ro",
+                uri=True,
+                timeout=5,
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            self._conn.execute("PRAGMA busy_timeout=5000")
+            self._conn.execute("PRAGMA query_only=ON")
+            result = self._conn.execute("PRAGMA quick_check").fetchone()
+            if not result or result[0] != "ok":
+                self._conn.close()
+                raise sqlite3.DatabaseError(
+                    "review store integrity check failed")
+            self._last_state = self._load_unlocked()
+            return
         os.makedirs(self.session_dir, exist_ok=True)
         new_store = not os.path.exists(self.path) or os.path.getsize(self.path) == 0
         self._conn, recovered = self._open_or_recover()
         new_store = new_store or recovered
         self._configure()
         self._initialise_schema()
-        self._activity_cache = None
         self._last_state = self._load_unlocked()
         if new_store:
             self._migrate_legacy()
@@ -338,10 +362,27 @@ class ReviewStore:
         normalised = self._normalise_state(state)
         with self._lock:
             self._ensure_open()
+            self._ensure_writable()
             feed_changed = normalised["feed"] != self._last_state["feed"]
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 self._sync_scalars(normalised)
+                now = datetime.now(timezone.utc).timestamp()
+                self._conn.execute(
+                    "INSERT INTO meta(key, value_json) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json",
+                    ("updated_at", _json(now)),
+                )
+                if normalised["ended"] and not self._last_state["ended"]:
+                    self._conn.execute(
+                        "INSERT INTO meta(key, value_json) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET "
+                        "value_json=excluded.value_json",
+                        ("ended_at", _json(now)),
+                    )
+                elif not normalised["ended"] and self._last_state["ended"]:
+                    self._conn.execute(
+                        "DELETE FROM meta WHERE key='ended_at'")
                 self._sync_ordered(
                     "queue_items", "qid", normalised["queue"],
                     self._last_state["queue"])
@@ -445,6 +486,61 @@ class ReviewStore:
             counts["snapshot_bytes"] = blob_bytes
             return counts
 
+    def set_session_info(self, artifact_path):
+        artifact_path = os.path.realpath(artifact_path)
+        now = datetime.now(timezone.utc).timestamp()
+        with self._lock:
+            self._ensure_open()
+            self._ensure_writable()
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO meta(key, value_json) VALUES (?, ?)",
+                    ("created_at", _json(now)),
+                )
+                for key, value in (
+                        ("artifact_path", artifact_path),
+                        ("updated_at", now)):
+                    self._conn.execute(
+                        "INSERT INTO meta(key, value_json) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET "
+                        "value_json=excluded.value_json",
+                        (key, _json(value)),
+                    )
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+                raise
+
+    def session_info(self):
+        wanted = {
+            "artifact_path", "created_at", "updated_at", "ended_at",
+            "feed_trimmed", "state_schema",
+        }
+        with self._lock:
+            self._ensure_open()
+            return {
+                key: _decode(value_json)
+                for key, value_json in self._conn.execute(
+                    "SELECT key, value_json FROM meta")
+                if key in wanted
+            }
+
+    def backup_to(self, destination):
+        destination = os.path.realpath(destination)
+        with self._lock:
+            self._ensure_open()
+            target = sqlite3.connect(destination)
+            try:
+                self._conn.backup(target)
+            finally:
+                target.close()
+        try:
+            os.chmod(destination, 0o600)
+        except OSError:
+            pass
+        return destination
+
     @staticmethod
     def _referenced_blob_names(value):
         names = set()
@@ -466,34 +562,42 @@ class ReviewStore:
         visit(value)
         return names
 
+    def _unreferenced_blobs_unlocked(self):
+        state = self._load_unlocked()
+        referenced = self._referenced_blob_names({
+            "queue": state["queue"],
+            "feed": state["feed"],
+            "events": state["events"],
+        })
+        directory = os.path.join(
+            self.session_dir, "whiteboards", "blobs")
+        try:
+            entries = list(os.scandir(directory))
+        except FileNotFoundError:
+            entries = []
+        return [
+            entry.path for entry in entries
+            if entry.name not in referenced
+            and entry.is_file(follow_symlinks=False)
+            and (entry.name.endswith(".excalidraw")
+                 or entry.name.endswith(".png"))
+        ]
+
+    def unreferenced_blobs(self):
+        with self._lock:
+            self._ensure_open()
+            return self._unreferenced_blobs_unlocked()
+
     def prune_unreferenced_blobs(self):
         with self._lock:
             self._ensure_open()
-            state = self._load_unlocked()
-            referenced = self._referenced_blob_names({
-                "queue": state["queue"],
-                "feed": state["feed"],
-                "events": state["events"],
-            })
-            directory = os.path.join(
-                self.session_dir, "whiteboards", "blobs")
+            self._ensure_writable()
             removed = []
             removed_bytes = 0
-            try:
-                entries = list(os.scandir(directory))
-            except FileNotFoundError:
-                entries = []
-            for entry in entries:
-                if entry.name in referenced:
-                    continue
-                if not entry.is_file(follow_symlinks=False):
-                    continue
-                if not (entry.name.endswith(".excalidraw")
-                        or entry.name.endswith(".png")):
-                    continue
-                size = entry.stat(follow_symlinks=False).st_size
-                os.unlink(entry.path)
-                removed.append(entry.path)
+            for path in self._unreferenced_blobs_unlocked():
+                size = os.stat(path, follow_symlinks=False).st_size
+                os.unlink(path)
+                removed.append(path)
                 removed_bytes += size
             return {
                 "removed": removed,
@@ -504,6 +608,10 @@ class ReviewStore:
     def _ensure_open(self):
         if self._closed:
             raise RuntimeError("review store is closed")
+
+    def _ensure_writable(self):
+        if self.read_only:
+            raise RuntimeError("review store is read-only")
 
     def close(self):
         with self._lock:

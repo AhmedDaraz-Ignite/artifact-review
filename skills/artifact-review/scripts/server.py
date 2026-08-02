@@ -54,6 +54,7 @@ MAX_PENDING_EVENTS = 1000
 MAX_FEED_ITEMS = 10000
 MAX_SNAPSHOT_BLOBS = 1000
 MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
+END_SHUTDOWN_DELAY = 300.0
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
@@ -94,6 +95,7 @@ STATE = {
 }
 REVISION_HISTORY = deque(maxlen=256)
 PUBLISHED_STATE = None
+SHUTDOWN_TIMER = None
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
@@ -265,6 +267,36 @@ def _reset_publication_locked():
     global PUBLISHED_STATE
     REVISION_HISTORY.clear()
     PUBLISHED_STATE = _state_locked()
+
+
+def _cancel_shutdown_locked():
+    global SHUTDOWN_TIMER
+    timer = SHUTDOWN_TIMER
+    SHUTDOWN_TIMER = None
+    if timer is not None:
+        timer.cancel()
+
+
+def _schedule_shutdown_locked(server):
+    global SHUTDOWN_TIMER
+    _cancel_shutdown_locked()
+    scheduled_instance = INSTANCE_ID
+    timer = None
+
+    def shutdown_if_still_ended():
+        global SHUTDOWN_TIMER
+        with STATE_LOCK:
+            if (SHUTDOWN_TIMER is not timer
+                    or not STATE["ended"]
+                    or INSTANCE_ID != scheduled_instance):
+                return
+            SHUTDOWN_TIMER = None
+        server.shutdown()
+
+    timer = threading.Timer(END_SHUTDOWN_DELAY, shutdown_if_still_ended)
+    timer.daemon = True
+    SHUTDOWN_TIMER = timer
+    timer.start()
 
 
 def _delta_since_locked(after):
@@ -1166,6 +1198,8 @@ class Handler(BaseHTTPRequestHandler):
         by = body.get("by") if body.get("by") in ("agent", "user") else "agent"
         with EVENTS_COND:
             if STATE["ended"]:
+                if SHUTDOWN_TIMER is None:
+                    _schedule_shutdown_locked(self.server)
                 existing = next((
                     event for event in STATE["events"]
                     if event.get("type") == "ended"
@@ -1198,10 +1232,12 @@ class Handler(BaseHTTPRequestHandler):
             STATE["events"].append(event)
             _persist_locked()
             _changed_locked()
+            _schedule_shutdown_locked(self.server)
         self._json({"ok": True, "id": event["id"]})
 
     def _reopen(self, body):
         with EVENTS_COND:
+            _cancel_shutdown_locked()
             STATE["ended"] = False
             STATE["ended_by"] = None
             STATE["events"] = [
@@ -1216,6 +1252,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json(state)
 
     def _shutdown(self, body):
+        with STATE_LOCK:
+            _cancel_shutdown_locked()
         self._json({"ok": True, "instance_id": INSTANCE_ID})
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
@@ -1395,6 +1433,7 @@ def main():
     except OSError:
         pass
     STORE = ReviewStore(SESSION_DIR, STATE_SCHEMA)
+    STORE.set_session_info(ARTIFACT)
     _restore()
     with STATE_LOCK:
         _reset_publication_locked()
@@ -1412,6 +1451,8 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        with STATE_LOCK:
+            _cancel_shutdown_locked()
         server.server_close()
         STORE.close()
 

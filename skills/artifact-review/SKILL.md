@@ -82,10 +82,13 @@ After an edit is saved, acknowledge the work in the same session:
 | Stop process | `"$AREV" stop FILE` |
 | Inspect sessions | `"$AREV" sessions` |
 | Portable copy | `"$AREV" export FILE -o OUTPUT` |
+| Reusable report | `"$AREV" report FILE --format json\|markdown` |
+| Review archive | `"$AREV" archive FILE -o REVIEW.zip` |
+| Retention preview | `"$AREV" prune --older-than DAYS` |
 
 Before non-loopback use, port forwarding, `--public-url`, or portable export,
 read [remote.md](references/remote.md). Do not expose the listener directly to
 the public internet.
 
-When the user approves or the review is complete, run `end`, then `stop` when
-the local process is no longer needed.
+When the user approves or the review is complete, run `end`. The server stops
+after five minutes unless the review reopens; use `stop` for immediate cleanup.

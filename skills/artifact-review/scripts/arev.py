@@ -19,6 +19,7 @@ import math
 import os
 import queue
 import secrets
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -233,16 +234,22 @@ def _session_json(path):
     session_dir = os.path.join(STATE_ROOT, "sessions", _key(path))
     database = os.path.join(session_dir, "review.sqlite3")
     legacy = os.path.join(session_dir, "session.json")
-    if not os.path.exists(database) and not os.path.exists(legacy):
-        return {}
-    try:
-        store = ReviewStore(session_dir, STATE_SCHEMA)
+    if os.path.exists(database):
         try:
-            return store.load()
-        finally:
-            store.close()
-    except (OSError, RuntimeError, ValueError):
-        pass
+            store = ReviewStore(session_dir, STATE_SCHEMA, read_only=True)
+            try:
+                return store.load()
+            finally:
+                store.close()
+        except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError):
+            return {}
+    if os.path.exists(legacy):
+        try:
+            with open(legacy, encoding="utf-8") as handle:
+                value = json.load(handle)
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {}
     return {}
 
 
@@ -519,6 +526,98 @@ def cmd_export(args):
           + (f"  skipped={result['skipped']}" if result.get("skipped") else ""))
 
 
+def _session_dir(path):
+    return os.path.join(STATE_ROOT, "sessions", _key(path))
+
+
+def _path_inside(parent, path):
+    try:
+        return os.path.commonpath((parent, path)) == parent
+    except ValueError:
+        return False
+
+
+def _require_review_store(path):
+    sessions_root = os.path.realpath(os.path.join(STATE_ROOT, "sessions"))
+    unresolved = _session_dir(path)
+    session_dir = os.path.realpath(unresolved)
+    if (os.path.islink(unresolved)
+            or os.path.dirname(session_dir) != sessions_root):
+        sys.exit(f"unsafe review session path for {path}")
+    database = os.path.join(session_dir, "review.sqlite3")
+    if not os.path.isfile(database) or os.path.islink(database):
+        sys.exit(f"no durable review state for {path} - run: arev open {path}")
+    return session_dir
+
+
+def cmd_report(args):
+    from reports import build_report, render_report, write_report
+
+    path = os.path.realpath(args.file)
+    session_dir = _require_review_store(path)
+    try:
+        report = build_report(path, session_dir)
+        if args.output:
+            output_path = os.path.realpath(args.output)
+            if (output_path == path
+                    or _path_inside(session_dir, output_path)):
+                sys.exit("report output cannot overwrite artifact or session state")
+            output = write_report(report, args.format, args.output)
+            print(f"wrote {output}")
+        else:
+            sys.stdout.write(render_report(report, args.format))
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not build review report: {error}")
+
+
+def cmd_archive(args):
+    from reports import write_archive
+
+    path = os.path.realpath(args.file)
+    session_dir = _require_review_store(path)
+    running = _entry_for(path, required=False)
+    try:
+        store = ReviewStore(session_dir, STATE_SCHEMA, read_only=True)
+        try:
+            ended = bool(store.load()["ended"])
+        finally:
+            store.close()
+        if running and not ended:
+            sys.exit("end or stop the running review before archiving it")
+        output = args.output or os.path.splitext(path)[0] + ".review.zip"
+        output_path = os.path.realpath(output)
+        if _path_inside(session_dir, output_path):
+            sys.exit("archive output cannot overwrite review session state")
+        result = write_archive(path, session_dir, output)
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not archive review: {error}")
+    print(f"wrote {result}")
+
+
+def _running_session_dirs():
+    running = set()
+    for path, entry in _load_registry().items():
+        if _verified_health(entry):
+            running.add(os.path.realpath(
+                entry.get("session_dir") or _session_dir(path)))
+    return running
+
+
+def cmd_prune(args):
+    from reports import prune_sessions
+
+    try:
+        result = prune_sessions(
+            STATE_ROOT,
+            older_than_days=args.older_than,
+            apply=args.apply,
+            running_session_dirs=_running_session_dirs(),
+        )
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not prune review state: {error}")
+    print(json.dumps(result, sort_keys=True, indent=2))
+
+
 def _playbook_ids():
     return sorted(f[:-3] for f in os.listdir(REFERENCE_DIR)
                   if f.endswith(".md") and f != "design.md")
@@ -574,6 +673,7 @@ def _doctor_checks():
         "state_dir": STATE_ROOT,
         "manifest": os.path.isfile(os.path.join(SKILL_DIR, "manifest.json")),
         "store": os.path.isfile(os.path.join(SCRIPT_DIR, "review_store.py")),
+        "reports": os.path.isfile(os.path.join(SCRIPT_DIR, "reports.py")),
         "server": os.path.isfile(os.path.join(SCRIPT_DIR, "server.py")),
         "review_ui": os.path.isfile(os.path.join(ASSET_DIR, "chrome.html")),
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),
@@ -731,6 +831,26 @@ def main():
     p = sub.add_parser("export", help="write a portable single-file artifact")
     p.add_argument("file")
     p.add_argument("-o", "--output"); p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser(
+        "report", help="render the durable review as JSON or Markdown")
+    p.add_argument("file", help="reviewed artifact")
+    p.add_argument("--format", choices=("json", "markdown"), default="json")
+    p.add_argument("-o", "--output")
+    p.set_defaults(fn=cmd_report)
+
+    p = sub.add_parser(
+        "archive", help="write a portable ZIP with review state and snapshots")
+    p.add_argument("file", help="reviewed artifact")
+    p.add_argument("-o", "--output")
+    p.set_defaults(fn=cmd_archive)
+
+    p = sub.add_parser(
+        "prune", help="preview or remove old ended review sessions")
+    p.add_argument("--older-than", type=float, default=30, metavar="DAYS")
+    p.add_argument("--apply", action="store_true",
+                   help="remove listed sessions and unreferenced blobs")
+    p.set_defaults(fn=cmd_prune)
 
     p = sub.add_parser(
         "new", help="scaffold a themed, audit-clean artifact shell",
