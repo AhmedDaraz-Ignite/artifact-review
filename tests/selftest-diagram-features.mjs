@@ -40,14 +40,20 @@ try {
 
   const flow = await waitForInlineDiagram(page, 'request-flow');
   const er = await waitForInlineDiagram(page, 'review-er');
+  test.check(
+    'multiple diagram hosts mount without eager editor frames',
+    await flow.artifactFrame.locator('[id^="arev-board-"] iframe').count() === 0,
+  );
   await openWhiteboard(page, flow);
   await openWhiteboard(page, er);
 
   test.check(
-    'two Mermaid sources mount as independent inline editors',
-    flow.editorFrame !== er.editorFrame &&
-      await flow.host.locator('iframe').count() === 1 &&
-      await er.host.locator('iframe').count() === 1,
+    'multiple Mermaid sources share one lazily moved editor frame',
+    await flow.host.locator('iframe').count() === 0 &&
+      await er.host.locator('iframe').count() === 1 &&
+      await flow.artifactFrame.locator('[id^="arev-board-"] iframe').count() === 1 &&
+      await er.host.locator('#arev-shared-whiteboard-frame').count() === 1 &&
+      new URL(er.editorFrame.url()).searchParams.get('diagram') === 'review-er',
   );
   test.check(
     'ER diagram is explicitly documented in-product as editable shapes',
@@ -134,6 +140,8 @@ try {
 
   const firstWorking = flowSaved;
   const originalHash = firstWorking.source_hash;
+  await openWhiteboard(page, flow);
+  const activeFlowFrame = flow.editorFrame;
   let source = fs.readFileSync(ART, 'utf8');
   source = source.replace(
     'API --> Store[(Private scene store)]',
@@ -142,7 +150,7 @@ try {
   fs.writeFileSync(ART, source);
 
   await eventually(
-    () => !page.frames().includes(flow.editorFrame),
+    () => !page.frames().includes(activeFlowFrame),
     { timeout:15000, label:'first diagram frame reload' },
   );
   const staleFlow = await waitForInlineDiagram(page, 'request-flow');

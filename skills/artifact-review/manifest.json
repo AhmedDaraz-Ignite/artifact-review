@@ -1,0 +1,6 @@
+{
+  "tool_version": "0.2.0",
+  "event_schema": "artifact-review/event/v1",
+  "report_schema": "artifact-review/report/v1",
+  "state_schema": 1
+}

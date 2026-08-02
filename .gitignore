@@ -19,6 +19,7 @@ htmlcov/
 !.env.example
 
 .artifact-review/
+.worktrees/
 test-results/
 playwright-report/
 blob-report/

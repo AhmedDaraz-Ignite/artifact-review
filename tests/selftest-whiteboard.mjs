@@ -22,6 +22,7 @@ const ART = process.argv[2];
 const test = new TestRun();
 const pageErrors = [];
 const autosaveRequests = [];
+const whiteboardAssetRequests = [];
 let browser;
 
 try {
@@ -33,6 +34,10 @@ try {
   const page = await browser.newPage({ viewport:{ width:1500, height:980 } });
   page.on('pageerror', error => pageErrors.push(error.message));
   page.on('request', request => {
+    const pathname = new URL(request.url()).pathname;
+    if (['/whiteboard-frame', '/whiteboard.js', '/whiteboard.css'].includes(pathname)) {
+      whiteboardAssetRequests.push(pathname);
+    }
     if (
       request.method() === 'PUT' &&
       /\/whiteboard\/[^/?]+(?:\?|$)/.test(request.url())
@@ -44,11 +49,27 @@ try {
   await page.locator('#curtain').waitFor({ state:'hidden', timeout:8000 });
 
   const diagram = await waitForInlineDiagram(page);
+  test.check(
+    'diagram editor defers its frame and heavy assets until activation',
+    await diagram.host.locator('iframe').count() === 0 &&
+      !whiteboardAssetRequests.includes('/whiteboard-frame') &&
+      !whiteboardAssetRequests.includes('/whiteboard.js') &&
+      !whiteboardAssetRequests.includes('/whiteboard.css'),
+    whiteboardAssetRequests.join(','),
+  );
+  test.check(
+    'inline editor starts behind an explicit activation control',
+    await diagram.host.getByRole('button', {
+      name:/Open diagram editor|Click to edit diagram/i,
+    }).isVisible(),
+  );
+
+  await openWhiteboard(page, diagram);
   const frameSandbox = (await diagram.host.locator('iframe').getAttribute('sandbox') || '')
     .split(/\s+/)
     .filter(Boolean);
   test.check(
-    'Mermaid mounts as an inline sandboxed editor',
+    'Mermaid activates as an inline sandboxed editor',
     await diagram.host.isVisible() &&
       frameSandbox.includes('allow-scripts') &&
       !frameSandbox.includes('allow-same-origin'),
@@ -59,12 +80,6 @@ try {
     !diagram.editorFrame.url().includes(token),
     diagram.editorFrame.url(),
   );
-  test.check(
-    'inline editor starts locked behind an explicit activation control',
-    await diagram.host.getByRole('button', { name:/Click to edit diagram/i }).isVisible(),
-  );
-
-  await openWhiteboard(page, diagram);
   test.check(
     'supported flowchart converts to editable shapes',
     /Flowchart · Editable shapes/.test(
@@ -131,6 +146,22 @@ try {
     'inline editor expands fullscreen without mounting a second editor',
     fullscreenReady,
   );
+  await page.locator('#railToggle').click();
+  await page.waitForTimeout(250);
+  const fullscreenWithDock = await diagram.host.evaluate(element =>
+    element.classList.contains('arev-inline-fullscreen') &&
+    element.querySelectorAll('iframe').length === 1
+  );
+  await page.locator('#railToggle').click();
+  await page.waitForTimeout(250);
+  const fullscreenWithPanel = await diagram.host.evaluate(element =>
+    element.classList.contains('arev-inline-fullscreen') &&
+    element.querySelectorAll('iframe').length === 1
+  );
+  test.check(
+    'diagram fullscreen survives review panel collapse and expansion',
+    fullscreenWithDock && fullscreenWithPanel,
+  );
   await diagram.editorFrame.locator('#wbFullscreen').click();
   await eventually(
     () => diagram.host.evaluate(element =>
@@ -168,8 +199,12 @@ try {
     JSON.stringify(delivered),
   );
   test.check(
-    'feedback snapshots are immutable and uniquely named',
-    delivered[0].scene_path !== delivered[1].scene_path &&
+    'byte-identical feedback snapshots reuse immutable content-addressed blobs',
+    delivered[0].scene_path === delivered[1].scene_path &&
+      delivered[0].png_path === delivered[1].png_path &&
+      delivered[0].scene_hash === delivered[1].scene_hash &&
+      delivered[0].png_hash === delivered[1].png_hash &&
+      delivered[0].scene_path.includes('/whiteboards/blobs/') &&
       fs.readFileSync(firstQueued.scene_path).equals(firstSnapshot),
     delivered.map(item => item.scene_path).join(','),
   );

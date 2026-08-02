@@ -6,35 +6,47 @@ export async function waitForInlineDiagram(page, diagramId) {
   const host = diagramId
     ? artifactFrame.locator(`#arev-board-${diagramId}`)
     : artifactFrame.locator('[id^="arev-board-"]').first();
-  await host.locator('iframe').waitFor({ state:'visible', timeout:30000 });
+  await host.waitFor({ state:'visible', timeout:30000 });
   const resolvedId = diagramId || (await host.getAttribute('id')).slice('arev-board-'.length);
+  return { artifactFrame, editorFrame:null, host, id:resolvedId, page };
+}
+
+async function resolveEditorFrame(diagram) {
+  await diagram.host.locator('iframe').waitFor({ state:'visible', timeout:30000 });
   const editorFrame = await eventually(async () => {
-    const candidate = page.frames().find(frame => {
+    const candidate = diagram.page.frames().find(frame => {
       try {
         const url = new URL(frame.url());
         return url.pathname === '/whiteboard-frame' &&
-          url.searchParams.get('diagram') === resolvedId;
+          url.searchParams.get('diagram') === diagram.id;
       } catch {
         return false;
       }
     });
     if (!candidate) return null;
     return await candidate.locator('.wb-shell').count() ? candidate : null;
-  }, { timeout:30000, label:`inline editor frame ${resolvedId}` });
-  return { artifactFrame, editorFrame, host, id:resolvedId };
+  }, { timeout:30000, label:`inline editor frame ${diagram.id}` });
+  diagram.editorFrame = editorFrame;
+  return editorFrame;
 }
 
 export async function unlockWhiteboard(diagram) {
   await diagram.host.scrollIntoViewIfNeeded();
-  await diagram.host.getByRole('button', { name:/Click to edit diagram/i }).click();
+  await diagram.host.getByRole('button', {
+    name:/Open diagram editor|Click to edit diagram/i,
+  }).click();
+  await resolveEditorFrame(diagram);
+  return diagram;
 }
 
 export async function openWhiteboard(page, diagram) {
+  diagram.page ||= page;
   await unlockWhiteboard(diagram);
   await diagram.editorFrame.locator('.excalidraw').waitFor({
     state:'visible',
     timeout:30000,
   });
+  return diagram;
 }
 
 export async function drawLargeRectangle(page, diagram) {

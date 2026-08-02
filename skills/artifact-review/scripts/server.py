@@ -22,6 +22,8 @@ import argparse
 import base64
 import binascii
 import copy
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -30,14 +32,29 @@ import socket
 import sys
 import threading
 import time
+import uuid
+from collections import deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "0.1.0"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from review_store import QuotaExceeded, ReviewStore
+from versioning import EVENT_SCHEMA, STATE_SCHEMA, TOOL_VERSION, event_envelope
+
+VERSION = TOOL_VERSION
+INSTANCE_ID = str(uuid.uuid4())
 MAX_REQUEST_BYTES = 32 * 1024 * 1024
 MAX_WHITEBOARD_PNG_BYTES = 20 * 1024 * 1024
 MAX_WHITEBOARD_ID_LENGTH = 128
+MAX_QUEUE_ITEMS = 500
+MAX_PENDING_EVENTS = 1000
+MAX_FEED_ITEMS = 10000
+MAX_SNAPSHOT_BLOBS = 1000
+MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
+END_SHUTDOWN_DELAY = 300.0
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
@@ -57,8 +74,12 @@ EVENTS_COND = threading.Condition(STATE_LOCK)
 
 ARTIFACT = None          # absolute path of the reviewed file
 SESSION_DIR = None
+STORE = None
 TOKEN = None
 ASSET_DIR = None
+ASSET_CACHE = {}
+ASSET_HASHES = {}
+ASSET_COMPRESSION_LOCK = threading.Lock()
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"}
 STATE = {
     "version": 0,          # artifact file mtime_ns; chrome reloads on change
@@ -72,6 +93,9 @@ STATE = {
     "agent": {"status": "offline", "last_seen": None},
     "warned": [],          # severe findings already attached to an event
 }
+REVISION_HISTORY = deque(maxlen=256)
+PUBLISHED_STATE = None
+SHUTDOWN_TIMER = None
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
@@ -79,49 +103,110 @@ MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
         ".wasm": "application/wasm"}
 
+REQUIRED_ASSETS = (
+    "audit.js",
+    "chrome.html",
+    "sdk.js",
+    "whiteboard-frame.html",
+    "whiteboard.js",
+    "whiteboard.css",
+)
+
+
+def _asset_entry(body, content_type):
+    digest = hashlib.sha256(body).hexdigest()
+    return {
+        "body": body,
+        "gzip": None,
+        "content_type": content_type,
+        "hash": digest,
+        "etag": '"' + digest + '"',
+        "gzip_etag": None,
+    }
+
+
+def _gzip_variant(entry):
+    if entry["gzip"] is None:
+        with ASSET_COMPRESSION_LOCK:
+            if entry["gzip"] is None:
+                compressed = gzip.compress(
+                    entry["body"], compresslevel=6, mtime=0)
+                entry["gzip"] = compressed
+                entry["gzip_etag"] = (
+                    '"' + hashlib.sha256(compressed).hexdigest() + '"')
+    return entry["gzip"], entry["gzip_etag"]
+
+
+def _load_asset_cache(asset_dir):
+    raw = {}
+    for name in REQUIRED_ASSETS:
+        path = os.path.join(asset_dir, name)
+        with open(path, "rb") as handle:
+            raw[name] = handle.read()
+
+    cache = {
+        "whiteboard.js": _asset_entry(
+            raw["whiteboard.js"], "application/javascript"),
+        "whiteboard.css": _asset_entry(raw["whiteboard.css"], "text/css"),
+    }
+    sdk = raw["audit.js"] + b"\n" + raw["sdk.js"]
+    cache["sdk.js"] = _asset_entry(sdk, "application/javascript")
+
+    frame = raw["whiteboard-frame.html"]
+    frame = frame.replace(
+        b'href="/whiteboard.css"',
+        ('href="/whiteboard.css?v=' + cache["whiteboard.css"]["hash"] + '"')
+        .encode("ascii"),
+    )
+    frame = frame.replace(
+        b'src="/whiteboard.js"',
+        ('src="/whiteboard.js?v=' + cache["whiteboard.js"]["hash"] + '"')
+        .encode("ascii"),
+    )
+    cache["whiteboard-frame"] = _asset_entry(
+        frame, "text/html; charset=utf-8")
+    cache["chrome.html"] = _asset_entry(
+        raw["chrome.html"], "text/html; charset=utf-8")
+    return cache
+
+
+def _asset_url(name):
+    entry = ASSET_CACHE[name]
+    return f"/{name}?v={entry['hash']}"
+
 
 def _persist_locked():
-    tmp = os.path.join(SESSION_DIR, "session.json.tmp")
-    out = {k: STATE[k] for k in
-           ("ended", "ended_by", "queue", "audit", "feed", "events", "agent")}
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(out, fh, indent=2)
-        fh.flush()
-    try:
-        os.chmod(tmp, 0o600)
-    except OSError:
-        pass
-    os.replace(tmp, os.path.join(SESSION_DIR, "session.json"))
+    STORE.sync({
+        key: STATE[key]
+        for key in ("ended", "ended_by", "queue", "audit", "feed",
+                    "events", "agent")
+    })
 
 
 def _restore():
     """Restore durable feedback, but reset process/session-transient state."""
-    path = os.path.join(SESSION_DIR, "session.json")
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                saved = json.load(fh)
-            for key in ("queue", "feed"):
-                if isinstance(saved.get(key), list):
-                    STATE[key] = saved[key]
-            restored_events = saved.get("events")
-            if isinstance(restored_events, list):
-                # Feedback remains durable. Layout and ended events describe
-                # the prior process/session lifecycle and must be regenerated.
-                STATE["events"] = [
-                    event for event in restored_events
-                    if isinstance(event, dict)
-                    and event.get("type") == "feedback"
-                ]
-                for event in STATE["events"]:
-                    # A process restart invalidates any old delivery lease.
-                    event.pop("claimed_at", None)
-            previous_agent = saved.get("agent")
-            last_seen = (previous_agent.get("last_seen")
-                         if isinstance(previous_agent, dict) else None)
-            STATE["agent"] = {"status": "offline", "last_seen": last_seen}
-        except Exception:
-            pass
+    saved = STORE.load()
+    for key in ("queue", "feed"):
+        if isinstance(saved.get(key), list):
+            STATE[key] = saved[key]
+    if len(STATE["feed"]) > MAX_FEED_ITEMS:
+        STATE["feed"] = STATE["feed"][-MAX_FEED_ITEMS:]
+    restored_events = saved.get("events")
+    if isinstance(restored_events, list):
+        # Feedback remains durable. Layout and ended events describe the prior
+        # process lifecycle and must be regenerated for the new process.
+        STATE["events"] = [
+            event for event in restored_events
+            if isinstance(event, dict) and event.get("type") == "feedback"
+        ]
+        for event in STATE["events"]:
+            event.setdefault("schema", EVENT_SCHEMA)
+            # A process restart invalidates any old delivery lease.
+            event.pop("claimed_at", None)
+    previous_agent = saved.get("agent")
+    last_seen = (previous_agent.get("last_seen")
+                 if isinstance(previous_agent, dict) else None)
+    STATE["agent"] = {"status": "offline", "last_seen": last_seen}
     # Every explicit server start is a reopened, live session that must audit
     # the current artifact. Persist this reset so another CLI sees it too.
     STATE["ended"] = False
@@ -131,19 +216,124 @@ def _restore():
 
 
 def _changed_locked():
+    global PUBLISHED_STATE
+    previous = PUBLISHED_STATE or _state_locked()
     STATE["revision"] += 1
+    current = _state_locked()
+    changes = {}
+    for key in ("version", "ended", "ended_by", "queue", "audit", "agent",
+                "activity"):
+        if current[key] != previous.get(key):
+            changes[key] = copy.deepcopy(current[key])
+    previous_feed = {item.get("id"): item for item in previous.get("feed", [])}
+    upserts = [
+        copy.deepcopy(item) for item in current["feed"]
+        if previous_feed.get(item.get("id")) != item
+    ]
+    if upserts:
+        changes["feed_upserts"] = upserts
+    REVISION_HISTORY.append({
+        "revision": STATE["revision"],
+        "changes": changes,
+    })
+    PUBLISHED_STATE = current
     EVENTS_COND.notify_all()
 
 
 def _state_locked():
-    return copy.deepcopy({
+    if STORE is None:
+        activity = {
+            "items": STATE["feed"][-50:],
+            "total": len(STATE["feed"]),
+            "next_before": None,
+            "has_more": len(STATE["feed"]) > 50,
+        }
+    else:
+        activity = STORE.activity(before=None, limit=50)
+    public = {
         key: STATE[key]
-        for key in ("version", "revision", "ended", "ended_by",
-                    "queue", "audit", "feed", "agent")
-    })
+        for key in ("version", "revision", "ended", "ended_by", "queue",
+                    "audit", "agent")
+    }
+    public["feed"] = activity["items"]
+    public["activity"] = {
+        key: activity[key]
+        for key in ("total", "next_before", "has_more")
+    }
+    return copy.deepcopy(public)
+
+
+def _reset_publication_locked():
+    global PUBLISHED_STATE
+    REVISION_HISTORY.clear()
+    PUBLISHED_STATE = _state_locked()
+
+
+def _cancel_shutdown_locked():
+    global SHUTDOWN_TIMER
+    timer = SHUTDOWN_TIMER
+    SHUTDOWN_TIMER = None
+    if timer is not None:
+        timer.cancel()
+
+
+def _schedule_shutdown_locked(server):
+    global SHUTDOWN_TIMER
+    _cancel_shutdown_locked()
+    scheduled_instance = INSTANCE_ID
+    timer = None
+
+    def shutdown_if_still_ended():
+        global SHUTDOWN_TIMER
+        with STATE_LOCK:
+            if (SHUTDOWN_TIMER is not timer
+                    or not STATE["ended"]
+                    or INSTANCE_ID != scheduled_instance):
+                return
+            SHUTDOWN_TIMER = None
+        server.shutdown()
+
+    timer = threading.Timer(END_SHUTDOWN_DELAY, shutdown_if_still_ended)
+    timer.daemon = True
+    SHUTDOWN_TIMER = timer
+    timer.start()
+
+
+def _delta_since_locked(after):
+    revision = STATE["revision"]
+    if after > revision or after < 0:
+        return {"mode": "reset", "revision": revision,
+                "state": _state_locked()}
+    if after == revision:
+        return {"mode": "delta", "revision": revision, "changes": {}}
+    if not REVISION_HISTORY or after < REVISION_HISTORY[0]["revision"] - 1:
+        return {"mode": "reset", "revision": revision,
+                "state": _state_locked()}
+
+    merged = {}
+    feed_upserts = {}
+    for record in REVISION_HISTORY:
+        if record["revision"] <= after:
+            continue
+        for key, value in record["changes"].items():
+            if key == "feed_upserts":
+                for item in value:
+                    feed_upserts[item["id"]] = copy.deepcopy(item)
+            else:
+                merged[key] = copy.deepcopy(value)
+    if feed_upserts:
+        merged["feed_upserts"] = list(feed_upserts.values())
+    return {"mode": "delta", "revision": revision, "changes": merged}
 
 
 def _queue_item_locked(item):
+    proposed = [
+        queued for queued in STATE["queue"]
+        if not (item.get("kind") == "control"
+                and queued.get("kind") == "control"
+                and queued.get("selector") == item.get("selector"))
+    ]
+    _require_quota("queue_items", len(proposed) + 1, MAX_QUEUE_ITEMS)
     item["qid"] = secrets.token_hex(4)
     item["ts"] = time.time()
     if item["kind"] == "control":
@@ -154,6 +344,17 @@ def _queue_item_locked(item):
         ]
     STATE["queue"].append(item)
     return item
+
+
+def _require_quota(resource, proposed, limit):
+    if proposed > limit:
+        raise QuotaExceeded(resource, limit, proposed)
+
+
+def _append_feed_locked(item):
+    STATE["feed"].append(item)
+    if len(STATE["feed"]) > MAX_FEED_ITEMS:
+        del STATE["feed"][:-MAX_FEED_ITEMS]
 
 
 def _warning_key(finding):
@@ -180,17 +381,19 @@ def _undelivered_warnings_locked():
 def _feedback_event_locked():
     if not STATE["queue"]:
         return None
+    _require_quota(
+        "pending_events", len(STATE["events"]) + 1, MAX_PENDING_EVENTS)
     items = STATE["queue"]
     STATE["queue"] = []
     sent_at = time.time()
-    event = {
-        "id": secrets.token_hex(8),
-        "type": "feedback",
-        "items": items,
-        "layout_warnings": _undelivered_warnings_locked(),
-        "sent_at": sent_at,
-    }
-    STATE["feed"].append({
+    event = event_envelope(
+        "feedback",
+        id=secrets.token_hex(8),
+        items=items,
+        layout_warnings=_undelivered_warnings_locked(),
+        sent_at=sent_at,
+    )
+    _append_feed_locked({
         "id": event["id"],
         "role": "human",
         "ts": sent_at,
@@ -240,24 +443,6 @@ def _write_private_json(path, value):
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(value, fh, indent=2)
-            fh.flush()
-        try:
-            os.chmod(tmp, 0o600)
-        except OSError:
-            pass
-        os.replace(tmp, path)
-    finally:
-        try:
-            os.unlink(tmp)
-        except FileNotFoundError:
-            pass
-
-
-def _write_private_bytes(path, value):
-    tmp = path + ".tmp"
-    try:
-        with open(tmp, "wb") as fh:
-            fh.write(value)
             fh.flush()
         try:
             os.chmod(tmp, 0o600)
@@ -349,17 +534,115 @@ def _normalise_working_record(value):
     }
 
 
-def _new_whiteboard_snapshot_paths_locked(
-        directory, whiteboard_id, include_png):
-    for _ in range(16):
-        suffix = f"{time.time_ns():x}-{secrets.token_hex(8)}"
-        stem = f"{whiteboard_id}.{suffix}"
-        scene_path = os.path.join(directory, stem + ".excalidraw")
-        png_path = os.path.join(directory, stem + ".png") if include_png else None
-        if (not os.path.exists(scene_path)
-                and (png_path is None or not os.path.exists(png_path))):
-            return scene_path, png_path
-    raise OSError("cannot allocate a unique whiteboard snapshot")
+def _whiteboard_blob_dir_locked():
+    path = os.path.join(_whiteboard_dir_locked(), "blobs")
+    os.makedirs(path, exist_ok=True)
+    try:
+        os.chmod(path, 0o700)
+    except OSError:
+        pass
+    return path
+
+
+def _digest_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _write_blob_atomic(path, value, digest):
+    if os.path.exists(path):
+        if os.path.getsize(path) != len(value) or _digest_file(path) != digest:
+            raise OSError(f"content-addressed blob is corrupt: {path}")
+        return False
+    tmp = os.path.join(
+        os.path.dirname(path),
+        f".{os.path.basename(path)}.{secrets.token_hex(8)}.tmp",
+    )
+    try:
+        with open(tmp, "xb") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, path)
+        return True
+    finally:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+
+
+def _save_whiteboard_blobs_locked(scene, png_bytes):
+    scene_bytes = json.dumps(
+        scene, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    scene_hash = hashlib.sha256(scene_bytes).hexdigest()
+    png_hash = (
+        hashlib.sha256(png_bytes).hexdigest()
+        if png_bytes is not None else None
+    )
+    directory = _whiteboard_blob_dir_locked()
+    targets = [(
+        os.path.join(directory, scene_hash + ".excalidraw"),
+        scene_bytes,
+        scene_hash,
+    )]
+    if png_bytes is not None:
+        targets.append((
+            os.path.join(directory, png_hash + ".png"),
+            png_bytes,
+            png_hash,
+        ))
+
+    added = []
+    added_bytes = 0
+    for path, value, digest in targets:
+        if os.path.exists(path):
+            if os.path.getsize(path) != len(value) or _digest_file(path) != digest:
+                raise OSError(f"content-addressed blob is corrupt: {path}")
+        else:
+            added.append((path, value, digest))
+            added_bytes += len(value)
+    usage = STORE.usage()
+    _require_quota(
+        "snapshot_blobs",
+        usage["snapshot_blobs"] + len(added),
+        MAX_SNAPSHOT_BLOBS,
+    )
+    _require_quota(
+        "snapshot_bytes",
+        usage["snapshot_bytes"] + added_bytes,
+        MAX_SNAPSHOT_BYTES,
+    )
+
+    created = []
+    try:
+        for path, value, digest in added:
+            if _write_blob_atomic(path, value, digest):
+                created.append(path)
+    except Exception:
+        for path in created:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+        raise
+    return {
+        "scene_path": targets[0][0],
+        "png_path": targets[1][0] if len(targets) > 1 else None,
+        "scene_hash": scene_hash,
+        "png_hash": png_hash,
+    }
 
 
 def _normalise_host(value):
@@ -413,6 +696,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _quota(self, error):
+        self._json(error.payload(), 413)
+
     def _bytes(self, body, ctype, public_static=False):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
@@ -427,17 +713,60 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _accepts_gzip(self):
+        for item in (self.headers.get("Accept-Encoding") or "").split(","):
+            parts = [part.strip() for part in item.split(";")]
+            if not parts or parts[0].lower() not in ("gzip", "*"):
+                continue
+            quality = 1.0
+            for parameter in parts[1:]:
+                if parameter.lower().startswith("q="):
+                    try:
+                        quality = float(parameter[2:])
+                    except ValueError:
+                        quality = 0.0
+            if quality > 0:
+                return True
+        return False
+
+    def _static_entry(self, entry, public_static=False):
+        use_gzip = self._accepts_gzip()
+        if use_gzip:
+            compressed, compressed_etag = _gzip_variant(entry)
+            use_gzip = len(compressed) < len(entry["body"])
+        body = compressed if use_gzip else entry["body"]
+        etag = compressed_etag if use_gzip else entry["etag"]
+        version = (parse_qs(urlparse(self.path).query).get("v") or [""])[0]
+        cache_control = (
+            "public, max-age=31536000, immutable"
+            if version == entry["hash"]
+            else "public, max-age=0, must-revalidate"
+        )
+
+        not_modified = self.headers.get("If-None-Match") == etag
+        self.send_response(304 if not_modified else 200)
+        self.send_header("Cache-Control", cache_control)
+        self.send_header("ETag", etag)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if use_gzip:
+            self.send_header("Content-Encoding", "gzip")
+        if public_static:
+            self.send_header("Access-Control-Allow-Origin", "*")
+        if not not_modified:
+            self.send_header("Content-Type", entry["content_type"])
+            self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if not not_modified:
+            self.wfile.write(body)
+
     def _asset(self, name, public_static=False):
-        path = os.path.join(ASSET_DIR, name)
-        try:
-            with open(path, "rb") as fh:
-                body = fh.read()
-        except OSError:
+        entry = ASSET_CACHE.get(name)
+        if entry is None:
             self._json({"error": "asset not found", "asset": name}, 404)
             return
-        self._bytes(
-            body, MIME.get(os.path.splitext(name)[1], "text/plain"),
-            public_static=public_static)
+        self._static_entry(entry, public_static=public_static)
 
     def _body(self):
         raw_length = self.headers.get("Content-Length", "0")
@@ -479,7 +808,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/sdk.js":
             self._sdk()
         elif path == "/whiteboard-frame":
-            self._asset("whiteboard-frame.html", public_static=True)
+            self._asset("whiteboard-frame", public_static=True)
         elif path in ("/whiteboard.js", "/whiteboard.css"):
             self._asset(path.lstrip("/"), public_static=True)
         elif path.startswith("/whiteboard/"):
@@ -488,8 +817,17 @@ class Handler(BaseHTTPRequestHandler):
             with STATE_LOCK:
                 state = _state_locked()
             self._json(state)
+        elif path == "/health":
+            self._json({
+                "ok": True,
+                "instance_id": INSTANCE_ID,
+                "tool_version": VERSION,
+                "event_schema": EVENT_SCHEMA,
+            })
         elif path == "/state/next":
             self._state_next(parse_qs(urlparse(self.path).query))
+        elif path == "/activity":
+            self._activity(parse_qs(urlparse(self.path).query))
         elif path == "/next":
             self._next(parse_qs(urlparse(self.path).query))
         else:
@@ -516,10 +854,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"saved": saved})
 
     def _chrome(self):
-        path = os.path.join(ASSET_DIR, "chrome.html")
-        html = open(path).read()
+        html = ASSET_CACHE["chrome.html"]["body"].decode("utf-8")
         boot = {"token": TOKEN, "artifact": ARTIFACT,
-                "name": os.path.basename(ARTIFACT)}
+                "name": os.path.basename(ARTIFACT),
+                "assets": ASSET_HASHES}
         html = html.replace("/*__AREV_BOOT__*/", "window.AREV = " + json.dumps(boot) + ";")
         self._bytes(html.encode(), "text/html; charset=utf-8")
 
@@ -529,7 +867,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as err:
             self._bytes(f"<h1>cannot read artifact</h1><p>{err}</p>".encode(), "text/html")
             return
-        tag = '<script src="/sdk.js"></script>'
+        tag = f'<script src="{_asset_url("sdk.js")}"></script>'
         # Inject before </body> when present, else append. The disk file is
         # untouched, so the artifact opened directly stays identical.
         if re.search(r"</body>", raw, re.I):
@@ -539,10 +877,7 @@ class Handler(BaseHTTPRequestHandler):
         self._bytes(raw.encode(), "text/html; charset=utf-8")
 
     def _sdk(self):
-        sdk = open(os.path.join(ASSET_DIR, "sdk.js")).read()
-        audit_path = os.path.join(ASSET_DIR, "audit.js")
-        audit = open(audit_path).read() if os.path.exists(audit_path) else "window.__arevAudit=function(){return []};"
-        self._bytes((audit + "\n" + sdk).encode(), "application/javascript")
+        self._asset("sdk.js")
 
     def _next(self, qs):
         try:
@@ -567,10 +902,13 @@ class Handler(BaseHTTPRequestHandler):
                         key: value for key, value in event.items()
                         if key != "claimed_at"
                     }
+                    # Sessions created before public event schemas were added
+                    # remain consumable after an in-place tool upgrade.
+                    response.setdefault("schema", EVENT_SCHEMA)
                     break
                 remaining = deadline - time.time()
                 if remaining <= 0:
-                    response = {"type": "idle"}
+                    response = event_envelope("idle")
                     break
                 EVENTS_COND.wait(timeout=min(remaining, 30.0))
         self._json(response)
@@ -589,8 +927,26 @@ class Handler(BaseHTTPRequestHandler):
                 if remaining <= 0:
                     break
                 EVENTS_COND.wait(timeout=remaining)
-            state = _state_locked()
-        self._json(state)
+            if (qs.get("mode") or [""])[0] == "delta":
+                response = _delta_since_locked(after)
+            else:
+                response = _state_locked()
+        self._json(response)
+
+    def _activity(self, qs):
+        try:
+            raw_before = (qs.get("before") or [None])[0]
+            before = None if raw_before in (None, "") else int(raw_before)
+            limit = int((qs.get("limit") or ["50"])[0])
+        except (TypeError, ValueError):
+            self._json({"error": "before and limit must be integers"}, 400)
+            return
+        if limit < 1 or limit > 50:
+            self._json({"error": "limit must be between 1 and 50"}, 400)
+            return
+        with STATE_LOCK:
+            page = STORE.activity(before=before, limit=limit)
+        self._json(page)
 
     # -- PUT ---------------------------------------------------------------
     def do_PUT(self):
@@ -672,6 +1028,7 @@ class Handler(BaseHTTPRequestHandler):
             "/queue": self._queue, "/unqueue": self._unqueue, "/flush": self._flush,
             "/send": self._send, "/agent-reply": self._agent_reply,
             "/agent-status": self._agent_status, "/ack": self._ack, "/end": self._end,
+            "/reopen": self._reopen, "/shutdown": self._shutdown,
             "/audit": self._audit, "/audit/override": self._audit_override,
             "/whiteboard": self._whiteboard,
         }.get(path)
@@ -697,7 +1054,11 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            _queue_item_locked(item)
+            try:
+                _queue_item_locked(item)
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "qid": item["qid"], "queued": len(STATE["queue"])})
@@ -719,7 +1080,11 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            event = _feedback_event_locked()
+            try:
+                event = _feedback_event_locked()
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             if not event:
                 self._json({"error": "queue empty"}, 400)
                 return
@@ -747,9 +1112,18 @@ class Handler(BaseHTTPRequestHandler):
             if STATE["ended"]:
                 self._json({"error": "session ended"}, 409)
                 return
-            if item:
-                _queue_item_locked(item)
-            event = _feedback_event_locked()
+            try:
+                # Check the event boundary before adding a supplied item so a
+                # rejected send never changes the existing draft queue.
+                _require_quota(
+                    "pending_events", len(STATE["events"]) + 1,
+                    MAX_PENDING_EVENTS)
+                if item:
+                    _queue_item_locked(item)
+                event = _feedback_event_locked()
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             if not event:
                 self._json({"error": "queue empty"}, 400)
                 return
@@ -771,7 +1145,8 @@ class Handler(BaseHTTPRequestHandler):
                         entry["status"] = "answered"
                         entry["answered_at"] = time.time()
                         break
-            STATE["feed"].append({
+            _append_feed_locked({
+                "id": secrets.token_hex(8),
                 "role": "agent",
                 "ts": time.time(),
                 "text": text,
@@ -823,6 +1198,8 @@ class Handler(BaseHTTPRequestHandler):
         by = body.get("by") if body.get("by") in ("agent", "user") else "agent"
         with EVENTS_COND:
             if STATE["ended"]:
+                if SHUTDOWN_TIMER is None:
+                    _schedule_shutdown_locked(self.server)
                 existing = next((
                     event for event in STATE["events"]
                     if event.get("type") == "ended"
@@ -832,16 +1209,53 @@ class Handler(BaseHTTPRequestHandler):
                 return
             STATE["ended"] = True
             STATE["ended_by"] = by
-            STATE["events"] = [
+            remaining_events = [
                 event for event in STATE["events"]
                 if event.get("type") != "layout"
             ]
-            event = {"id": secrets.token_hex(8), "type": "ended",
-                     "by": by, "sent_at": time.time()}
+            try:
+                _require_quota(
+                    "pending_events", len(remaining_events) + 1,
+                    MAX_PENDING_EVENTS)
+            except QuotaExceeded as error:
+                STATE["ended"] = False
+                STATE["ended_by"] = None
+                self._quota(error)
+                return
+            STATE["events"] = remaining_events
+            event = event_envelope(
+                "ended",
+                id=secrets.token_hex(8),
+                by=by,
+                sent_at=time.time(),
+            )
             STATE["events"].append(event)
             _persist_locked()
             _changed_locked()
+            _schedule_shutdown_locked(self.server)
         self._json({"ok": True, "id": event["id"]})
+
+    def _reopen(self, body):
+        with EVENTS_COND:
+            _cancel_shutdown_locked()
+            STATE["ended"] = False
+            STATE["ended_by"] = None
+            STATE["events"] = [
+                event for event in STATE["events"]
+                if event.get("type") not in ("ended", "layout")
+            ]
+            STATE["audit"] = {"status": "pending", "findings": []}
+            STATE["warned"] = []
+            _persist_locked()
+            _changed_locked()
+            state = _state_locked()
+        self._json(state)
+
+    def _shutdown(self, body):
+        with STATE_LOCK:
+            _cancel_shutdown_locked()
+        self._json({"ok": True, "instance_id": INSTANCE_ID})
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _audit(self, body):
         findings = body.get("findings")
@@ -856,25 +1270,34 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "session ended"}, 409)
                 return
             severe = _severe(findings)
+            remaining_events = [
+                event for event in STATE["events"]
+                if event.get("type") != "layout"
+            ]
+            if severe:
+                try:
+                    _require_quota(
+                        "pending_events", len(remaining_events) + 1,
+                        MAX_PENDING_EVENTS)
+                except QuotaExceeded as error:
+                    self._quota(error)
+                    return
             STATE["audit"] = {
                 "status": "blocked" if severe else "clear",
                 "findings": findings,
             }
             # A report supersedes every older layout event. This also removes a
             # stale severe event when a re-audit of changed content is clean.
-            STATE["events"] = [
-                event for event in STATE["events"]
-                if event.get("type") != "layout"
-            ]
+            STATE["events"] = remaining_events
             if severe:
                 # The agent hears about a proven failure immediately. It can
                 # fix and re-check before the human ever sees the page.
-                STATE["events"].append({
-                    "id": secrets.token_hex(8),
-                    "type": "layout",
-                    "layout_warnings": findings,
-                    "sent_at": time.time(),
-                })
+                STATE["events"].append(event_envelope(
+                    "layout",
+                    id=secrets.token_hex(8),
+                    layout_warnings=findings,
+                    sent_at=time.time(),
+                ))
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "status": STATE["audit"]["status"]})
@@ -941,25 +1364,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "session ended"}, 409)
                 return
             try:
-                wdir = _whiteboard_dir_locked()
-                scene_path, png_path = _new_whiteboard_snapshot_paths_locked(
-                    wdir, wid, png_bytes is not None)
-                _write_private_json(scene_path, scene)
-                if png_path:
-                    _write_private_bytes(png_path, png_bytes)
+                saved = _save_whiteboard_blobs_locked(scene, png_bytes)
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
             except OSError as error:
                 self._json({"error": f"cannot save whiteboard: {error}"}, 500)
                 return
         self._json({
             "ok": True,
-            "scene_path": scene_path,
-            "png_path": png_path,
+            **saved,
             "source_hash": source_hash,
         })
 
 
 def main():
-    global ARTIFACT, SESSION_DIR, TOKEN, ASSET_DIR, ALLOWED_HOSTS
+    global ARTIFACT, SESSION_DIR, STORE, TOKEN, ASSET_DIR, ALLOWED_HOSTS
+    global ASSET_CACHE, ASSET_HASHES
     ap = argparse.ArgumentParser(
         description="Internal artifact-review session server. Prefer the "
                     "public `arev open` command.")
@@ -982,6 +1403,15 @@ def main():
         ap.error(f"artifact is not a file: {ARTIFACT}")
     if not os.path.isdir(ASSET_DIR):
         ap.error(f"asset directory does not exist: {ASSET_DIR}")
+    try:
+        ASSET_CACHE = _load_asset_cache(ASSET_DIR)
+    except OSError as error:
+        ap.error(f"cannot load review runtime assets: {error}")
+    ASSET_HASHES = {
+        name: entry["hash"]
+        for name, entry in ASSET_CACHE.items()
+        if name != "chrome.html"
+    }
     if args.port < 0 or args.port > 65535:
         ap.error("--port must be between 0 and 65535")
     try:
@@ -1002,7 +1432,11 @@ def main():
         os.chmod(SESSION_DIR, 0o700)
     except OSError:
         pass
+    STORE = ReviewStore(SESSION_DIR, STATE_SCHEMA)
+    STORE.set_session_info(ARTIFACT)
     _restore()
+    with STATE_LOCK:
+        _reset_publication_locked()
 
     threading.Thread(target=_watch_file, daemon=True).start()
     server_class = ReviewHTTPServer
@@ -1016,6 +1450,11 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        with STATE_LOCK:
+            _cancel_shutdown_locked()
+        server.server_close()
+        STORE.close()
 
 
 if __name__ == "__main__":

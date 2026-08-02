@@ -146,3 +146,46 @@ each idle poll is ~4s shorter. Per artifact, the model writes ~1,250 fewer outpu
 The largest remaining lever is `SKILL.md` itself at 10,040 bytes, loaded on every trigger.
 That was offered as an option in the review artifact and the user did not select it, so it
 stays out of scope.
+
+## 2026-08-02 runtime follow-up
+
+The later whole-tool review explicitly brought the previously deferred lever back into
+scope and added browser/runtime costs that the first audit did not measure.
+
+### Changes
+
+- The always-loaded `SKILL.md` is now a compact event router. Detailed lifecycle,
+  feedback, whiteboard, and remote guidance lives in three lazy references whose exact
+  routes are checked by `tests/test_cli_foundation.py`.
+- Default `poll` output is one compact JSON line; `--pretty` preserves expanded output for
+  manual diagnostics. A successful `brief` emits one install summary line instead of the
+  full private path-bearing doctor object.
+- Diagram discovery creates lightweight hosts only. The 8.9 MB whiteboard module is not
+  requested before activation, and one shared frame moves between any number of diagrams
+  after a bounded autosave flush.
+- Static runtime bytes and SHA-256 hashes are loaded once per server. Gzip variants are
+  created lazily on first request and retained in memory. Hashed URLs are immutable and
+  conditional requests use representation-specific strong ETags.
+
+### Measured results
+
+`runtime-after.txt` is the raw output from:
+
+```bash
+docs/skill-efficiency-audit/bench.sh
+```
+
+Compared with the earlier `after.txt`:
+
+- always-loaded `SKILL.md`: **10,040 → 3,704 bytes** (63% smaller);
+- typical brief-flow context: **17,521 → 10,884 bytes** (38% smaller);
+- representative event JSON: **126 bytes pretty → 84 bytes default** (33% smaller);
+- whiteboard module: **8,938,928 raw bytes → 2,916,787 gzip bytes**;
+- pre-activation whiteboard frame/script/style requests: **0**;
+- post-activation editor frames: **1**; and
+- initial controller transfer in the recorded Chromium run: **76,260 bytes**.
+
+The recorded local controller-ready time was 351.1 ms and `arev open` was 0.18 s. Those
+wall-clock values describe this machine and run, not a cross-machine promise. Request count,
+frame count, byte size, caching headers, and lazy-load behavior are deterministic acceptance
+contracts in the test suite.

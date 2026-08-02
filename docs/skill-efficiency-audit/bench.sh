@@ -12,9 +12,14 @@
 
 set -euo pipefail
 
-SKILL="${AREV_SKILL:-$(cd "$(dirname "$0")/../.." && pwd)/.claude/skills/artifact-review}"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+DEFAULT_SKILL="$REPO_ROOT/skills/artifact-review"
+if [ ! -f "$DEFAULT_SKILL/SKILL.md" ]; then
+  DEFAULT_SKILL="$REPO_ROOT/.claude/skills/artifact-review"
+fi
+SKILL="${AREV_SKILL:-$DEFAULT_SKILL}"
 AREV="$SKILL/scripts/arev"
-PROBE="${TMPDIR:-/tmp}/arev-bench-probe.html"
+PROBE="$(mktemp "${TMPDIR:-/tmp}/arev-bench-probe.XXXXXX")"
 
 bytes() { wc -c < "$1" | tr -d ' '; }
 tok()   { echo $(( $1 / 4 )); }
@@ -28,6 +33,8 @@ printf '%-42s %10s %10s\n' "------------------------------------------" "-------
 
 # --- fixed per-session context cost -----------------------------------------
 sk=$(bytes "$SKILL/SKILL.md");                       row "SKILL.md"                "$sk"  "$(tok "$sk")"
+rf=$(find "$SKILL/references" -maxdepth 1 -type f -name '*.md' -exec wc -c {} + | awk 'END {print $1}')
+                                                     row "lazy references (all)"   "$rf"  "$(tok "$rf")"
 dg=$("$AREV" design | wc -c | tr -d ' ');            row "arev design"             "$dg"  "$(tok "$dg")"
 ix=$("$AREV" playbook | wc -c | tr -d ' ');          row "arev playbook (index)"   "$ix"  "$(tok "$ix")"
 tp=$("$AREV" playbook plan table | wc -c | tr -d ' '); row "arev playbook plan table" "$tp" "$(tok "$tp")"
@@ -41,6 +48,47 @@ if "$AREV" brief plan table >/dev/null 2>&1; then
   br=$("$AREV" brief plan table | wc -c | tr -d ' ')
   row "arev brief plan table" "$br" "$(tok "$br")"
   bt=$(( sk + br ));                                 row "TYPICAL SESSION, brief flow"   "$bt" "$(tok "$bt")"
+fi
+
+# Default poll output is consumed by agents; pretty output is opt-in for people.
+compact_event=$(python3 -c 'import json; v={"type":"feedback","items":[{"kind":"chat","text":"concise"}],"layout_warnings":[]}; print(len(json.dumps(v,separators=(",",":")))+1)')
+pretty_event=$(python3 -c 'import json; v={"type":"feedback","items":[{"kind":"chat","text":"concise"}],"layout_warnings":[]}; print(len(json.dumps(v,indent=2))+1)')
+row "representative poll event (default)" "$compact_event" "$(tok "$compact_event")"
+row "representative poll event (--pretty)" "$pretty_event" "$(tok "$pretty_event")"
+
+whiteboard_raw=$(bytes "$SKILL/assets/review-ui/whiteboard.js")
+whiteboard_gzip=$(python3 -c 'import gzip,sys; data=open(sys.argv[1],"rb").read(); print(len(gzip.compress(data,compresslevel=6,mtime=0)))' "$SKILL/assets/review-ui/whiteboard.js")
+row "whiteboard.js raw" "$whiteboard_raw" "$(tok "$whiteboard_raw")"
+row "whiteboard.js gzip transfer" "$whiteboard_gzip" "$(tok "$whiteboard_gzip")"
+
+if [ -f "$REPO_ROOT/node_modules/playwright/package.json" ]; then
+  browser_state="$(mktemp -d "${TMPDIR:-/tmp}/arev-browser-bench.XXXXXX")"
+  browser_metrics=$(ARTIFACT_REVIEW_HOME="$browser_state" node \
+    "$REPO_ROOT/tests/bench-runtime.mjs" \
+    "$REPO_ROOT/tests/fixtures/clean.html")
+  python3 - "$browser_metrics" <<'PY'
+import json
+import sys
+
+metrics = json.loads(sys.argv[1])
+print()
+print("BROWSER METRIC                                    VALUE")
+print("------------------------------------------ ----------")
+for key in (
+    "controller_ready_ms",
+    "initial_request_count",
+    "initial_transfer_bytes",
+    "pre_activation_whiteboard_requests",
+    "post_activation_frame_count",
+    "whiteboard_transfer_bytes",
+    "whiteboard_encodings",
+):
+    value = metrics[key]
+    if isinstance(value, list):
+        value = ",".join(value)
+    print(f"{key:<42} {str(value):>10}")
+PY
+  python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' "$browser_state"
 fi
 
 echo
@@ -77,7 +125,7 @@ for n in 1 2; do
 done
 
 "$AREV" stop "$PROBE" > /dev/null
-rm -f "$PROBE"
+rm -f -- "$PROBE"
 
 echo
 echo "Not covered here, measure by hand:"

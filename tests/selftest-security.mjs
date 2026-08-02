@@ -58,7 +58,7 @@ try {
   );
   test.check(
     'injected SDK URL carries no session token',
-    /<script[^>]+src="\/sdk\.js"><\/script>/i.test(artifact.body) &&
+    /<script[^>]+src="\/sdk\.js\?v=[a-f0-9]{64}"><\/script>/i.test(artifact.body) &&
       !/sdk\.js\?[^"']*t=/i.test(artifact.body),
   );
 

@@ -6,8 +6,17 @@
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<script>
+  try {
+    document.documentElement.dataset.reviewRail =
+      localStorage.getItem("artifact-review:rail-state:v1") === "collapsed"
+        ? "collapsed"
+        : "expanded";
+  } catch (error) {
+    document.documentElement.dataset.reviewRail = "expanded";
+  }
+</script>
 <title>Artifact Review</title>
-<link rel="stylesheet" id="whiteboardCss">
 <style>
   :root {
     color-scheme: light;
@@ -27,6 +36,9 @@
     --danger:#a63d40;
     --danger-soft:#f8e9ea;
     --shadow:0 4px 8px rgba(20,24,32,.14);
+    --review-rail-expanded:360px;
+    --review-dock-width:64px;
+    --rail-ease:cubic-bezier(.2,.8,.2,1);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -165,7 +177,7 @@
     font-size:12px;
     font-weight:600;
   }
-  .workspace { min-height:0; flex:1; display:flex }
+  .workspace { position:relative; min-height:0; flex:1; display:flex }
   .stage { position:relative; min-width:0; min-height:0; flex:1 }
   #art { display:block; width:100%; height:100%; border:0; background:#fff }
 
@@ -237,15 +249,131 @@
   .action-state.failed { color:var(--danger) }
 
   .review-rail {
-    width:360px;
+    width:var(--review-rail-expanded);
     min-height:0;
-    flex:0 0 360px;
+    flex:0 0 var(--review-rail-expanded);
     display:flex;
     flex-direction:column;
+    overflow:hidden;
     border-left:1px solid var(--line);
     background:var(--surface);
   }
-  .rail-grip { display:none }
+  .rail-toolbar {
+    min-height:48px;
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    gap:4px;
+    padding:6px 8px;
+    border-bottom:1px solid var(--line);
+  }
+  .dock-control {
+    position:relative;
+    width:36px;
+    height:36px;
+    flex:0 0 auto;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border:0;
+    border-radius:8px;
+    padding:0;
+    background:transparent;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .dock-control:hover:not(:disabled) { background:var(--surface-subtle); color:var(--ink) }
+  .dock-control.selected { background:var(--accent-soft); color:var(--accent) }
+  .dock-control svg {
+    width:19px;
+    height:19px;
+    fill:none;
+    stroke:currentColor;
+    stroke-width:1.7;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  #railToggle svg { transform:scaleX(-1); transition:transform 180ms var(--rail-ease) }
+  .dock-divider { width:1px; height:24px; margin:0 2px; background:var(--line) }
+  .dock-badge {
+    position:absolute;
+    top:1px;
+    right:0;
+    min-width:17px;
+    height:17px;
+    border:2px solid var(--surface);
+    border-radius:999px;
+    padding:0 3px;
+    background:var(--accent);
+    color:#fff;
+    font-size:9px;
+    font-weight:700;
+    line-height:13px;
+    text-align:center;
+  }
+  .dock-tooltip {
+    position:absolute;
+    z-index:60;
+    top:50%;
+    right:calc(100% + 8px);
+    width:max-content;
+    max-width:220px;
+    translate:4px -50%;
+    visibility:hidden;
+    opacity:0;
+    border-radius:6px;
+    padding:5px 7px;
+    background:var(--ink);
+    color:var(--surface);
+    pointer-events:none;
+    font-size:11px;
+    font-weight:600;
+    line-height:1.25;
+    transition:opacity 120ms ease-out, translate 120ms ease-out;
+  }
+  .rail-panel {
+    min-width:var(--review-rail-expanded);
+    min-height:0;
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    visibility:visible;
+    opacity:1;
+    transition:opacity 100ms ease-out;
+  }
+  #draftSection { min-height:0; flex:0 1 auto; display:flex; flex-direction:column }
+  .activity-section { min-height:0; flex:1; display:flex; flex-direction:column }
+  .rail-scrim { display:none }
+  html[data-review-rail="collapsed"] .review-rail {
+    width:var(--review-dock-width);
+    flex-basis:var(--review-dock-width);
+  }
+  html[data-review-rail="collapsed"] .rail-toolbar {
+    min-height:0;
+    flex:1;
+    flex-direction:column;
+    gap:6px;
+    padding:10px;
+    border-bottom:0;
+  }
+  html[data-review-rail="collapsed"] .dock-control { width:44px; height:44px }
+  html[data-review-rail="collapsed"] #railToggle svg { transform:scaleX(1) }
+  html[data-review-rail="collapsed"] .dock-divider {
+    width:32px;
+    height:1px;
+    margin:2px 0;
+  }
+  html[data-review-rail="collapsed"] .rail-panel {
+    visibility:hidden;
+    opacity:0;
+    pointer-events:none;
+  }
+  html[data-review-rail="collapsed"] .dock-control:hover .dock-tooltip,
+  html[data-review-rail="collapsed"] .dock-control:focus-visible .dock-tooltip {
+    visibility:visible;
+    opacity:1;
+    translate:0 -50%;
+  }
   .section-head {
     min-height:40px;
     display:flex;
@@ -331,6 +459,20 @@
   .diagram-row:last-child { border-bottom:0 }
   .diagram-row:hover { background:var(--surface-subtle) }
   .diagram-icon { color:var(--accent) }
+  .load-earlier {
+    width:calc(100% - 24px);
+    min-height:32px;
+    margin:8px 12px 0;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--surface);
+    color:var(--accent);
+    cursor:pointer;
+    font-size:11px;
+    font-weight:650;
+  }
+  .load-earlier:hover { background:var(--surface-subtle) }
+  .load-earlier:disabled { cursor:progress; color:var(--muted) }
   .activity { min-height:96px; flex:1; overflow:auto }
   .feed-entry { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px }
   .feed-entry.agent { background:var(--accent-soft) }
@@ -395,25 +537,36 @@
     .topbar { min-height:56px; padding-inline:10px }
     .artifact-path, .shortcut { display:none }
     .artifact-name { max-width:38vw }
-    .workspace { flex-direction:column }
-    .stage { min-height:0; flex:1 1 44% }
+    .workspace { flex-direction:row; overflow:hidden }
+    .stage { width:100%; min-height:0; flex:1 1 auto }
     .review-rail {
-      width:100%;
+      position:absolute;
+      z-index:40;
+      top:0;
+      right:0;
+      bottom:0;
+      width:min(var(--review-rail-expanded), calc(100% - var(--review-dock-width)));
       height:auto;
       min-height:0;
-      flex:0 0 56%;
-      border-top:1px solid var(--line);
-      border-left:0;
-      border-radius:14px 14px 0 0;
+      flex:none;
+      border-top:0;
+      border-left:1px solid var(--line);
+      border-radius:0;
     }
-    .rail-grip {
-      width:34px;
-      height:4px;
+    .rail-panel { width:100%; min-width:0 }
+    .rail-scrim {
+      position:absolute;
+      z-index:35;
+      inset:0;
       display:block;
-      flex:0 0 auto;
-      margin:6px auto 0;
-      border-radius:999px;
-      background:var(--line);
+      border:0;
+      padding:0;
+      background:rgba(20,24,32,.22);
+      cursor:pointer;
+    }
+    html[data-review-rail="collapsed"] .review-rail {
+      width:var(--review-dock-width);
+      flex-basis:auto;
     }
     .drafts { min-height:0; max-height:22% }
     .activity { min-height:0 }
@@ -491,10 +644,36 @@
     </section>
   </section>
 
-  <aside class="review-rail" aria-label="Review feedback">
-    <span class="rail-grip" aria-hidden="true"></span>
+  <aside class="review-rail" id="reviewRail" aria-label="Review feedback">
+    <div class="rail-toolbar" aria-label="Review panel controls">
+      <button class="dock-control" id="railToggle" type="button"
+              aria-expanded="true" aria-controls="reviewRailPanel"
+              aria-label="Collapse review panel">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5.5h16v13H4zM14.5 5.5v13M10.5 9l-3 3 3 3"/></svg>
+        <span class="dock-tooltip" role="tooltip">Collapse review panel</span>
+      </button>
+      <button class="dock-control selected" id="draftDockBtn" type="button"
+              aria-controls="draftSection" aria-label="Draft feedback, empty">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 4.5h14v11H9l-4 4z"/></svg>
+        <span class="dock-badge" id="draftDockBadge" hidden></span>
+        <span class="dock-tooltip" id="draftDockTooltip" role="tooltip">Draft feedback, empty</span>
+      </button>
+      <button class="dock-control" id="activityDockBtn" type="button"
+              aria-controls="activitySection" aria-label="Review activity">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 7v5l3 2M12 3.5a8.5 8.5 0 1 1-7.5 4.5"/><path d="M4.5 3.5V8H9"/></svg>
+        <span class="dock-tooltip" role="tooltip">Review activity</span>
+      </button>
+      <span class="dock-divider" aria-hidden="true"></span>
+      <button class="dock-control" id="newFeedbackDockBtn" type="button"
+              aria-controls="chat" aria-label="New feedback">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="dock-tooltip" role="tooltip">New feedback</span>
+      </button>
+    </div>
+    <div class="rail-panel" id="reviewRailPanel">
+    <section id="draftSection" aria-labelledby="draftSectionTitle">
     <div class="section-head">
-      <h2>Draft feedback</h2>
+      <h2 id="draftSectionTitle" tabindex="-1">Draft feedback</h2>
       <span class="count" id="qCount" aria-label="0 draft items">0</span>
       <span class="hint">Sent together</span>
     </div>
@@ -502,13 +681,19 @@
       <div class="empty">Nothing drafted. Annotate the artifact or write a note below.</div>
     </div>
     <div class="diagram-list" id="diagrams" hidden></div>
+    </section>
+    <section class="activity-section" id="activitySection" aria-labelledby="activitySectionTitle">
     <div class="section-head">
-      <h2>Activity</h2>
+      <h2 id="activitySectionTitle" tabindex="-1">Activity</h2>
       <span class="hint" id="activityHint">No messages yet</span>
     </div>
+    <button class="load-earlier" id="loadEarlierActivity" type="button" hidden>
+      Load earlier activity
+    </button>
     <div class="activity" id="feed">
       <div class="empty">Feedback and agent replies appear here.</div>
     </div>
+    </section>
     <form class="composer" id="composer">
       <label class="field-label" for="chat">Feedback for the agent</label>
       <textarea id="chat" placeholder="Write a review note"></textarea>
@@ -522,7 +707,10 @@
         </button>
       </div>
     </form>
+    </div>
   </aside>
+  <button class="rail-scrim" id="railScrim" type="button"
+          aria-label="Close review panel" hidden></button>
 </main>
 
 <div class="menu" id="sessionMenu" popover role="menu" aria-label="Review options">
@@ -596,7 +784,97 @@ const B = window.AREV;
 const H = { "X-Arev-Token": B.token, "Content-Type": "application/json" };
 const $ = id => document.getElementById(id);
 const art = $("art");
-$("whiteboardCss").href = "/whiteboard.css";
+const RAIL_STORAGE_KEY = "artifact-review:rail-state:v1";
+const narrowRailQuery = window.matchMedia("(max-width: 780px)");
+let railCollapsed = false;
+
+function syncRailModality() {
+  const modal = narrowRailQuery.matches && !railCollapsed;
+  $("railScrim").hidden = !modal;
+  if (modal) {
+    $("reviewRail").setAttribute("role", "dialog");
+    $("reviewRail").setAttribute("aria-modal", "true");
+  } else {
+    $("reviewRail").removeAttribute("role");
+    $("reviewRail").removeAttribute("aria-modal");
+  }
+}
+
+function setRailCollapsed(collapsed, { persist = true, returnFocus = false } = {}) {
+  railCollapsed = !!collapsed;
+  document.documentElement.dataset.reviewRail = railCollapsed ? "collapsed" : "expanded";
+  $("railToggle").setAttribute("aria-expanded", String(!railCollapsed));
+  $("railToggle").setAttribute(
+    "aria-label", railCollapsed ? "Expand review panel" : "Collapse review panel");
+  $("railToggle").querySelector(".dock-tooltip").textContent =
+    railCollapsed ? "Expand review panel" : "Collapse review panel";
+  $("reviewRailPanel").inert = railCollapsed;
+  $("reviewRailPanel").setAttribute("aria-hidden", String(railCollapsed));
+  syncRailModality();
+  if (persist) {
+    try {
+      localStorage.setItem(
+        RAIL_STORAGE_KEY, railCollapsed ? "collapsed" : "expanded");
+    } catch (error) {}
+  }
+  if (returnFocus) $("railToggle").focus();
+}
+
+$("railToggle").addEventListener("click", () => {
+  setRailCollapsed(!railCollapsed);
+});
+$("railScrim").addEventListener("click", () => {
+  setRailCollapsed(true, { returnFocus:true });
+});
+narrowRailQuery.addEventListener("change", syncRailModality);
+document.addEventListener("keydown", event => {
+  if (!narrowRailQuery.matches || railCollapsed) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    setRailCollapsed(true, { returnFocus:true });
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = [...$("reviewRail").querySelectorAll(
+    'button:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+  )].filter(element => element.getClientRects().length && !element.closest("[inert]"));
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
+function openRailSection(controlId, targetId) {
+  setRailCollapsed(false);
+  ["draftDockBtn", "activityDockBtn", "newFeedbackDockBtn"].forEach(id => {
+    const selected = id === controlId;
+    $(id).classList.toggle("selected", selected);
+    if (selected) $(id).setAttribute("aria-current", "true");
+    else $(id).removeAttribute("aria-current");
+  });
+  const target = $(targetId);
+  target.scrollIntoView({ block:"nearest" });
+  target.focus({ preventScroll:true });
+}
+
+$("draftDockBtn").addEventListener("click", () => {
+  openRailSection("draftDockBtn", "draftSectionTitle");
+});
+$("activityDockBtn").addEventListener("click", () => {
+  openRailSection("activityDockBtn", "activitySectionTitle");
+});
+$("newFeedbackDockBtn").addEventListener("click", () => {
+  openRailSection("newFeedbackDockBtn", "chat");
+});
+setRailCollapsed(
+  document.documentElement.dataset.reviewRail === "collapsed",
+  { persist:false });
 let state = null;
 let lastVersion = null;
 let annotating = false;
@@ -608,7 +886,9 @@ const inlineDiagrams = new Map();
 let deadPolls = 0;
 let stopped = false;
 let scrollResolver = null;
-let reloadInFlight = false;
+let loadedArtifactVersion = null;
+let pendingArtifactReload = null;
+let artifactReloadDrain = null;
 let paintedQueue = "";
 let paintedFeed = "";
 
@@ -841,7 +1121,7 @@ window.addEventListener("message", async event => {
       showBanner(`The page choice was not saved: ${errorMessage(error)}`);
     }
   }
-  if (message.type === "want-board") focusInlineDiagram(message.id);
+  if (message.type === "want-board") await focusInlineDiagram(message.id);
   if (message.type === "inline-mount-failed") {
     showBanner(
       `Diagram editor ${String(message.id || "")} could not mount: ${String(message.error || "Unknown error")}`,
@@ -1003,6 +1283,14 @@ function renderQueue(queue) {
   });
   $("qCount").textContent = String(queue.length);
   $("qCount").setAttribute("aria-label", `${queue.length} draft ${queue.length === 1 ? "item" : "items"}`);
+  const draftLabel = queue.length
+    ? `Draft feedback, ${queue.length} ${queue.length === 1 ? "item" : "items"}`
+    : "Draft feedback, empty";
+  $("draftDockBtn").setAttribute("aria-label", draftLabel);
+  $("draftDockBtn").title = draftLabel;
+  $("draftDockTooltip").textContent = draftLabel;
+  $("draftDockBadge").hidden = queue.length === 0;
+  $("draftDockBadge").textContent = queue.length > 99 ? "99+" : String(queue.length);
 }
 
 function formatTime(timestamp) {
@@ -1026,8 +1314,10 @@ function feedText(entry) {
   }).join("\n");
 }
 
-function renderFeed(feed) {
+function renderFeed(feed, { preserveOffset = false } = {}) {
   const host = $("feed");
+  const previousHeight = host.scrollHeight;
+  const previousTop = host.scrollTop;
   host.textContent = "";
   if (!feed.length) {
     const empty = document.createElement("div");
@@ -1035,36 +1325,71 @@ function renderFeed(feed) {
     empty.textContent = "Feedback and agent replies appear here.";
     host.appendChild(empty);
     $("activityHint").textContent = "No messages yet";
-    return;
+  } else {
+    feed.forEach(entry => {
+      const container = document.createElement("article");
+      container.className = "feed-entry" + (entry.role === "agent" ? " agent" : "");
+      const meta = document.createElement("div");
+      meta.className = "feed-meta";
+      const who = document.createElement("span");
+      who.className = "feed-who";
+      who.textContent = entry.role === "agent" ? "Agent" : "You";
+      meta.appendChild(who);
+      if (entry.role !== "agent") {
+        const delivery = deliveryLabel(entry);
+        const status = document.createElement("span");
+        status.className = `state-chip ${delivery.toLowerCase()}`;
+        status.textContent = delivery;
+        meta.appendChild(status);
+      }
+      const time = document.createElement("time");
+      time.className = "feed-time";
+      time.textContent = formatTime(entry.ts);
+      meta.appendChild(time);
+      const content = document.createElement("pre");
+      content.textContent = feedText(entry);
+      container.append(meta, content);
+      host.appendChild(container);
+    });
+    const total = state?.activity?.total ?? feed.length;
+    $("activityHint").textContent = total > feed.length
+      ? `${feed.length} of ${total} entries`
+      : `${feed.length} ${feed.length === 1 ? "entry" : "entries"}`;
   }
-  feed.forEach(entry => {
-    const container = document.createElement("article");
-    container.className = "feed-entry" + (entry.role === "agent" ? " agent" : "");
-    const meta = document.createElement("div");
-    meta.className = "feed-meta";
-    const who = document.createElement("span");
-    who.className = "feed-who";
-    who.textContent = entry.role === "agent" ? "Agent" : "You";
-    meta.appendChild(who);
-    if (entry.role !== "agent") {
-      const delivery = deliveryLabel(entry);
-      const status = document.createElement("span");
-      status.className = `state-chip ${delivery.toLowerCase()}`;
-      status.textContent = delivery;
-      meta.appendChild(status);
-    }
-    const time = document.createElement("time");
-    time.className = "feed-time";
-    time.textContent = formatTime(entry.ts);
-    meta.appendChild(time);
-    const content = document.createElement("pre");
-    content.textContent = feedText(entry);
-    container.append(meta, content);
-    host.appendChild(container);
-  });
-  $("activityHint").textContent = `${feed.length} ${feed.length === 1 ? "entry" : "entries"}`;
-  host.scrollTop = host.scrollHeight;
+  $("loadEarlierActivity").hidden = !state?.activity?.has_more;
+  host.scrollTop = preserveOffset
+    ? previousTop + host.scrollHeight - previousHeight
+    : host.scrollHeight;
 }
+
+$("loadEarlierActivity").addEventListener("click", async () => {
+  const control = $("loadEarlierActivity");
+  const before = state?.activity?.next_before;
+  if (!before || control.disabled) return;
+  control.disabled = true;
+  control.textContent = "Loading…";
+  try {
+    const page = await api("GET", `/activity?before=${before}&limit=50`);
+    const known = new Set((state.feed || []).map(entry => entry.id));
+    const earlier = page.items.filter(entry => !known.has(entry.id));
+    state = {
+      ...state,
+      feed:[...earlier, ...(state.feed || [])],
+      activity:{
+        total:page.total,
+        next_before:page.next_before,
+        has_more:page.has_more,
+      },
+    };
+    paintedFeed = JSON.stringify(state.feed);
+    renderFeed(state.feed, { preserveOffset:true });
+  } catch (error) {
+    showBanner(`Earlier activity could not be loaded: ${errorMessage(error)}`);
+  } finally {
+    control.disabled = false;
+    control.textContent = "Load earlier activity";
+  }
+});
 
 function setComposerBusy(busy) {
   [$("chat"), $("chatAction")].forEach(control => {
@@ -1174,10 +1499,45 @@ function renderAgent(agent) {
     : labels[status];
 }
 
+function applyStateDelta(current, response) {
+  if (response.mode === "reset") return response.state;
+  const changes = response.changes || {};
+  const next = { ...current, revision:response.revision };
+  Object.entries(changes).forEach(([key, value]) => {
+    if (key === "feed_upserts") return;
+    if (key === "activity" && (current.feed || []).length > 50) {
+      next.activity = {
+        ...value,
+        next_before:current.activity?.next_before,
+        has_more:current.activity?.has_more,
+      };
+      return;
+    }
+    next[key] = value;
+  });
+  if (changes.feed_upserts?.length) {
+    const feed = [...(current.feed || [])];
+    const positions = new Map(feed.map((entry, index) => [entry.id, index]));
+    changes.feed_upserts.forEach(entry => {
+      const position = positions.get(entry.id);
+      if (position === undefined) {
+        positions.set(entry.id, feed.length);
+        feed.push(entry);
+      } else {
+        feed[position] = entry;
+      }
+    });
+    next.feed = feed;
+  }
+  return next;
+}
+
 function applyState(next) {
   const previousVersion = lastVersion;
+  const wasEnded = !!state?.ended;
   state = next;
   lastVersion = next.version;
+  if (loadedArtifactVersion === null) loadedArtifactVersion = next.version;
   const queueKey = JSON.stringify(next.queue || []);
   const feedKey = JSON.stringify(next.feed || []);
   if (queueKey !== paintedQueue) {
@@ -1191,6 +1551,7 @@ function applyState(next) {
   renderAgent(next.agent);
   const ended = !!next.ended;
   [$("annBtn"), $("chat"), $("chatAction"), $("chatSend"), $("chatQueue"), $("chatEnd"),
+    $("newFeedbackDockBtn"),
     $("popAction"), $("popSend"), $("popQueue"),
     $("boardAction"), $("boardSend"), $("boardQueue")]
     .forEach(control => { control.disabled = ended; });
@@ -1201,7 +1562,10 @@ function applyState(next) {
     setAnnotate(false);
     showBanner(`Review ended by ${next.ended_by}. This session is read-only.`);
   }
-  if (previousVersion !== null && previousVersion !== next.version) reloadArtifact();
+  if (wasEnded && !ended) requestArtifactReload(next.version, { force:true });
+  else if (previousVersion !== null && previousVersion !== next.version) {
+    requestArtifactReload(next.version);
+  }
 }
 
 async function stateLoop() {
@@ -1210,8 +1574,9 @@ async function stateLoop() {
     try {
       const path = revision < 0
         ? "/state"
-        : `/state/next?after=${revision}&timeout=25`;
-      const next = await api("GET", path);
+        : `/state/next?after=${revision}&timeout=25&mode=delta`;
+      const response = await api("GET", path);
+      const next = revision < 0 ? response : applyStateDelta(state, response);
       revision = next.revision;
       deadPolls = 0;
       if (!next.ended && $("banner").textContent.includes("server is not responding")) showBanner("");
@@ -1245,9 +1610,33 @@ function requestArtifactScroll() {
   });
 }
 
-async function reloadArtifact() {
-  if (reloadInFlight) return;
-  reloadInFlight = true;
+function requestArtifactReload(version, { force = false } = {}) {
+  if (!force && version === loadedArtifactVersion && pendingArtifactReload === null) {
+    return artifactReloadDrain;
+  }
+  pendingArtifactReload = { version };
+  if (!artifactReloadDrain) {
+    artifactReloadDrain = drainArtifactReloads().finally(() => {
+      artifactReloadDrain = null;
+    });
+  }
+  return artifactReloadDrain;
+}
+
+async function drainArtifactReloads() {
+  while (pendingArtifactReload) {
+    const requested = pendingArtifactReload;
+    pendingArtifactReload = null;
+    try {
+      await reloadArtifactOnce(requested.version);
+      loadedArtifactVersion = requested.version;
+    } catch (error) {
+      showBanner(`The artifact could not reload: ${errorMessage(error)}. Review controls remain available.`);
+    }
+  }
+}
+
+async function reloadArtifactOnce(version) {
   await flushInlineDiagrams("artifact-reload");
   const scrollY = await requestArtifactScroll();
   resetCurtain();
@@ -1255,20 +1644,35 @@ async function reloadArtifact() {
   inlineGeneration += 1;
   inlineDiagrams.clear();
   renderDiagramList();
-  const onLoad = () => {
-    art.removeEventListener("load", onLoad);
-    setTimeout(() => {
-      try {
-        art.contentWindow.postMessage({ arev:true, type:"set-scroll", y:scrollY }, "*");
-        if (annotating) {
-          art.contentWindow.postMessage({ arev:true, type:"set-annotate", on:true }, "*");
-        }
-      } catch (error) {}
-    }, 120);
-  };
-  art.addEventListener("load", onLoad);
-  art.src = `/artifact?v=${Date.now()}`;
-  setTimeout(() => { reloadInFlight = false; }, 250);
+  await new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      art.removeEventListener("load", onLoad);
+      art.removeEventListener("error", onError);
+    };
+    const onLoad = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("the artifact frame reported a load error"));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("the artifact frame did not load within 8 seconds"));
+    }, 8000);
+    art.addEventListener("load", onLoad, { once:true });
+    art.addEventListener("error", onError, { once:true });
+    art.src = `/artifact?v=${encodeURIComponent(version)}`;
+  });
+  await new Promise(resolve => setTimeout(resolve, 120));
+  try {
+    art.contentWindow.postMessage({ arev:true, type:"set-scroll", y:scrollY }, "*");
+    if (annotating) {
+      art.contentWindow.postMessage({ arev:true, type:"set-annotate", on:true }, "*");
+    }
+  } catch (error) {}
 }
 
 $("copyPath").addEventListener("click", async () => {
@@ -1373,6 +1777,7 @@ async function prepareInlineDiagrams(blocks) {
       id:block.id,
       selector:block.selector,
       channel:record.channel,
+      frameVersion:String(B.assets?.["whiteboard-frame"] || ""),
     }, "*");
   }));
 
@@ -1397,13 +1802,14 @@ function renderDiagramList() {
   });
 }
 
-function focusInlineDiagram(id) {
+async function focusInlineDiagram(id) {
   if (state?.ended) return;
   const record = inlineDiagrams.get(String(id || ""));
   if (!record) {
     showBanner("That diagram editor is not ready yet.");
     return;
   }
+  await flushInlineDiagrams("diagram-switch");
   art.contentWindow.postMessage({
     arev:true,
     type:"focus-inline",
@@ -1497,6 +1903,8 @@ async function submitInlineDiagram(record, message) {
         summary,
         scene_path:saved.scene_path,
         png_path:saved.png_path,
+        scene_hash:saved.scene_hash,
+        png_hash:saved.png_hash,
         source_hash:saved.source_hash || sourceHashValue,
         image_fallback:!!message.image_fallback,
         stats:message.stats || {},

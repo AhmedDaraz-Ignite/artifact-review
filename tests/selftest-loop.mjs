@@ -33,6 +33,14 @@ try {
   const sourceBefore = fs.readFileSync(ART, 'utf8');
   const url = openSession(ART);
   const api = sessionApi(url);
+  const health = await api('GET', '/health');
+  test.check(
+    'health exposes a stable server identity',
+    /^[a-f0-9-]{36}$/.test(health.instance_id) &&
+      /^\d+\.\d+\.\d+$/.test(health.tool_version) &&
+      /^artifact-review\/event\/v\d+$/.test(health.event_schema),
+    JSON.stringify(health),
+  );
   browser = await chromium.launch();
   const page = await browser.newPage({ viewport:{ width:1440, height:950 } });
   page.on('pageerror', error => pageErrors.push(error.message));
@@ -79,9 +87,13 @@ try {
   const mobileLayout = await page.evaluate(() => {
     const stage = document.querySelector('.stage').getBoundingClientRect();
     const rail = document.querySelector('.review-rail').getBoundingClientRect();
+    const workspace = document.querySelector('.workspace').getBoundingClientRect();
     const actions = document.querySelector('.topbar-actions').getBoundingClientRect();
     return {
-      railBelow:rail.top >= stage.bottom - 1,
+      railAtRight:Math.abs(rail.right - innerWidth) <= 1,
+      railOverlays:rail.left < stage.right && Math.abs(rail.top - stage.top) <= 1,
+      stageFillsWorkspace:Math.abs(stage.width - workspace.width) <= 1 &&
+        Math.abs(stage.height - workspace.height) <= 1,
       railFitsWidth:rail.left >= -1 && rail.right <= innerWidth + 1,
       railFitsHeight:rail.bottom <= innerHeight + 1,
       actionsFit:actions.right <= innerWidth + 1,
@@ -89,7 +101,7 @@ try {
     };
   });
   test.check(
-    'narrow layout stacks a fully reachable review rail below artifact',
+    'narrow layout overlays a fully reachable review panel from the right',
     Object.values(mobileLayout).every(Boolean),
     JSON.stringify(mobileLayout),
   );
@@ -180,7 +192,8 @@ try {
   const annotationKinds = annotationEvent.items.map(item => item.kind).sort();
   test.check(
     'annotation Send now includes all existing drafts exactly once',
-    JSON.stringify(annotationKinds) === JSON.stringify(['chat', 'control', 'element', 'text']),
+    annotationEvent.schema === health.event_schema &&
+      JSON.stringify(annotationKinds) === JSON.stringify(['chat', 'control', 'element', 'text']),
     annotationKinds.join(','),
   );
   const anchor = annotationEvent.items.find(item => item.kind === 'text')?.anchor;
@@ -283,6 +296,64 @@ try {
     'Mermaid diagram exposes one edit entry',
     diagramCount >= 1,
   );
+  if (await page.locator('#annBtn').getAttribute('aria-pressed') !== 'true') {
+    await page.locator('#annBtn').click();
+  }
+  await frame.locator('html').evaluate(() => window.scrollTo(0, 420));
+  let rapidReloadRequests = 0;
+  let markFirstReloadSeen;
+  let releaseFirstReload;
+  const firstReloadSeen = new Promise(resolve => { markFirstReloadSeen = resolve; });
+  const firstReloadHold = new Promise(resolve => { releaseFirstReload = resolve; });
+  const holdFirstReload = async route => {
+    rapidReloadRequests += 1;
+    if (rapidReloadRequests !== 1) {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    markFirstReloadSeen();
+    await firstReloadHold;
+    try {
+      await route.fulfill({ response });
+    } catch {
+      // A broken overlapping implementation can cancel this route. The
+      // request-count assertion below still records that regression.
+    }
+  };
+  await page.route('**/artifact?v=*', holdFirstReload);
+  fs.appendFileSync(ART, '\n<p id="rapid-save-a">RAPID SAVE A</p>\n');
+  await within(firstReloadSeen, 5000, 'first rapid-save artifact reload');
+  const versionA = (await api('GET', '/state')).version;
+  fs.appendFileSync(ART, '\n<p id="rapid-save-b">RAPID SAVE B</p>\n');
+  await eventually(async () => {
+    const next = await api('GET', '/state');
+    return next.version !== versionA ? next : null;
+  }, { timeout:5000, label:'second rapid-save version' });
+  await page.waitForTimeout(100);
+  test.check(
+    'rapid saves never overlap iframe reloads',
+    rapidReloadRequests === 1,
+    `requests before first load settled=${rapidReloadRequests}`,
+  );
+  releaseFirstReload();
+  await frame.locator('#rapid-save-b').waitFor({ timeout:8000 });
+  await eventually(
+    () => rapidReloadRequests === 2 ? rapidReloadRequests : null,
+    { timeout:3000, label:'coalesced second artifact reload' },
+  );
+  const rapidScrollY = await eventually(async () => {
+    const position = await frame.locator('html').evaluate(() => window.scrollY);
+    return position > 100 ? position : null;
+  }, { timeout:3000, label:'rapid-save scroll restoration' });
+  test.check(
+    'rapid saves settle on newest content with review context preserved',
+    rapidReloadRequests === 2 &&
+      rapidScrollY > 100 &&
+      await page.locator('#annBtn').getAttribute('aria-pressed') === 'true',
+    JSON.stringify({ requests:rapidReloadRequests, scrollY:rapidScrollY }),
+  );
+  await page.unroute('**/artifact?v=*', holdFirstReload);
   test.check(
     'review tooling never rewrites the artifact source',
     fs.readFileSync(ART, 'utf8').startsWith(sourceBefore),
@@ -315,12 +386,14 @@ try {
   await page.locator('#banner').filter({ hasText:'read-only' }).waitFor({ timeout:3000 });
   test.check(
     'ended session becomes read-only and notifies agent',
-    endedEvent.type === 'ended' && endedEvent.by === 'user' &&
+    endedEvent.schema === health.event_schema &&
+      endedEvent.type === 'ended' && endedEvent.by === 'user' &&
       await page.locator('#annBtn').isDisabled() &&
       await page.locator('#chat').isDisabled() &&
       await page.locator('#chatAction').isDisabled() &&
       await page.locator('#chatEnd').isDisabled(),
   );
+  const endedState = await api('GET', '/state');
 
   let refused = false;
   try {
@@ -331,6 +404,51 @@ try {
   test.check('user-ended review refuses accidental reopen', refused);
   const reopened = runArev(['open', ART, '--no-browser', '--reopen']);
   test.check('explicit reopen is accepted', reopened.includes('SESSION'));
+  let reopenWrite;
+  try {
+    reopenWrite = await api('POST', '/queue', {
+      item:{ kind:'chat', text:'feedback after live reopen' },
+    });
+  } catch {
+    reopenWrite = null;
+  }
+  const reopenedState = await api('GET', '/state');
+  test.check(
+    'live reopen resets lifecycle and accepts new feedback',
+    reopenedState.ended === false &&
+      reopenedState.ended_by === null &&
+      reopenedState.audit.status === 'pending' &&
+      reopenedState.feed.length === endedState.feed.length &&
+      reopenWrite?.ok === true,
+    JSON.stringify({
+      ended:reopenedState.ended,
+      ended_by:reopenedState.ended_by,
+      audit:reopenedState.audit.status,
+      feedBefore:endedState.feed.length,
+      feedAfter:reopenedState.feed.length,
+      write:reopenWrite,
+    }),
+  );
+  const reauditState = await eventually(async () => {
+    const next = await api('GET', '/state');
+    return next.audit.status !== 'pending' ? next : null;
+  }, { timeout:3000, label:'browser re-audit after live reopen' });
+  test.check(
+    'open browser re-audits a live reopened session',
+    reauditState.audit.status === 'clear',
+    reauditState.audit.status,
+  );
+  const idempotentReopen = await api('POST', '/reopen', {});
+  test.check(
+    'reopen endpoint is idempotent',
+    idempotentReopen.ended === false && idempotentReopen.ended_by === null,
+    JSON.stringify({
+      ended:idempotentReopen.ended,
+      ended_by:idempotentReopen.ended_by,
+      queued:idempotentReopen.queue.length,
+      feed:idempotentReopen.feed.length,
+    }),
+  );
 
   const unexpectedErrors = pageErrors.filter(message =>
     !/subset-worker|Failed to use workers/.test(message)
@@ -340,6 +458,23 @@ try {
     unexpectedErrors.length === 0,
     unexpectedErrors.join(' | '),
   );
+  await browser.close();
+  browser = null;
+  const shutdown = await api('POST', '/shutdown', {});
+  test.check(
+    'authenticated shutdown identifies the stopped server',
+    shutdown.ok === true && shutdown.instance_id === health.instance_id,
+    JSON.stringify(shutdown),
+  );
+  const stopped = await eventually(async () => {
+    try {
+      await api('GET', '/health');
+      return null;
+    } catch {
+      return true;
+    }
+  }, { timeout:3000, label:'server shutdown' });
+  test.check('authenticated shutdown stops the server', stopped === true);
 } catch (error) {
   test.check('review loop drive completed', false, error.stack || error.message);
 } finally {

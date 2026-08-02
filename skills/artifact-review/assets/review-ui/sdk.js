@@ -16,6 +16,8 @@
   var hoverEl = null;
   var swallowClick = false; // the click that completes a text selection is not an element pick
   var inlineBoards = Object.create(null);
+  var sharedInlineFrame = null;
+  var activeInlineBoardId = null;
   var fullscreenBoardId = null;
   var fullscreenOverflow = null;
 
@@ -239,9 +241,11 @@
   css.textContent =
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
     ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
-    ".arev-inline-board{position:relative;width:100%;max-height:420px;background:#fff;border:1px solid #d8dbe0;border-radius:8px;overflow:hidden;box-sizing:border-box}" +
+    ".arev-inline-board{position:relative;width:100%;height:52px;margin:8px 0;background:#fff;border:1px solid #d8dbe0;border-radius:8px;overflow:hidden;box-sizing:border-box}" +
+    ".arev-inline-board.arev-inline-active{max-height:420px;margin:0}" +
     ".arev-inline-board>iframe{display:block;width:100%;height:100%;border:0;background:#fff}" +
-    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(255,255,255,.08);color:#20242a;font:600 13px/1.3 sans-serif;cursor:pointer;text-shadow:0 1px 2px #fff}" +
+    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(255,255,255,.86);color:#20242a;font:600 13px/1.3 sans-serif;cursor:pointer;text-shadow:0 1px 2px #fff}" +
+    ".arev-inline-unlock:disabled{cursor:wait;color:#626975}" +
     ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid #c9cdd3;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 2px 8px rgba(0,0,0,.12)}" +
     ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}";
   document.documentElement.appendChild(css);
@@ -395,17 +399,10 @@
   /* ------------------------------------------------ inline diagram editors */
 
   function boardForSource(source) {
-    var ids = Object.keys(inlineBoards);
-    for (var i = 0; i < ids.length; i += 1) {
-      var board = inlineBoards[ids[i]];
-      if (
-        board.iframe &&
-        board.iframe.contentWindow &&
-        board.iframe.contentWindow === source
-      )
-        return board;
-    }
-    return null;
+    var board = inlineBoards[activeInlineBoardId];
+    return board && sharedInlineFrame && sharedInlineFrame.contentWindow === source
+      ? board
+      : null;
   }
 
   function postToBoard(board, message) {
@@ -414,7 +411,11 @@
   }
 
   function unlockBoard(board, focus) {
-    if (!board) return;
+    if (!board || board.id !== activeInlineBoardId || !board.iframe) return;
+    if (!board.ready) {
+      board.wantsUnlock = true;
+      return;
+    }
     board.iframe.style.pointerEvents = "auto";
     board.unlocked = true;
     board.overlay.hidden = true;
@@ -476,14 +477,99 @@
     board.ready = true;
     board.host.hidden = false;
     board.block.style.display = "none";
+    board.overlay.disabled = false;
+    board.overlayLabel.textContent = "Click to edit diagram";
+    board.overlay.setAttribute("aria-label", "Click to edit diagram");
+    if (board.wantsUnlock) unlockBoard(board, true);
+  }
+
+  function createSharedInlineFrame() {
+    if (sharedInlineFrame) return sharedInlineFrame;
+    var iframe = document.createElement("iframe");
+    iframe.id = "arev-shared-whiteboard-frame";
+    iframe.setAttribute("sandbox", "allow-scripts allow-popups");
+    iframe.style.pointerEvents = "none";
+    iframe.addEventListener("error", function () {
+      var board = inlineBoards[activeInlineBoardId];
+      if (!board) return;
+      restoreBoardSource(board);
+      board.host.classList.remove("arev-inline-active");
+      board.host.style.height = "52px";
+      board.overlay.disabled = false;
+      board.overlay.hidden = false;
+      board.overlayLabel.textContent = "Open diagram editor";
+      send({
+        type: "inline-mount-failed",
+        id: board.id,
+        error: "The inline diagram editor could not be loaded.",
+      });
+    });
+    sharedInlineFrame = iframe;
+    return iframe;
+  }
+
+  function deactivateInlineBoard(board) {
+    if (!board) return;
+    if (board.fullscreen) setBoardFullscreen(board, false);
+    restoreBoardSource(board);
+    board.ready = false;
+    board.unlocked = false;
+    board.wantsUnlock = false;
+    board.iframe = null;
+    board.host.classList.remove("arev-inline-active");
+    board.host.style.height = "52px";
+    board.host.setAttribute("aria-label", "Diagram editor available");
+    board.overlay.disabled = false;
+    board.overlay.hidden = false;
+    board.overlayLabel.textContent = "Open diagram editor";
+    board.overlay.setAttribute("aria-label", "Open diagram editor");
+  }
+
+  function activateInlineBoard(board, focus) {
+    if (!board) return;
+    if (activeInlineBoardId === board.id && board.iframe) {
+      board.wantsUnlock = true;
+      unlockBoard(board, focus);
+      return;
+    }
+
+    var previous = inlineBoards[activeInlineBoardId];
+    if (previous) deactivateInlineBoard(previous);
+
+    var iframe = createSharedInlineFrame();
+    activeInlineBoardId = board.id;
+    board.iframe = iframe;
+    board.ready = false;
+    board.unlocked = false;
+    board.wantsUnlock = true;
+    board.host.classList.add("arev-inline-active");
+    board.host.style.height = board.editorHeight + "px";
+    board.host.setAttribute("aria-label", "Inline editable diagram");
+    board.overlay.hidden = false;
+    board.overlay.disabled = true;
+    board.overlayLabel.textContent = "Loading diagram editor…";
+    board.overlay.setAttribute("aria-label", "Loading diagram editor");
+    iframe.title = "Editable diagram " + board.id;
+    iframe.style.pointerEvents = "none";
+    board.host.insertBefore(iframe, board.overlay);
+    iframe.src =
+      "/whiteboard-frame?" +
+      (board.frameVersion ? "v=" + board.frameVersion + "&" : "") +
+      "diagram=" +
+      encodeURIComponent(board.id) +
+      "&channel=" +
+      encodeURIComponent(board.channel);
+    board.host.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   function mountInline(message) {
     var id = String(message.id || "");
     var channel = String(message.channel || "");
     var selector = String(message.selector || "");
+    var frameVersion = String(message.frameVersion || "");
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(id) || !channel || !selector)
       return;
+    if (frameVersion && !/^[0-9a-f]{64}$/.test(frameVersion)) return;
     var block;
     try {
       block = document.querySelector(selector);
@@ -501,20 +587,13 @@
 
     var current = inlineBoards[id];
     if (current) {
+      if (activeInlineBoardId === current.id) {
+        deactivateInlineBoard(current);
+        activeInlineBoardId = null;
+      }
       restoreBoardSource(current);
-      current.ready = false;
-      current.channel = channel;
-      current.block = block;
-      current.originalDisplay = block.style.display;
-      current.unlocked = false;
-      current.iframe.style.pointerEvents = "none";
-      current.overlay.hidden = false;
-      current.iframe.src =
-        "/whiteboard-frame?diagram=" +
-        encodeURIComponent(id) +
-        "&channel=" +
-        encodeURIComponent(channel);
-      return;
+      current.host.remove();
+      delete inlineBoards[id];
     }
 
     var host = document.getElementById("arev-board-" + id);
@@ -533,25 +612,19 @@
       host.classList.add("arev-inline-board");
       host.setAttribute("data-arev-internal", "");
       host.setAttribute("data-arev-diagram-id", id);
-      host.setAttribute("aria-label", "Inline editable diagram");
+      host.setAttribute("aria-label", "Diagram editor available");
       var measuredHeight = Math.round(
         block.getBoundingClientRect().height || 320,
       );
-      host.style.height =
-        Math.max(300, Math.min(420, measuredHeight + 64)) + "px";
-
-      var iframe = document.createElement("iframe");
-      iframe.title = "Editable diagram " + id;
-      iframe.setAttribute("sandbox", "allow-scripts allow-popups");
-      iframe.style.pointerEvents = "none";
+      var editorHeight = Math.max(300, Math.min(420, measuredHeight + 64));
 
       var overlay = document.createElement("button");
       overlay.type = "button";
       overlay.className = "arev-inline-unlock";
       overlay.setAttribute("data-arev-internal", "");
-      overlay.setAttribute("aria-label", "Click to edit diagram");
+      overlay.setAttribute("aria-label", "Open diagram editor");
       var overlayLabel = document.createElement("span");
-      overlayLabel.textContent = "Click to edit diagram";
+      overlayLabel.textContent = "Open diagram editor";
       overlay.appendChild(overlayLabel);
 
       var board = {
@@ -561,39 +634,28 @@
         block: block,
         originalDisplay: originalDisplay,
         host: host,
-        iframe: iframe,
+        iframe: null,
         overlay: overlay,
+        overlayLabel: overlayLabel,
+        editorHeight: editorHeight,
+        frameVersion: frameVersion,
         unlocked: false,
+        wantsUnlock: false,
         fullscreen: false,
         ready: false,
       };
       overlay.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
-        unlockBoard(board, true);
-      });
-      iframe.addEventListener("error", function () {
-        restoreBoardSource(board);
-        board.host.hidden = true;
-        send({
-          type: "inline-mount-failed",
-          id: id,
-          error: "The inline diagram editor could not be loaded.",
-        });
+        send({ type: "want-board", id: board.id });
       });
 
-      host.appendChild(iframe);
       host.appendChild(overlay);
       if (!host.parentNode)
         block.parentNode.insertBefore(host, block.nextSibling);
       else if (host.previousElementSibling !== block)
         block.parentNode.insertBefore(host, block.nextSibling);
       inlineBoards[id] = board;
-      iframe.src =
-        "/whiteboard-frame?diagram=" +
-        encodeURIComponent(id) +
-        "&channel=" +
-        encodeURIComponent(channel);
     } catch (err) {
       block.style.display = originalDisplay;
       delete inlineBoards[id];
@@ -610,8 +672,7 @@
   function focusInline(id) {
     var board = inlineBoards[String(id || "")];
     if (!board) return;
-    board.host.scrollIntoView({ block: "center", behavior: "smooth" });
-    unlockBoard(board, true);
+    activateInlineBoard(board, true);
   }
 
   window.addEventListener("message", function (event) {

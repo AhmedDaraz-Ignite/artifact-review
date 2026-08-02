@@ -19,7 +19,7 @@ import math
 import os
 import queue
 import secrets
-import signal
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -29,10 +29,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
+from contextlib import contextmanager
 
-VERSION = "0.1.0"
-MINIMUM_PYTHON = (3, 9)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+from review_store import ReviewStore
+from versioning import EVENT_SCHEMA, STATE_SCHEMA, TOOL_VERSION, event_envelope
+
+VERSION = TOOL_VERSION
+MINIMUM_PYTHON = (3, 9)
 SKILL_DIR = os.path.dirname(SCRIPT_DIR)
 REFERENCE_DIR = os.path.join(SKILL_DIR, "references", "playbooks")
 ASSET_DIR = os.path.join(SKILL_DIR, "assets", "review-ui")
@@ -41,13 +47,14 @@ TEMPLATE = os.path.join(SKILL_DIR, "assets", "artifact-template.html")
 STATE_ROOT = os.path.abspath(os.path.expanduser(
     os.environ.get("ARTIFACT_REVIEW_HOME") or "~/.artifact-review"))
 REGISTRY = os.path.join(STATE_ROOT, "registry.json")
+REGISTRY_LOCK = os.path.join(STATE_ROOT, "registry.lock")
 
 
 def _key(path):
     return hashlib.sha1(os.path.realpath(path).encode()).hexdigest()[:12]
 
 
-def _load_registry():
+def _load_registry_unlocked():
     if os.path.exists(REGISTRY):
         try:
             with open(REGISTRY, encoding="utf-8") as fh:
@@ -66,7 +73,7 @@ def _ensure_private_dir(path):
         pass
 
 
-def _save_registry(reg):
+def _save_registry_unlocked(reg):
     _ensure_private_dir(STATE_ROOT)
     fd, tmp = tempfile.mkstemp(prefix="registry.", suffix=".tmp", dir=STATE_ROOT)
     try:
@@ -85,64 +92,110 @@ def _save_registry(reg):
             pass
 
 
-def _alive(entry):
-    """Return whether a registry PID still names a live process.
+@contextmanager
+def _registry_lock():
+    _ensure_private_dir(STATE_ROOT)
+    with open(REGISTRY_LOCK, "a+b") as handle:
+        if os.name == "nt":
+            import msvcrt
 
-    ``os.kill(pid, 0)`` is a harmless probe on POSIX but is not portable to
-    Windows, where non-console signals terminate the target process.
-    """
-    try:
-        pid = int(entry["pid"])
-    except (OSError, TypeError, KeyError):
-        return False
-    if pid <= 0:
-        return False
-    if os.name == "nt":
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
-            import ctypes
-            from ctypes import wintypes
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
-            process = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-            if not process:
-                return False
-            try:
-                exit_code = wintypes.DWORD()
-                if not ctypes.windll.kernel32.GetExitCodeProcess(
-                        process, ctypes.byref(exit_code)):
-                    return False
-                return exit_code.value == 259
-            finally:
-                ctypes.windll.kernel32.CloseHandle(process)
-        except (AttributeError, OSError, ValueError):
-            return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+
+def _load_registry():
+    with _registry_lock():
+        return _load_registry_unlocked()
+
+
+def _save_registry(reg):
+    with _registry_lock():
+        _save_registry_unlocked(reg)
+
+
+def _update_registry(mutator):
+    with _registry_lock():
+        registry = _load_registry_unlocked()
+        result = mutator(registry)
+        _save_registry_unlocked(registry)
+        return result
+
+
+def _url_host(bind):
+    host = "127.0.0.1" if bind in ("", "0.0.0.0") else "::1" if bind == "::" else bind
+    return f"[{host}]" if ":" in host and not host.startswith("[") else host
+
+
+def _control_url(bind, port):
+    return f"http://{_url_host(bind)}:{port}"
 
 
 def _api(entry, method, path, body=None, timeout=10):
+    control_url = entry.get("control_url") or _control_url(
+        entry.get("bind", "127.0.0.1"), entry["port"])
     req = urllib.request.Request(
-        f"http://127.0.0.1:{entry['port']}{path}", method=method,
+        f"{control_url.rstrip('/')}{path}", method=method,
         headers={"X-Arev-Token": entry["token"], "Content-Type": "application/json"},
         data=json.dumps(body).encode() if body is not None else None)
     with urllib.request.urlopen(req, timeout=timeout) as res:
         return json.loads(res.read())
 
 
+def _verified_health(entry):
+    expected = entry.get("instance_id")
+    if not expected:
+        return False
+    try:
+        health = _api(entry, "GET", "/health", timeout=2)
+    except (OSError, ValueError, KeyError):
+        return False
+    return bool(health.get("ok") and health.get("instance_id") == expected)
+
+
+def _discard_registry_entry(path, expected):
+    real = os.path.realpath(path)
+
+    def discard(registry):
+        current = registry.get(real)
+        if current == expected:
+            return registry.pop(real)
+        return None
+
+    return _update_registry(discard)
+
+
 def _entry_for(path, required=True):
     reg = _load_registry()
-    entry = reg.get(os.path.realpath(path))
-    if entry and _alive(entry):
+    real = os.path.realpath(path)
+    entry = reg.get(real)
+    if entry and _verified_health(entry):
         return entry
+    if entry:
+        _discard_registry_entry(real, entry)
     if required:
         sys.exit(f"no running session for {path} - run: arev open {path}")
     return None
 
 
 def _session_url(entry):
-    base = entry.get("base_url") or f"http://127.0.0.1:{entry['port']}"
+    base = (entry.get("base_url") or entry.get("control_url")
+            or _control_url(entry.get("bind", "127.0.0.1"), entry["port"]))
     parts = urllib.parse.urlsplit(base)
     query = [
         (key, value)
@@ -168,22 +221,35 @@ def _open_browser(url):
 
 def _update_entry(path, **changes):
     real = os.path.realpath(path)
-    reg = _load_registry()
-    entry = reg.get(real)
-    if entry:
-        entry.update(changes)
-        _save_registry(reg)
+
+    def update(registry):
+        entry = registry.get(real)
+        if entry:
+            entry.update(changes)
+
+    _update_registry(update)
 
 
 def _session_json(path):
-    sess = os.path.join(STATE_ROOT, "sessions", _key(path), "session.json")
-    if os.path.exists(sess):
+    session_dir = os.path.join(STATE_ROOT, "sessions", _key(path))
+    database = os.path.join(session_dir, "review.sqlite3")
+    legacy = os.path.join(session_dir, "session.json")
+    if os.path.exists(database):
         try:
-            with open(sess, encoding="utf-8") as fh:
-                value = json.load(fh)
+            store = ReviewStore(session_dir, STATE_SCHEMA, read_only=True)
+            try:
+                return store.load()
+            finally:
+                store.close()
+        except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError):
+            return {}
+    if os.path.exists(legacy):
+        try:
+            with open(legacy, encoding="utf-8") as handle:
+                value = json.load(handle)
             return value if isinstance(value, dict) else {}
-        except Exception:
-            pass
+        except (OSError, ValueError, json.JSONDecodeError):
+            return {}
     return {}
 
 
@@ -206,6 +272,8 @@ def _public_url(value):
         sys.exit(f"invalid --public-url: {value}")
     if parts.scheme not in ("http", "https") or not parts.hostname:
         sys.exit("--public-url must be an absolute http:// or https:// URL")
+    if parts.path not in ("", "/"):
+        sys.exit("--public-url cannot include a path prefix yet; use the origin only")
     return value
 
 
@@ -232,37 +300,7 @@ def _wait_for_listening(proc, timeout=10):
         return None
 
 
-def _terminate_pid(pid):
-    try:
-        os.kill(int(pid), signal.SIGTERM)
-        return True
-    except (OSError, TypeError, ValueError):
-        return False
-
-
-# ----------------------------------------------------------------- commands
-
-def cmd_open(args):
-    path = os.path.realpath(args.file)
-    if not os.path.isfile(path):
-        sys.exit(f"no such file: {path}")
-
-    prior = _session_json(path)
-    if prior.get("ended_by") == "user" and not args.reopen:
-        sys.exit("the human ended this session from the browser - "
-                 "reopen only with --reopen once the concern is addressed")
-
-    reg = _load_registry()
-    entry = reg.get(path)
-    if entry and _alive(entry):
-        url = _session_url(entry)
-        print(f"SESSION {url}")
-        if not args.no_browser and not _open_browser(url):
-            print("Browser launch was unavailable; open the SESSION URL manually.",
-                  file=sys.stderr)
-        return
-
-    public_url = _public_url(args.public_url)
+def _start_session_server(args, path, public_url):
     token = secrets.token_hex(32)
     session_dir = os.path.join(STATE_ROOT, "sessions", _key(path))
     _ensure_private_dir(session_dir)
@@ -305,14 +343,65 @@ def cmd_open(args):
         proc.terminate()
         sys.exit(f"server failed to start; see {session_dir}/server.log")
 
-    base_url = public_url or f"http://127.0.0.1:{port}"
-    reg[path] = {"port": port, "pid": proc.pid, "token": token,
-                 "started": time.time(), "session_dir": session_dir,
-                 "bind": args.bind, "base_url": base_url}
-    _save_registry(reg)
-    url = _session_url(reg[path])
+    control_url = _control_url(args.bind, port)
+    entry = {
+        "port": port,
+        "pid": proc.pid,
+        "token": token,
+        "started": time.time(),
+        "session_dir": session_dir,
+        "bind": args.bind,
+        "control_url": control_url,
+        "base_url": public_url or control_url,
+    }
+    try:
+        health = _api(entry, "GET", "/health", timeout=2)
+        instance_id = health.get("instance_id")
+        if not health.get("ok") or not instance_id:
+            raise ValueError("server returned an invalid health identity")
+        entry["instance_id"] = instance_id
+    except (OSError, ValueError, KeyError) as error:
+        proc.terminate()
+        sys.exit(f"server health check failed: {error}")
+    return entry
+
+
+# ----------------------------------------------------------------- commands
+
+def cmd_open(args):
+    path = os.path.realpath(args.file)
+    if not os.path.isfile(path):
+        sys.exit(f"no such file: {path}")
+
+    prior = _session_json(path)
+    if prior.get("ended_by") == "user" and not args.reopen:
+        sys.exit("the human ended this session from the browser - "
+                 "reopen only with --reopen once the concern is addressed")
+
+    public_url = _public_url(args.public_url)
+    started = False
+    with _registry_lock():
+        registry = _load_registry_unlocked()
+        entry = registry.get(path)
+        if entry and _verified_health(entry):
+            if args.reopen:
+                try:
+                    _api(entry, "POST", "/reopen", {})
+                except (OSError, ValueError, KeyError) as error:
+                    sys.exit(f"session server could not reopen: {error}")
+        else:
+            if entry:
+                registry.pop(path, None)
+                _save_registry_unlocked(registry)
+            entry = _start_session_server(args, path, public_url)
+            registry[path] = entry
+            _save_registry_unlocked(registry)
+            started = True
+
+    url = _session_url(entry)
     print(f"SESSION {url}")
-    if args.bind not in ("127.0.0.1", "localhost", "::1") and not public_url:
+    if (started and args.bind not in ("127.0.0.1", "localhost", "::1")
+            and not public_url):
         print("REMOTE NOTE: forward the selected port and pass --public-url on "
               "the next open if the browser is not on this machine.",
               file=sys.stderr)
@@ -321,42 +410,54 @@ def cmd_open(args):
               file=sys.stderr)
 
 
+def _print_event(value, pretty=False):
+    if pretty:
+        print(json.dumps(value, indent=2))
+    else:
+        print(json.dumps(value, separators=(",", ":")))
+
+
 def cmd_poll(args):
     entry = _entry_for(args.file)
-    if args.agent_reply:
-        _api(entry, "POST", "/agent-reply", {
-            "text": args.agent_reply,
-            "reply_to": entry.get("last_event_id"),
-        })
-    _api(entry, "POST", "/agent-status", {"status": "listening"})
-    timeout = max(5, args.timeout)
-    # One server-side long poll per loop; keep polling until a real event or
-    # the caller's timeout budget runs out.
-    deadline = time.time() + timeout
-    while True:
-        remaining = deadline - time.time()
-        if remaining <= 0:
-            break
-        # Round the wait up, never down. Truncating 5.999 to 5 leaves a
-        # sub-second remainder that costs another whole server round trip.
-        chunk = min(90, math.ceil(remaining))
-        try:
+    try:
+        if args.agent_reply:
+            _api(entry, "POST", "/agent-reply", {
+                "text": args.agent_reply,
+                "reply_to": entry.get("last_event_id"),
+            })
+        _api(entry, "POST", "/agent-status", {"status": "listening"})
+        timeout = max(5, args.timeout)
+        # One server-side long poll per loop; keep polling until a real event or
+        # the caller's timeout budget runs out.
+        deadline = time.time() + timeout
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            # Round the wait up, never down. Truncating 5.999 to 5 leaves a
+            # sub-second remainder that costs another whole server round trip.
+            chunk = min(90, math.ceil(remaining))
             event = _api(entry, "GET", f"/next?timeout={chunk}",
                          timeout=chunk + 15)
-        except urllib.error.URLError as err:
-            sys.exit(f"session server unreachable: {err}")
-        if event.get("type") != "idle":
-            if event.get("id"):
-                _api(entry, "POST", "/ack", {
-                    "id": event["id"],
-                    "status": "working",
-                    "received_at": time.time(),
-                })
-                _update_entry(args.file, last_event_id=event["id"])
-            print(json.dumps(event, indent=2))
-            return
-    _api(entry, "POST", "/agent-status", {"status": "idle"})
-    print(json.dumps({"type": "idle"}))
+            _api(entry, "POST", "/agent-status", {"status": "listening"})
+            if event.get("type") != "idle":
+                if event.get("id"):
+                    _api(entry, "POST", "/ack", {
+                        "id": event["id"],
+                        "status": "working",
+                        "received_at": time.time(),
+                    })
+                    _update_entry(args.file, last_event_id=event["id"])
+                _print_event(event, getattr(args, "pretty", False))
+                return
+        _api(entry, "POST", "/agent-status", {"status": "idle"})
+        _print_event(event_envelope("idle"), getattr(args, "pretty", False))
+    except (OSError, ValueError, KeyError) as error:
+        try:
+            _api(entry, "POST", "/agent-status", {"status": "offline"})
+        except (OSError, ValueError, KeyError):
+            pass
+        sys.exit(f"session server unreachable: {error}")
 
 
 def cmd_end(args):
@@ -376,23 +477,44 @@ def cmd_reply(args):
 
 
 def cmd_stop(args):
-    reg = _load_registry()
     if args.all:
+        def take_all(registry):
+            entries = list(registry.values())
+            registry.clear()
+            return entries
+
+        entries = _update_registry(take_all)
         stopped = 0
-        for entry in reg.values():
-            if _alive(entry) and _terminate_pid(entry["pid"]):
+        stale = 0
+        for entry in entries:
+            if not _verified_health(entry):
+                stale += 1
+                continue
+            try:
+                _api(entry, "POST", "/shutdown", {})
                 stopped += 1
-        _save_registry({})
-        print(f"stopped {stopped} session server(s)")
+            except (OSError, ValueError, KeyError):
+                stale += 1
+        print(f"stopped {stopped} session server(s); removed {stale} stale record(s)")
         return
     if not args.file:
         sys.exit("provide an artifact file or use: arev stop --all")
-    entry = reg.pop(os.path.realpath(args.file), None)
-    _save_registry(reg)
-    if entry and _alive(entry) and _terminate_pid(entry["pid"]):
-        print(f"stopped pid {entry['pid']}")
-    else:
+
+    def take_entry(registry):
+        return registry.pop(os.path.realpath(args.file), None)
+
+    entry = _update_registry(take_entry)
+    if not entry:
         print("no running server")
+        return
+    if not _verified_health(entry):
+        print("removed stale session record; no process was signalled")
+        return
+    try:
+        _api(entry, "POST", "/shutdown", {})
+    except (OSError, ValueError, KeyError) as error:
+        sys.exit(f"verified session could not shut down: {error}")
+    print("stopped verified session server")
 
 
 def cmd_export(args):
@@ -402,6 +524,98 @@ def cmd_export(args):
     result = export_html(args.file, out)
     print(f"wrote {os.path.abspath(out)}  inlined={result['inlined']}"
           + (f"  skipped={result['skipped']}" if result.get("skipped") else ""))
+
+
+def _session_dir(path):
+    return os.path.join(STATE_ROOT, "sessions", _key(path))
+
+
+def _path_inside(parent, path):
+    try:
+        return os.path.commonpath((parent, path)) == parent
+    except ValueError:
+        return False
+
+
+def _require_review_store(path):
+    sessions_root = os.path.realpath(os.path.join(STATE_ROOT, "sessions"))
+    unresolved = _session_dir(path)
+    session_dir = os.path.realpath(unresolved)
+    if (os.path.islink(unresolved)
+            or os.path.dirname(session_dir) != sessions_root):
+        sys.exit(f"unsafe review session path for {path}")
+    database = os.path.join(session_dir, "review.sqlite3")
+    if not os.path.isfile(database) or os.path.islink(database):
+        sys.exit(f"no durable review state for {path} - run: arev open {path}")
+    return session_dir
+
+
+def cmd_report(args):
+    from reports import build_report, render_report, write_report
+
+    path = os.path.realpath(args.file)
+    session_dir = _require_review_store(path)
+    try:
+        report = build_report(path, session_dir)
+        if args.output:
+            output_path = os.path.realpath(args.output)
+            if (output_path == path
+                    or _path_inside(session_dir, output_path)):
+                sys.exit("report output cannot overwrite artifact or session state")
+            output = write_report(report, args.format, args.output)
+            print(f"wrote {output}")
+        else:
+            sys.stdout.write(render_report(report, args.format))
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not build review report: {error}")
+
+
+def cmd_archive(args):
+    from reports import write_archive
+
+    path = os.path.realpath(args.file)
+    session_dir = _require_review_store(path)
+    running = _entry_for(path, required=False)
+    try:
+        store = ReviewStore(session_dir, STATE_SCHEMA, read_only=True)
+        try:
+            ended = bool(store.load()["ended"])
+        finally:
+            store.close()
+        if running and not ended:
+            sys.exit("end or stop the running review before archiving it")
+        output = args.output or os.path.splitext(path)[0] + ".review.zip"
+        output_path = os.path.realpath(output)
+        if _path_inside(session_dir, output_path):
+            sys.exit("archive output cannot overwrite review session state")
+        result = write_archive(path, session_dir, output)
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not archive review: {error}")
+    print(f"wrote {result}")
+
+
+def _running_session_dirs():
+    running = set()
+    for path, entry in _load_registry().items():
+        if _verified_health(entry):
+            running.add(os.path.realpath(
+                entry.get("session_dir") or _session_dir(path)))
+    return running
+
+
+def cmd_prune(args):
+    from reports import prune_sessions
+
+    try:
+        result = prune_sessions(
+            STATE_ROOT,
+            older_than_days=args.older_than,
+            apply=args.apply,
+            running_session_dirs=_running_session_dirs(),
+        )
+    except (OSError, RuntimeError, ValueError, sqlite3.DatabaseError) as error:
+        sys.exit(f"could not prune review state: {error}")
+    print(json.dumps(result, sort_keys=True, indent=2))
 
 
 def _playbook_ids():
@@ -457,6 +671,9 @@ def _doctor_checks():
         "python": sys.version.split()[0],
         "skill_dir": SKILL_DIR,
         "state_dir": STATE_ROOT,
+        "manifest": os.path.isfile(os.path.join(SKILL_DIR, "manifest.json")),
+        "store": os.path.isfile(os.path.join(SCRIPT_DIR, "review_store.py")),
+        "reports": os.path.isfile(os.path.join(SCRIPT_DIR, "reports.py")),
         "server": os.path.isfile(os.path.join(SCRIPT_DIR, "server.py")),
         "review_ui": os.path.isfile(os.path.join(ASSET_DIR, "chrome.html")),
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),
@@ -517,10 +734,11 @@ def cmd_brief(args):
     whose output is always read together.
     """
     checks = _doctor_checks()
-    print("## install")
-    print(json.dumps(checks, indent=2))
     if not checks["ok"]:
+        print("INSTALL failed")
+        print(json.dumps(checks, indent=2))
         sys.exit(1)
+    print(f"INSTALL ok python={checks['python']}")
     print()
     print("## design")
     print(_design_text())
@@ -538,7 +756,11 @@ def cmd_sessions(args):
         print("no sessions")
         return
     for path, entry in reg.items():
-        state = "running" if _alive(entry) else "dead"
+        if _verified_health(entry):
+            state = "running"
+        else:
+            state = "stale record"
+            _discard_registry_entry(path, entry)
         saved = _session_json(path)
         if saved.get("ended"):
             state += f", ended by {saved.get('ended_by')}"
@@ -590,6 +812,8 @@ def main():
                         "it when the calling agent allows a longer one")
     p.add_argument("--agent-reply",
                    help="post this reply before waiting for the next event")
+    p.add_argument("--pretty", action="store_true",
+                   help="pretty-print the event JSON instead of one compact line")
     p.set_defaults(fn=cmd_poll)
 
     p = sub.add_parser("end", help="end a review session as the agent")
@@ -607,6 +831,26 @@ def main():
     p = sub.add_parser("export", help="write a portable single-file artifact")
     p.add_argument("file")
     p.add_argument("-o", "--output"); p.set_defaults(fn=cmd_export)
+
+    p = sub.add_parser(
+        "report", help="render the durable review as JSON or Markdown")
+    p.add_argument("file", help="reviewed artifact")
+    p.add_argument("--format", choices=("json", "markdown"), default="json")
+    p.add_argument("-o", "--output")
+    p.set_defaults(fn=cmd_report)
+
+    p = sub.add_parser(
+        "archive", help="write a portable ZIP with review state and snapshots")
+    p.add_argument("file", help="reviewed artifact")
+    p.add_argument("-o", "--output")
+    p.set_defaults(fn=cmd_archive)
+
+    p = sub.add_parser(
+        "prune", help="preview or remove old ended review sessions")
+    p.add_argument("--older-than", type=float, default=30, metavar="DAYS")
+    p.add_argument("--apply", action="store_true",
+                   help="remove listed sessions and unreferenced blobs")
+    p.set_defaults(fn=cmd_prune)
 
     p = sub.add_parser(
         "new", help="scaffold a themed, audit-clean artifact shell",
