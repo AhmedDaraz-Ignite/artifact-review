@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mermaid failure fixture</title>
+<style>
+  :root { color-scheme:light dark }
+  * { box-sizing:border-box }
+  body {
+    max-width:900px;
+    margin:0 auto;
+    padding:24px;
+    background:Canvas;
+    color:CanvasText;
+    font:15px/1.5 system-ui,sans-serif;
+  }
+  pre.mermaid {
+    max-width:100%;
+    overflow:auto;
+    border:1px solid #b8becb;
+    border-radius:10px;
+    padding:16px;
+    background:#f7f8fa;
+    color:#171a20;
+  }
+</style>
+</head>
+<body>
+  <h1>Mermaid failure fixture</h1>
+  <p>One diagram renders. The next one cannot, and the reviewer must be told.</p>
+
+  <h2>Renders</h2>
+  <pre class="mermaid" id="works">flowchart LR
+    Author[Author] --> Review[Review]
+    Review --> Agent[Agent]
+</pre>
+
+  <h2>Does not render</h2>
+  <pre class="mermaid" id="broken">flowchart LR
+    Author[Author --&gt;&gt;--- Review]]]] {{
+    ((( unbalanced
+</pre>
+</body>
+</html>

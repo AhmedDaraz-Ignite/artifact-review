@@ -35,3 +35,8 @@ use_when: architecture diagram, flow chart, sequence diagram, system design arti
 
 - Don't diagram something a short bullet list already says clearly. A diagram earns its space by showing branching, ordering, or parallelism that prose can't show cleanly.
 - Don't restate the same flow in both a diagram and a paragraph directly below it - pick one.
+
+## Check the result
+
+- Run `arev check FILE`. It fails a diagram that cannot render, one drawn as a flowchart while the text calls it a state machine, a node with more than four outgoing edges, and a label over five words.
+- Naming the source section in a caption ("Sections 19.4 and 22.3") is how the check knows which part of the source a diagram covers. Caption every diagram that way when the artifact explains a numbered document.

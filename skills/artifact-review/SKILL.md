@@ -32,11 +32,23 @@ the type is unclear, inspect the index and fetch only matching ids:
 Fill only the scaffold's `<!-- arev:content -->` region. Every diagram is
 Mermaid in `<pre class="mermaid" id="stable-id">` - never hand-built div
 boxes, and never a CDN script; the review server renders Mermaid offline and
-attaches the editable whiteboard only to those blocks. Then open the absolute
-path once:
+attaches the editable whiteboard only to those blocks.
+
+Then audit the file before anyone opens it. `check` reads the artifact and the
+documents it explains, and fails on a diagram that cannot render and on a
+source section the artifact skipped:
 
 ```bash
 ARTIFACT="/absolute/path/to/review.html"
+"$AREV" check "$ARTIFACT"
+```
+
+Fix every error and gap, or exclude a section on purpose with
+`--ignore "Section title"` and say so in the artifact. Pass `--source PATH`
+when the artifact does not name its source in its opening text. Then open the
+absolute path once:
+
+```bash
 "$AREV" open "$ARTIFACT"
 ```
 
@@ -65,7 +77,12 @@ Route each result, reading only the indicated section:
 | `ended` | Stop. Read [runtime.md § End and reopen](references/runtime.md#end-and-reopen) before any later reopen. |
 | `idle` | Start another foreground poll; queued events are durable. |
 
-After an edit is saved, acknowledge the work in the same session:
+A `GUIDANCE STALE` line on stderr means the authoring rules changed after this
+session started. Re-run `brief`, apply what moved, and re-run `check` before
+continuing.
+
+Re-run `check` after every artifact edit. After an edit is saved, acknowledge
+the work in the same session:
 
 ```bash
 "$AREV" reply "$ARTIFACT" "Applied the requested changes."
@@ -78,6 +95,7 @@ After an edit is saved, acknowledge the work in the same session:
 | Install diagnosis | `"$AREV" doctor` |
 | Artifact guidance | `"$AREV" brief [playbook ...]` |
 | Scaffold | `"$AREV" new FILE --title TITLE` |
+| Audit before opening | `"$AREV" check FILE [--source DOC]` |
 | Start/resume | `"$AREV" open FILE` |
 | Receive one event | `"$AREV" poll FILE` |
 | Reply | `"$AREV" reply FILE TEXT` |

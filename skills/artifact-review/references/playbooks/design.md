@@ -37,7 +37,7 @@ use_when: writing any HTML artifact, before first line of code, general artifact
 - When the artifact explains, reviews, or walks through a source document, its coverage must scale with that source. A 2,000-line spec is not served by a one-screen summary: every major section of the source gets its own section, diagram, or table in the artifact.
 - Diagram every state machine, lifecycle, and multi-actor flow the source defines. A reviewer should be able to point at any subsystem in the artifact, not just the top-level picture.
 - Use `<details><summary>` for depth that would crowd the page: full schemas, per-release deliverables, long command tables. Collapsed depth is coverage; omitted depth is not.
-- Before calling the artifact done, list the source's top-level sections and check each one is represented. Anything skipped must be a deliberate, stated exclusion, not a silent cut.
+- Run `arev check FILE` before opening the artifact and after every edit. It lists the source sections nothing in the artifact mentions and the states, flows, and lifecycles nothing draws. Fix them, or drop a section on purpose with `--ignore "Section title"` and say in the artifact that you did.
 
 ## General hygiene
 

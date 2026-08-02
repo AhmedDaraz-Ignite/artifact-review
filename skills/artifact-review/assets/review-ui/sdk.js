@@ -861,12 +861,39 @@
         !holder.getAttribute("data-processed")
       );
     });
-    if (!pending) return;
+    if (!pending) return null;
     // The review server bundles the same pinned Mermaid the whiteboard uses,
     // so diagrams render with no CDN and no network at all.
-    import(window.location.origin + "/mermaid.js").catch(function (err) {
+    return import(window.location.origin + "/mermaid.js").catch(function (err) {
       console.warn("arev: local Mermaid renderer failed to load", err);
     });
+  }
+
+  // A block that never became an SVG is a diagram the reviewer cannot see.
+  // The page audit runs before rendering, so this is the only pass that can
+  // catch a Mermaid syntax error or a renderer that failed to load.
+  function unrenderedMermaidFindings(blocks) {
+    var findings = [];
+    blocks.forEach(function (block) {
+      var holder = document.getElementById(block.id);
+      if (!holder || holder.querySelector("svg")) return;
+      findings.push({
+        selector: block.selector,
+        kind: "mermaid-render-failed",
+        axis: null,
+        overflowPx: null,
+        viewportWidth: window.innerWidth,
+        persistent: true,
+        severity: "severe",
+        evidence:
+          'Diagram "' +
+          block.id +
+          '" did not render and is showing its Mermaid source as plain text. ' +
+          "Check the syntax of: " +
+          block.source.split("\n")[0].slice(0, 60),
+      });
+    });
+    return findings;
   }
 
   function boot() {
@@ -878,11 +905,18 @@
     }
     send({ type: "audit-done", findings: findings });
     var mermaidBlocks = findMermaid();
-    renderMermaidLocally(mermaidBlocks);
+    var rendering = renderMermaidLocally(mermaidBlocks);
     send({
       type: "sdk-ready",
       mermaid: mermaidBlocks,
       title: document.title || "",
+    });
+    if (!rendering) return;
+    rendering.then(function () {
+      var failed = unrenderedMermaidFindings(mermaidBlocks);
+      if (!failed.length) return;
+      // A later report replaces the earlier one, so resend the whole set.
+      send({ type: "audit-done", findings: findings.concat(failed) });
     });
   }
 

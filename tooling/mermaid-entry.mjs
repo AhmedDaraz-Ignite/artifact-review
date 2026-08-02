@@ -56,4 +56,6 @@ export async function renderPendingMermaid(doc = document) {
   return rendered;
 }
 
-renderPendingMermaid();
+// Awaited at the top level so the SDK's dynamic import resolves only once
+// every block has been drawn. That is what lets it audit the result.
+await renderPendingMermaid();
