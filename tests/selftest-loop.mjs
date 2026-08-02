@@ -85,9 +85,13 @@ try {
   const mobileLayout = await page.evaluate(() => {
     const stage = document.querySelector('.stage').getBoundingClientRect();
     const rail = document.querySelector('.review-rail').getBoundingClientRect();
+    const workspace = document.querySelector('.workspace').getBoundingClientRect();
     const actions = document.querySelector('.topbar-actions').getBoundingClientRect();
     return {
-      railBelow:rail.top >= stage.bottom - 1,
+      railAtRight:Math.abs(rail.right - innerWidth) <= 1,
+      railOverlays:rail.left < stage.right && Math.abs(rail.top - stage.top) <= 1,
+      stageFillsWorkspace:Math.abs(stage.width - workspace.width) <= 1 &&
+        Math.abs(stage.height - workspace.height) <= 1,
       railFitsWidth:rail.left >= -1 && rail.right <= innerWidth + 1,
       railFitsHeight:rail.bottom <= innerHeight + 1,
       actionsFit:actions.right <= innerWidth + 1,
@@ -95,7 +99,7 @@ try {
     };
   });
   test.check(
-    'narrow layout stacks a fully reachable review rail below artifact',
+    'narrow layout overlays a fully reachable review panel from the right',
     Object.values(mobileLayout).every(Boolean),
     JSON.stringify(mobileLayout),
   );

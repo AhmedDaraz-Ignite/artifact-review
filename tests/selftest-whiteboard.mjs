@@ -131,6 +131,22 @@ try {
     'inline editor expands fullscreen without mounting a second editor',
     fullscreenReady,
   );
+  await page.locator('#railToggle').click();
+  await page.waitForTimeout(250);
+  const fullscreenWithDock = await diagram.host.evaluate(element =>
+    element.classList.contains('arev-inline-fullscreen') &&
+    element.querySelectorAll('iframe').length === 1
+  );
+  await page.locator('#railToggle').click();
+  await page.waitForTimeout(250);
+  const fullscreenWithPanel = await diagram.host.evaluate(element =>
+    element.classList.contains('arev-inline-fullscreen') &&
+    element.querySelectorAll('iframe').length === 1
+  );
+  test.check(
+    'diagram fullscreen survives review panel collapse and expansion',
+    fullscreenWithDock && fullscreenWithPanel,
+  );
   await diagram.editorFrame.locator('#wbFullscreen').click();
   await eventually(
     () => diagram.host.evaluate(element =>

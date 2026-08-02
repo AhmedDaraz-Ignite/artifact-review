@@ -56,6 +56,7 @@ else
 fi
 
 run loop selftest-loop.mjs clean.html
+run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html
 run scaffold selftest-gate.mjs -scaffold-
 run security selftest-security.mjs clean.html
