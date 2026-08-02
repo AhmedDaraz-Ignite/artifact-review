@@ -46,6 +46,15 @@ PY
   fi
 }
 
+echo "== cli-foundation"
+CLI_RAW="$WORK/cli-foundation.log"
+if python3 "$ROOT/tests/test_cli_foundation.py" > "$CLI_RAW" 2>&1; then
+  echo "PASS CLI lifecycle, registry, URL, and heartbeat foundation" | tee -a "$OUT"
+else
+  echo "FAIL CLI foundation - see $CLI_RAW" | tee -a "$OUT"
+  tail -20 "$CLI_RAW"
+fi
+
 run loop selftest-loop.mjs clean.html
 run gate selftest-gate.mjs clean.html
 run scaffold selftest-gate.mjs -scaffold-
