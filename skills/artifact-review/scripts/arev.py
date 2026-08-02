@@ -33,7 +33,8 @@ from contextlib import contextmanager
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
-from versioning import EVENT_SCHEMA, TOOL_VERSION, event_envelope
+from review_store import ReviewStore
+from versioning import EVENT_SCHEMA, STATE_SCHEMA, TOOL_VERSION, event_envelope
 
 VERSION = TOOL_VERSION
 MINIMUM_PYTHON = (3, 9)
@@ -229,14 +230,19 @@ def _update_entry(path, **changes):
 
 
 def _session_json(path):
-    sess = os.path.join(STATE_ROOT, "sessions", _key(path), "session.json")
-    if os.path.exists(sess):
+    session_dir = os.path.join(STATE_ROOT, "sessions", _key(path))
+    database = os.path.join(session_dir, "review.sqlite3")
+    legacy = os.path.join(session_dir, "session.json")
+    if not os.path.exists(database) and not os.path.exists(legacy):
+        return {}
+    try:
+        store = ReviewStore(session_dir, STATE_SCHEMA)
         try:
-            with open(sess, encoding="utf-8") as fh:
-                value = json.load(fh)
-            return value if isinstance(value, dict) else {}
-        except Exception:
-            pass
+            return store.load()
+        finally:
+            store.close()
+    except (OSError, RuntimeError, ValueError):
+        pass
     return {}
 
 
@@ -567,6 +573,7 @@ def _doctor_checks():
         "skill_dir": SKILL_DIR,
         "state_dir": STATE_ROOT,
         "manifest": os.path.isfile(os.path.join(SKILL_DIR, "manifest.json")),
+        "store": os.path.isfile(os.path.join(SCRIPT_DIR, "review_store.py")),
         "server": os.path.isfile(os.path.join(SCRIPT_DIR, "server.py")),
         "review_ui": os.path.isfile(os.path.join(ASSET_DIR, "chrome.html")),
         "audit": os.path.isfile(os.path.join(ASSET_DIR, "audit.js")),

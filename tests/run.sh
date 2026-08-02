@@ -64,6 +64,15 @@ else
   tail -20 "$ASSET_RAW"
 fi
 
+echo "== review-store"
+STORE_RAW="$WORK/review-store.log"
+if python3 "$ROOT/tests/test_review_store.py" > "$STORE_RAW" 2>&1; then
+  echo "PASS normalized SQLite persistence, migration, and recovery" | tee -a "$OUT"
+else
+  echo "FAIL review store - see $STORE_RAW" | tee -a "$OUT"
+  tail -20 "$STORE_RAW"
+fi
+
 run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html

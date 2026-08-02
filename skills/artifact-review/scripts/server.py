@@ -40,7 +40,8 @@ from urllib.parse import urlparse, parse_qs
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
-from versioning import EVENT_SCHEMA, TOOL_VERSION, event_envelope
+from review_store import ReviewStore
+from versioning import EVENT_SCHEMA, STATE_SCHEMA, TOOL_VERSION, event_envelope
 
 VERSION = TOOL_VERSION
 INSTANCE_ID = str(uuid.uuid4())
@@ -66,6 +67,7 @@ EVENTS_COND = threading.Condition(STATE_LOCK)
 
 ARTIFACT = None          # absolute path of the reviewed file
 SESSION_DIR = None
+STORE = None
 TOKEN = None
 ASSET_DIR = None
 ASSET_CACHE = {}
@@ -164,47 +166,35 @@ def _asset_url(name):
 
 
 def _persist_locked():
-    tmp = os.path.join(SESSION_DIR, "session.json.tmp")
-    out = {k: STATE[k] for k in
-           ("ended", "ended_by", "queue", "audit", "feed", "events", "agent")}
-    with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(out, fh, indent=2)
-        fh.flush()
-    try:
-        os.chmod(tmp, 0o600)
-    except OSError:
-        pass
-    os.replace(tmp, os.path.join(SESSION_DIR, "session.json"))
+    STORE.sync({
+        key: STATE[key]
+        for key in ("ended", "ended_by", "queue", "audit", "feed",
+                    "events", "agent")
+    })
 
 
 def _restore():
     """Restore durable feedback, but reset process/session-transient state."""
-    path = os.path.join(SESSION_DIR, "session.json")
-    if os.path.exists(path):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                saved = json.load(fh)
-            for key in ("queue", "feed"):
-                if isinstance(saved.get(key), list):
-                    STATE[key] = saved[key]
-            restored_events = saved.get("events")
-            if isinstance(restored_events, list):
-                # Feedback remains durable. Layout and ended events describe
-                # the prior process/session lifecycle and must be regenerated.
-                STATE["events"] = [
-                    event for event in restored_events
-                    if isinstance(event, dict)
-                    and event.get("type") == "feedback"
-                ]
-                for event in STATE["events"]:
-                    # A process restart invalidates any old delivery lease.
-                    event.pop("claimed_at", None)
-            previous_agent = saved.get("agent")
-            last_seen = (previous_agent.get("last_seen")
-                         if isinstance(previous_agent, dict) else None)
-            STATE["agent"] = {"status": "offline", "last_seen": last_seen}
-        except Exception:
-            pass
+    saved = STORE.load()
+    for key in ("queue", "feed"):
+        if isinstance(saved.get(key), list):
+            STATE[key] = saved[key]
+    restored_events = saved.get("events")
+    if isinstance(restored_events, list):
+        # Feedback remains durable. Layout and ended events describe the prior
+        # process lifecycle and must be regenerated for the new process.
+        STATE["events"] = [
+            event for event in restored_events
+            if isinstance(event, dict) and event.get("type") == "feedback"
+        ]
+        for event in STATE["events"]:
+            event.setdefault("schema", EVENT_SCHEMA)
+            # A process restart invalidates any old delivery lease.
+            event.pop("claimed_at", None)
+    previous_agent = saved.get("agent")
+    last_seen = (previous_agent.get("last_seen")
+                 if isinstance(previous_agent, dict) else None)
+    STATE["agent"] = {"status": "offline", "last_seen": last_seen}
     # Every explicit server start is a reopened, live session that must audit
     # the current artifact. Persist this reset so another CLI sees it too.
     STATE["ended"] = False
@@ -906,6 +896,7 @@ class Handler(BaseHTTPRequestHandler):
                         entry["answered_at"] = time.time()
                         break
             STATE["feed"].append({
+                "id": secrets.token_hex(8),
                 "role": "agent",
                 "ts": time.time(),
                 "text": text,
@@ -1116,7 +1107,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global ARTIFACT, SESSION_DIR, TOKEN, ASSET_DIR, ALLOWED_HOSTS
+    global ARTIFACT, SESSION_DIR, STORE, TOKEN, ASSET_DIR, ALLOWED_HOSTS
     global ASSET_CACHE, ASSET_HASHES
     ap = argparse.ArgumentParser(
         description="Internal artifact-review session server. Prefer the "
@@ -1169,6 +1160,7 @@ def main():
         os.chmod(SESSION_DIR, 0o700)
     except OSError:
         pass
+    STORE = ReviewStore(SESSION_DIR, STATE_SCHEMA)
     _restore()
 
     threading.Thread(target=_watch_file, daemon=True).start()
@@ -1183,6 +1175,9 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        server.server_close()
+        STORE.close()
 
 
 if __name__ == "__main__":
