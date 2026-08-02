@@ -61,6 +61,36 @@ whiteboard_gzip=$(python3 -c 'import gzip,sys; data=open(sys.argv[1],"rb").read(
 row "whiteboard.js raw" "$whiteboard_raw" "$(tok "$whiteboard_raw")"
 row "whiteboard.js gzip transfer" "$whiteboard_gzip" "$(tok "$whiteboard_gzip")"
 
+if [ -f "$REPO_ROOT/node_modules/playwright/package.json" ]; then
+  browser_state="$(mktemp -d "${TMPDIR:-/tmp}/arev-browser-bench.XXXXXX")"
+  browser_metrics=$(ARTIFACT_REVIEW_HOME="$browser_state" node \
+    "$REPO_ROOT/tests/bench-runtime.mjs" \
+    "$REPO_ROOT/tests/fixtures/clean.html")
+  python3 - "$browser_metrics" <<'PY'
+import json
+import sys
+
+metrics = json.loads(sys.argv[1])
+print()
+print("BROWSER METRIC                                    VALUE")
+print("------------------------------------------ ----------")
+for key in (
+    "controller_ready_ms",
+    "initial_request_count",
+    "initial_transfer_bytes",
+    "pre_activation_whiteboard_requests",
+    "post_activation_frame_count",
+    "whiteboard_transfer_bytes",
+    "whiteboard_encodings",
+):
+    value = metrics[key]
+    if isinstance(value, list):
+        value = ",".join(value)
+    print(f"{key:<42} {str(value):>10}")
+PY
+  python3 -c 'import shutil,sys; shutil.rmtree(sys.argv[1])' "$browser_state"
+fi
+
 echo
 printf '%-42s %10s\n' "METRIC" "VALUE"
 printf '%-42s %10s\n' "------------------------------------------" "----------"

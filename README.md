@@ -108,11 +108,13 @@ one feedback event so related comments reach the agent together.
 
 ### Diagram review
 
-Mermaid blocks written as `<pre class="mermaid" id="stable-id">…</pre>` become
-inline Excalidraw editors. Each editor starts interaction-locked so normal page
-scrolling is preserved; select **Click to edit diagram** to unlock it, or use
-**Fullscreen** when more canvas space is useful. Edits autosave locally after
-800 ms without changing the artifact source.
+Mermaid blocks written as `<pre class="mermaid" id="stable-id">…</pre>` gain a
+lightweight **Open diagram editor** entry point. The large Excalidraw/Mermaid
+runtime is not requested until the reviewer activates a diagram, and one
+sandboxed editor frame moves between diagram hosts instead of mounting a copy
+for every block. Use **Fullscreen** when more canvas space is useful. Edits
+autosave locally after 800 ms without changing the artifact source, and the
+active scene flushes before switching diagrams or reloading the artifact.
 
 Flowchart, sequence, class, ER, and state diagrams convert to editable shapes.
 Other valid Mermaid types use an explicit image-annotation fallback instead
@@ -146,7 +148,7 @@ ARTIFACT="/absolute/path/to/report.html"
 
 "$AREV" doctor
 "$AREV" open "$ARTIFACT"
-"$AREV" poll "$ARTIFACT" --timeout 300
+"$AREV" poll "$ARTIFACT" --timeout 110
 "$AREV" reply "$ARTIFACT" "Applied the requested changes."
 ```
 
@@ -157,6 +159,8 @@ Useful commands:
 
 ```text
 arev doctor                  verify the installed runtime and browser assets
+arev brief [PLAYBOOK ...]    print concise setup and selected guidance
+arev new FILE --title TITLE  scaffold an audit-clean artifact shell
 arev design                  print general artifact design guidance
 arev playbook                list artifact-specific playbooks
 arev sessions                list known local sessions
@@ -169,6 +173,25 @@ arev stop --all              stop every local Artifact Review server
 The agent should run `poll` in the foreground. Starting repeated `open`
 commands or background polling loops makes delivery state ambiguous and can
 delay feedback pickup.
+
+Default poll output is compact, single-line JSON for agent consumption. Pass
+`--pretty` only when a person needs expanded output.
+
+## Runtime efficiency
+
+Review assets are loaded once into the server's byte cache. Internal SDK,
+whiteboard frame, stylesheet, and module URLs carry SHA-256 content versions;
+matching URLs are immutable, gzip-compressed when useful, and support ETag
+revalidation. Dynamic controller and state responses remain `no-store`.
+
+The reproducible benchmark in `docs/skill-efficiency-audit/bench.sh` records
+skill/context bytes, CLI event bytes, local readiness time, browser requests,
+and whiteboard transfer size. On the recorded 2026-08-02 run, the controller
+reached the diagram-ready state with zero whiteboard runtime requests; opening
+one diagram created one frame and transferred the hashed runtime with gzip.
+The wall-clock number is environment-specific, so use the request, frame, and
+byte invariants for regressions rather than treating one machine's latency as a
+universal target.
 
 ## Delivery states and latency
 
@@ -254,8 +277,9 @@ Mermaid converter used for ER diagrams, and regenerates third-party notices.
 It embeds Excalidraw's compact fonts and uses the
 browser's installed CJK fallback instead of adding Xiaolai's 12 MB shard set,
 keeping the complete installable skill below 10 MB with no font network
-requests. `npm test` exercises the Python server, browser review surface,
-delivery lifecycle, export path, and installation assumptions.
+requests. `npm test` exercises the Python server, conditional asset delivery,
+browser review surface, delivery lifecycle, export path, and installation
+assumptions.
 
 Repository layout:
 
