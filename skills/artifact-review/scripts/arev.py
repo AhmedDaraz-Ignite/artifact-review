@@ -349,6 +349,9 @@ def _start_session_server(args, path, public_url):
         "pid": proc.pid,
         "token": token,
         "started": time.time(),
+        # What the authoring rules said when this session began. Poll compares
+        # against it so a long session notices the rules moved under it.
+        "guidance": _guidance_version(),
         "session_dir": session_dir,
         "bind": args.bind,
         "control_url": control_url,
@@ -417,8 +420,28 @@ def _print_event(value, pretty=False):
         print(json.dumps(value, separators=(",", ":")))
 
 
+def _guidance_note(entry):
+    """Describe how a running session's authoring rules have moved on.
+
+    An agent reads the playbooks once, at the start. Without this it keeps
+    writing to rules that were corrected hours ago and never finds out. The
+    note goes to stderr rather than into the event, because the event envelope
+    is a fixed public shape.
+    """
+    live = _guidance_version()
+    started_with = entry.get("guidance")
+    if started_with == live:
+        return None
+    return (f"GUIDANCE STALE: this session started on rules {started_with or 'unknown'}"
+            f" and the installed rules are now {live}. Run: arev brief, apply "
+            "what changed, then re-run: arev check")
+
+
 def cmd_poll(args):
     entry = _entry_for(args.file)
+    guidance = _guidance_note(entry)
+    if guidance:
+        print(guidance, file=sys.stderr)
     try:
         if args.agent_reply:
             _api(entry, "POST", "/agent-reply", {
@@ -618,6 +641,44 @@ def cmd_prune(args):
     print(json.dumps(result, sort_keys=True, indent=2))
 
 
+def cmd_check(args):
+    """Hold the authored file to the rules before a reviewer ever sees it."""
+    from checks import render_json, render_report, run_checks
+
+    path = os.path.abspath(os.path.expanduser(args.file))
+    if not os.path.isfile(path):
+        sys.exit(f"no such file: {path}")
+    try:
+        report = run_checks(path, source_paths=args.source, ignore=args.ignore,
+                            discover=not args.no_discover)
+    except (OSError, ValueError) as error:
+        sys.exit(f"could not check {path}: {error}")
+    sys.stdout.write(render_json(report) if args.json else render_report(report))
+    if not report["ok"] and not args.warn_only:
+        sys.exit(1)
+
+
+def _guidance_version():
+    """Fingerprint the authoring rules an agent would have been given.
+
+    Guidance is read once per session. Recording what a session started with
+    is the only way a later poll can tell it the rules have since changed.
+    """
+    sources = [os.path.join(SKILL_DIR, "SKILL.md")]
+    sources.extend(
+        os.path.join(REFERENCE_DIR, guidance_id + ".md")
+        for guidance_id in sorted(_playbook_ids() + ["design"])
+    )
+    digest = hashlib.sha256()
+    for source in sources:
+        if not os.path.isfile(source):
+            continue
+        digest.update(os.path.basename(source).encode())
+        with open(source, "rb") as handle:
+            digest.update(handle.read())
+    return digest.hexdigest()[:12]
+
+
 def _playbook_ids():
     return sorted(f[:-3] for f in os.listdir(REFERENCE_DIR)
                   if f.endswith(".md") and f != "design.md")
@@ -671,7 +732,9 @@ def _doctor_checks():
         "python": sys.version.split()[0],
         "skill_dir": SKILL_DIR,
         "state_dir": STATE_ROOT,
+        "guidance": _guidance_version(),
         "manifest": os.path.isfile(os.path.join(SKILL_DIR, "manifest.json")),
+        "checks": os.path.isfile(os.path.join(SCRIPT_DIR, "checks.py")),
         "store": os.path.isfile(os.path.join(SCRIPT_DIR, "review_store.py")),
         "reports": os.path.isfile(os.path.join(SCRIPT_DIR, "reports.py")),
         "server": os.path.isfile(os.path.join(SCRIPT_DIR, "server.py")),
@@ -687,7 +750,8 @@ def _doctor_checks():
             os.path.join(ASSET_DIR, "mermaid.js")),
     }
     checks["ok"] = all(value for key, value in checks.items()
-                       if key not in ("python", "skill_dir", "state_dir"))
+                       if key not in ("python", "skill_dir", "state_dir",
+                                      "guidance"))
     return checks
 
 
@@ -741,6 +805,7 @@ def cmd_brief(args):
         print(json.dumps(checks, indent=2))
         sys.exit(1)
     print(f"INSTALL ok python={checks['python']}")
+    print(f"GUIDANCE {checks['guidance']}")
     print()
     print("## design")
     print(_design_text())
@@ -863,6 +928,26 @@ def main():
     p.add_argument("--title", help="page title (default: derived from the filename)")
     p.add_argument("--force", action="store_true", help="overwrite an existing file")
     p.set_defaults(fn=cmd_new)
+
+    p = sub.add_parser(
+        "check", help="audit an artifact against the rules and its sources",
+        description="Read the authored HTML and report diagram problems and "
+                    "source sections the artifact left out. Exits non-zero "
+                    "when there is an error or a coverage gap.")
+    p.add_argument("file", help="HTML artifact to audit")
+    p.add_argument("--source", action="append", default=[], metavar="PATH",
+                   help="document the artifact explains (repeatable); "
+                        "defaults to paths named in the artifact's opening text")
+    p.add_argument("--ignore", action="append", default=[], metavar="TEXT",
+                   help="source heading to exclude on purpose (repeatable, "
+                        "matched as a substring)")
+    p.add_argument("--no-discover", action="store_true",
+                   help="do not look for source documents automatically")
+    p.add_argument("--warn-only", action="store_true",
+                   help="report findings but always exit zero")
+    p.add_argument("--json", action="store_true",
+                   help="emit the full report as JSON")
+    p.set_defaults(fn=cmd_check)
 
     p = sub.add_parser(
         "brief", help="install check, design guidance, and playbooks in one call",

@@ -645,6 +645,7 @@ class CliOutputEfficiencyTests(unittest.TestCase):
         checks = {
             "ok": True,
             "python": "3.13.5",
+            "guidance": "test-guidance",
             "skill_dir": "/private/large/skill/path",
             "state_dir": "/private/large/state/path",
         }

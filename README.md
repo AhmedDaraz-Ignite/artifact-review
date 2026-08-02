@@ -161,6 +161,8 @@ Useful commands:
 arev doctor                  verify the installed runtime and browser assets
 arev brief [PLAYBOOK ...]    print concise setup and selected guidance
 arev new FILE --title TITLE  scaffold an audit-clean artifact shell
+arev check FILE              audit diagrams and source coverage before opening
+arev check FILE --source DOC --ignore "Section title"
 arev design                  print general artifact design guidance
 arev playbook                list artifact-specific playbooks
 arev sessions                list known local sessions

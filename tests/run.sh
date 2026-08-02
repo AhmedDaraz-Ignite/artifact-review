@@ -82,6 +82,15 @@ else
   tail -20 "$REPORT_RAW"
 fi
 
+echo "== artifact-checks"
+CHECKS_RAW="$WORK/artifact-checks.log"
+if python3 "$ROOT/tests/test_checks.py" > "$CHECKS_RAW" 2>&1; then
+  echo "PASS artifact checks, source coverage, and guidance staleness" | tee -a "$OUT"
+else
+  echo "FAIL artifact checks - see $CHECKS_RAW" | tee -a "$OUT"
+  tail -20 "$CHECKS_RAW"
+fi
+
 run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html
@@ -90,6 +99,7 @@ run security selftest-security.mjs clean.html
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
 run diagrams selftest-diagram-features.mjs diagram-features.html
+run mermaidfail selftest-mermaid-failure.mjs mermaid-broken.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then
