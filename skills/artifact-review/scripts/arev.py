@@ -665,9 +665,10 @@ def _guidance_version():
     is the only way a later poll can tell it the rules have since changed.
     """
     sources = [os.path.join(SKILL_DIR, "SKILL.md")]
-    sources.extend(os.path.join(REFERENCE_DIR, name)
-                   for name in sorted(os.listdir(REFERENCE_DIR))
-                   if name.endswith(".md"))
+    sources.extend(
+        os.path.join(REFERENCE_DIR, guidance_id + ".md")
+        for guidance_id in sorted(_playbook_ids() + ["design"])
+    )
     digest = hashlib.sha256()
     for source in sources:
         if not os.path.isfile(source):
@@ -804,7 +805,7 @@ def cmd_brief(args):
         print(json.dumps(checks, indent=2))
         sys.exit(1)
     print(f"INSTALL ok python={checks['python']}")
-    print(f"GUIDANCE {_guidance_version()}")
+    print(f"GUIDANCE {checks['guidance']}")
     print()
     print("## design")
     print(_design_text())

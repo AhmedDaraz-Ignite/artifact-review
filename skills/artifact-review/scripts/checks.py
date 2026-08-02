@@ -302,19 +302,23 @@ def analyse_mermaid(source):
 
 # ----------------------------------------------------------------- source
 
-def _markdown_headings(text):
+def _markdown_headings(lines):
     headings = []
     fenced = False
-    for line in text.splitlines():
+    for line in lines:
         if _MD_FENCE_RE.match(line):
             fenced = not fenced
-            continue
-        if fenced:
-            continue
-        match = _MD_HEADING_RE.match(line)
-        if match:
-            headings.append({"level": len(match.group(1)),
-                             "text": match.group(2).strip()})
+        elif not fenced:
+            match = _MD_HEADING_RE.match(line)
+            if match:
+                headings.append({
+                    "level": len(match.group(1)),
+                    "text": match.group(2).strip(),
+                    "_body_arrows": 0,
+                })
+                continue
+        if headings:
+            headings[-1]["_body_arrows"] += len(ARROW_RE.findall(line))
     return headings
 
 
@@ -343,21 +347,20 @@ def _section_level(headings):
 def read_source(path):
     with open(path, encoding="utf-8", errors="replace") as handle:
         text = handle.read()
+    lines = text.splitlines()
     suffix = os.path.splitext(path)[1].lower()
     if suffix in (".html", ".htm"):
         headings = _html_headings(text)
     else:
-        headings = _markdown_headings(text)
+        headings = _markdown_headings(lines)
 
     level = _section_level(headings)
-    lines = text.splitlines()
-    bodies = _heading_bodies(text, headings, suffix)
     sections = []
-    for index, heading in enumerate(headings):
+    for heading in headings:
         heading["words"] = heading_words(heading["text"])
         heading["number"] = _leading_number(heading["text"])
-        heading["body"] = bodies[index]
-        heading["diagrammable"] = _is_diagrammable(heading)
+        heading["diagrammable"] = _is_diagrammable(
+            heading["words"], heading.pop("_body_arrows", 0))
         if heading["level"] == level:
             sections.append(heading)
     return {
@@ -370,47 +373,18 @@ def read_source(path):
     }
 
 
-def _heading_bodies(text, headings, suffix):
-    """Return the text under each heading, so a section can be judged on more
-    than its title."""
-    if suffix in (".html", ".htm") or not headings:
-        return [""] * len(headings)
-    lines = text.splitlines()
-    starts = []
-    seen = 0
-    fenced = False
-    for number, line in enumerate(lines):
-        if _MD_FENCE_RE.match(line):
-            fenced = not fenced
-            continue
-        if fenced:
-            continue
-        if _MD_HEADING_RE.match(line) and seen < len(headings):
-            starts.append(number)
-            seen += 1
-    bodies = []
-    for index, start in enumerate(starts):
-        end = starts[index + 1] if index + 1 < len(starts) else len(lines)
-        bodies.append("\n".join(lines[start + 1:end]))
-    bodies.extend([""] * (len(headings) - len(bodies)))
-    return bodies
-
-
 def _leading_number(text):
     match = re.match(r"\s*(\d+(?:\.\d+)*)[.)]?\s", text or "")
     return match.group(1) if match else ""
 
 
-def _is_diagrammable(heading):
+def _is_diagrammable(words, body_arrows=0):
     """Decide whether a source heading describes something worth drawing.
 
     Two signals only: the heading names a thing with states or steps, or its
     body already draws arrows in plain text.
     """
-    if heading["words"] & DIAGRAM_VOCAB:
-        return True
-    body = heading.get("body") or ""
-    return len(ARROW_RE.findall(body)) >= MIN_ARROWS_FOR_FLOW
+    return bool(words & DIAGRAM_VOCAB) or body_arrows >= MIN_ARROWS_FOR_FLOW
 
 
 def discover_sources(artifact_path, intro_text):
@@ -575,17 +549,13 @@ def _check_coverage(artifact, sources, ignore):
     findings = []
     summary = []
     for source in sources:
-        covered = 0
         undiagrammed = []
         unmatched = []
         for section in source["sections"]:
             if _ignored(section["text"], ignore):
-                covered += 1
                 continue
             ok, missing = _matches(section["words"], artifact["words"])
-            if ok:
-                covered += 1
-            else:
+            if not ok:
                 unmatched.append({"heading": section["text"],
                                   "missing": sorted(missing)})
 
@@ -616,7 +586,7 @@ def _check_coverage(artifact, sources, ignore):
             "lines": source["lines"],
             "words": source["words"],
             "sections": len(source["sections"]),
-            "sections_covered": covered,
+            "sections_covered": len(source["sections"]) - len(unmatched),
             "diagrammable": sum(1 for h in source["headings"]
                                 if h["diagrammable"]),
             "undiagrammed": len(undiagrammed),
