@@ -17,8 +17,18 @@ review state, generated whiteboard scenes, or screenshots into the skill.
 
 The review server renders every `<pre class="mermaid">` block in the page
 offline with its own pinned Mermaid; artifacts must not load a Mermaid CDN.
-Flowchart, sequence, class, ER, and state Mermaid diagrams become editable
-shapes. Other valid Mermaid types use a labeled image-annotation fallback.
+Diagram colors, text, and font derive from the page's rendered palette, and
+diagrams re-render automatically when the viewer flips the page theme, so
+never hardcode a Mermaid theme. Rendered diagrams support wheel zoom and drag
+pan (double-click resets; both freeze in annotate mode), and every node gets
+a stable identity key that survives re-renders. Flowchart, sequence, class,
+ER, and state Mermaid diagrams become editable shapes. Other valid Mermaid
+types use a labeled image-annotation fallback.
+
+The boot layout audit runs at desktop width and again at phone (360px) and
+tablet (800px) widths behind the curtain. Findings carry a `viewportClass`
+and their evidence names the viewport, so fix narrow-screen failures with
+responsive layout, not by resizing your own browser.
 
 ## Sessions and polling
 
@@ -56,11 +66,13 @@ or artifact reload. Working scenes autosave privately. If Mermaid source and a
 saved scene have different hashes, the browser asks the reviewer to re-convert
 or keep the older scene. Never make that choice for them.
 
-Whiteboard feedback contains a concise `summary`, structured `stats`, a
-`scene_path`, and usually a `png_path`. Start with summary and stats, inspect
-the structured scene if needed, and read the PNG only when intent is still
-ambiguous. Update the authoritative Mermaid/HTML; never replace it with the
-Excalidraw scene.
+Whiteboard feedback contains a `summary`, an optional reviewer `note`,
+auto-generated `summary_lines` (one sentence per added, removed, moved,
+relabeled, or drawn element, with node labels and arrow endpoints), structured
+`stats`, a `scene_path`, and usually a `png_path`. Start with the note and
+summary lines, inspect the structured scene if needed, and read the PNG only
+when intent is still ambiguous. Update the authoritative Mermaid/HTML; never
+replace it with the Excalidraw scene.
 
 ## End and reopen
 

@@ -4,7 +4,7 @@ use_when: writing any HTML artifact, before first line of code, general artifact
 
 - Run `arev new <path>` and fill the region between `<!-- arev:content -->` and `<!-- /arev:content -->`.
 - The shell already handles both color schemes, the reading column, the type scale, and horizontal overflow. Do not rewrite that CSS, and never hardcode a color that bypasses the `--fg` / `--bg` / `--border` / `--accent` / `--muted` variables.
-- Wide content - tables, code blocks, diagrams - goes inside `<div class="scroll">`. The page itself must never scroll sideways.
+- Wide content - tables, code blocks, diagrams - goes inside `<div class="scroll">`. The page itself must never scroll sideways. The review gate proves this at phone (360px) and tablet (800px) widths as well as desktop, so a fixed-width element with no scroll container blocks the review even when it looks fine on your screen.
 - Add new CSS only for something the shell has no class for.
 
 ## Stay self-contained
@@ -29,8 +29,9 @@ use_when: writing any HTML artifact, before first line of code, general artifact
 
 - Every diagram is a `<pre class="mermaid" id="stable-id">...</pre>` block. `pre` preserves the whitespace mermaid needs.
 - Never build a diagram out of styled divs, flex rows, and arrow characters. The review tool attaches its editable Excalidraw whiteboard only to Mermaid blocks - a hand-built box diagram renders flat, cannot be opened as shapes, and the reviewer cannot annotate its nodes.
+- Never set a Mermaid theme or `%%init%%` colors. The renderer derives the diagram palette from the page's `--fg`/`--bg` variables at render time and re-renders when the viewer flips the theme, so hardcoded diagram colors only ever clash.
 - Keep node labels to 2-5 words and fan out at most 3-4 branches from any node.
-- One idea per diagram. Do not cram a whole system into one graph - give each subsystem, flow, or state machine its own diagram instead of dropping it.
+- One idea per diagram. Do not cram a whole system into one graph - give each subsystem, flow, or state machine its own diagram instead of dropping it. For a large system, pair one small Mermaid topology overview with HTML detail cards per module (the hybrid shape in the diagram playbook).
 
 ## Match the weight of the source
 

@@ -5,17 +5,22 @@ use_when: architecture diagram, flow chart, sequence diagram, system design arti
 - One idea per diagram. If you're tempted to add a second concern (e.g. both the happy path and every error branch), split it into a second diagram instead.
 - Keep it to 2-4 diagrams per section. A rich artifact with many sections carries many diagrams; what it must not do is stack five pictures under one heading.
 - Give each diagram a one-line caption above it stating what it shows, in plain words.
+- For a large system, use the hybrid shape: one small Mermaid overview of the topology, followed by HTML detail cards (headings, prose, tables) for each module. The overview stays a real annotatable diagram; the prose that would not fit in node labels lives in the cards below it.
+- Separate topology from detail. The overview answers "what talks to what"; per-module diagrams and cards answer "how does this part work". Never merge those into one dense graph.
+- Prefer top-down (`graph TD`) for multi-step flows. Use left-right (`graph LR`) only for short, genuinely linear pipelines.
 
 ## Markup
 
 - Always `<pre class="mermaid" id="stable-id">...</pre>`, never a `<div>`. `pre` preserves the whitespace mermaid's parser needs, and the stable id keeps reviewer annotations attached across edits.
 - Never approximate a diagram with styled divs and arrow characters. Only Mermaid blocks render as real diagrams under review, open in the editable Excalidraw whiteboard, and accept node-level annotations.
 - Do not load mermaid.js yourself - no CDN script, no initialize call. The review server renders every Mermaid block offline with its own pinned Mermaid. Outside a review session the block shows its readable source text, which is the intended degraded form.
-- Put each diagram's container in `overflow-x: auto` with a sane max-width so a wide graph scrolls internally instead of blowing out the page.
+- Never set a Mermaid theme, `%%init%%` directive, or hardcoded diagram colors. The renderer reads the page's rendered background, text color, and font, derives the diagram palette from them, and re-renders every diagram when the page theme flips. Keep your palette in the page CSS and the diagrams follow it in both light and dark mode.
+- Put each diagram's container in `overflow-x: auto` with a sane max-width so a wide graph scrolls internally instead of blowing out the page. The review gate audits the page at phone and tablet widths too, so a diagram that forces sideways page scroll on a phone blocks the review.
 
 ## Labels
 
 - Node labels: 2-5 words, plain nouns/verbs. "Validate input" not "Perform validation of the incoming request payload".
+- Quote any label that contains punctuation, parentheses, or code-like names: `A["parse(input)"]`. Unquoted punctuation is the most common Mermaid syntax failure.
 - Edge labels only when the edge meaning isn't obvious from context (e.g. "on error", "retry"). Skip edge labels on plain sequential flow.
 - No line breaks inside a label unless the diagram type requires it - let mermaid's auto-wrap or box sizing handle it.
 

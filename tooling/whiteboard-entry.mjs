@@ -77,40 +77,163 @@ function classifySource(source) {
   return { id:"other", label:"Mermaid diagram" };
 }
 
-function sceneStats(baseline, current) {
-  const before = new Map(
-    (baseline || []).filter(element => !element.isDeleted).map(element => [element.id, element]),
+// Only plain web or mail links may leave the whiteboard. Everything else -
+// javascript:, data:, file:, or relative noise coming from untrusted Mermaid
+// `click` directives - is dropped before it can reach a saved scene.
+export function sanitizeSceneLink(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (/^mailto:[^\s]+$/i.test(value)) return value;
+  return "";
+}
+
+const SUMMARY_MAX_LINES = 40;
+const SUMMARY_MAX_LINE_CHARS = 200;
+const SUMMARY_MOVE_EPSILON_PX = 2;
+
+function liveElements(elements) {
+  return (Array.isArray(elements) ? elements : []).filter(
+    element => element && typeof element === "object" && element.id && !element.isDeleted,
   );
-  const after = new Map(
-    (current || []).filter(element => !element.isDeleted).map(element => [element.id, element]),
-  );
-  let added = 0;
-  let removed = 0;
-  let moved = 0;
-  let relabeled = 0;
-  let drawn = 0;
-  for (const [id, element] of after) {
-    const original = before.get(id);
-    if (!original) {
-      added += 1;
-      if (["line", "arrow", "freedraw", "rectangle", "ellipse", "diamond"].includes(element.type)) {
-        drawn += 1;
-      }
-      continue;
-    }
-    if (
-      Math.abs(Number(element.x) - Number(original.x)) > 1 ||
-      Math.abs(Number(element.y) - Number(original.y)) > 1
-    ) moved += 1;
+}
+
+function boundTextByContainer(elements) {
+  const map = new Map();
+  for (const element of elements) {
+    if (element.type === "text" && element.containerId) map.set(element.containerId, element);
+  }
+  return map;
+}
+
+function elementLabel(element, boundText) {
+  return String(element.text || boundText.get(element.id)?.text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncate(text, max) {
+  const value = String(text);
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function describeElement(element, boundText) {
+  const label = elementLabel(element, boundText);
+  const type = String(element.type || "element");
+  return label ? `${type} "${truncate(label, 60)}"` : `${type} (${element.id})`;
+}
+
+function clampLine(line) {
+  return truncate(line, SUMMARY_MAX_LINE_CHARS);
+}
+
+function arrowEndpoints(element, elementsMap, boundText) {
+  const start = element.startBinding?.elementId
+    ? elementsMap.get(element.startBinding.elementId)
+    : null;
+  const end = element.endBinding?.elementId
+    ? elementsMap.get(element.endBinding.elementId)
+    : null;
+  if (!start && !end) return "";
+  const name = endpoint => (endpoint ? describeElement(endpoint, boundText) : "(unattached)");
+  return ` from ${name(start)} to ${name(end)}`;
+}
+
+// Diff the conversion baseline against the edited scene on stable element
+// ids, producing the human-readable lines and counts the agent receives.
+// Bound label text folds into its container, so a renamed node reads as one
+// relabel instead of a moved text element.
+export function summarizeSceneEdits(
+  baselineElements,
+  editedElements,
+  { maxLines = SUMMARY_MAX_LINES } = {},
+) {
+  const baseline = liveElements(baselineElements);
+  const edited = liveElements(editedElements);
+  const baselineMap = new Map(baseline.map(element => [element.id, element]));
+  const editedMap = new Map(edited.map(element => [element.id, element]));
+  const baselineText = boundTextByContainer(baseline);
+  const editedText = boundTextByContainer(edited);
+
+  const stats = { added:0, removed:0, moved:0, relabeled:0, drawn:0 };
+  const lines = [];
+
+  for (const element of edited) {
+    if (baselineMap.has(element.id)) continue;
     if (
       element.type === "text" &&
-      String(element.text || "") !== String(original.text || "")
-    ) relabeled += 1;
+      element.containerId &&
+      !baselineText.has(element.containerId) &&
+      editedMap.has(element.containerId)
+    ) continue; // the label of a newly added container is reported with the container
+    if (element.type === "freedraw") {
+      stats.drawn += 1;
+      lines.push(clampLine(
+        `Drew a freehand mark near (${Math.round(element.x)}, ${Math.round(element.y)})`,
+      ));
+      continue;
+    }
+    stats.added += 1;
+    const endpoints = element.type === "arrow" || element.type === "line"
+      ? arrowEndpoints(element, editedMap, editedText)
+      : "";
+    lines.push(clampLine(`Added ${describeElement(element, editedText)}${endpoints}`));
   }
-  for (const id of before.keys()) {
-    if (!after.has(id)) removed += 1;
+
+  for (const element of baseline) {
+    if (editedMap.has(element.id)) continue;
+    if (element.type === "text" && element.containerId && baselineMap.has(element.containerId)) {
+      continue; // a removed bound label shows up through its container
+    }
+    stats.removed += 1;
+    lines.push(clampLine(`Removed ${describeElement(element, baselineText)}`));
   }
-  return { added, removed, moved, relabeled, drawn };
+
+  for (const element of edited) {
+    const before = baselineMap.get(element.id);
+    if (!before) continue;
+
+    const beforeLabel = elementLabel(before, baselineText);
+    const afterLabel = elementLabel(element, editedText);
+    if (beforeLabel !== afterLabel && !(element.type === "text" && element.containerId)) {
+      stats.relabeled += 1;
+      lines.push(clampLine(
+        `Relabeled ${element.type}: "${truncate(beforeLabel, 50)}" is now "${truncate(afterLabel, 50)}"`,
+      ));
+    }
+
+    if (element.type === "text" && element.containerId) continue; // container reports geometry
+
+    const dx = Math.round((element.x ?? 0) - (before.x ?? 0));
+    const dy = Math.round((element.y ?? 0) - (before.y ?? 0));
+    const dw = Math.round((element.width ?? 0) - (before.width ?? 0));
+    const dh = Math.round((element.height ?? 0) - (before.height ?? 0));
+    const movedFar =
+      Math.abs(dx) > SUMMARY_MOVE_EPSILON_PX || Math.abs(dy) > SUMMARY_MOVE_EPSILON_PX;
+    const resized =
+      Math.abs(dw) > SUMMARY_MOVE_EPSILON_PX || Math.abs(dh) > SUMMARY_MOVE_EPSILON_PX;
+    if (movedFar || resized) {
+      stats.moved += 1;
+      const parts = [];
+      if (movedFar) parts.push(`moved by (${dx}, ${dy})`);
+      if (resized) parts.push(`resized by (${dw}, ${dh})`);
+      lines.push(clampLine(
+        `${describeElement(element, editedText)} ${parts.join(" and ")}`,
+      ));
+    }
+  }
+
+  const totalChanges =
+    stats.added + stats.removed + stats.moved + stats.relabeled + stats.drawn;
+  const bounded = lines.slice(0, maxLines);
+  if (lines.length > bounded.length) {
+    const extra = lines.length - bounded.length;
+    bounded.push(`…and ${extra} more change${extra === 1 ? "" : "s"}`);
+  }
+  if (totalChanges === 0) {
+    bounded.push("No element changes detected (view-only or style-only edits).");
+  }
+  return { lines:bounded, stats, totalChanges };
 }
 
 async function blobBase64(blob) {
@@ -229,12 +352,12 @@ function frameApp() {
     const feedback = element("section", { className:"wb-feedback" });
     const label = element("label", {
       htmlFor:"wbSummary",
-      textContent:"Describe your diagram change",
+      textContent:"Optional note for the agent",
     });
     const summary = element("input", {
       id:"wbSummary",
       type:"text",
-      placeholder:"For example: added a retry path and moved the database",
+      placeholder:"Your edits are summarized automatically; add intent here",
       autocomplete:"off",
     });
     const queue = element("button", {
@@ -329,6 +452,9 @@ function frameApp() {
     elements = materialize(regenerateIds);
     // Treat library output as untrusted even when the first pass was unique.
     if (duplicateIds(elements).length) elements = materialize(true);
+    for (const element of elements) {
+      if (element.link) element.link = sanitizeSceneLink(element.link) || null;
+    }
     return {
       elements,
       files:parsed.files || {},
@@ -510,12 +636,7 @@ function frameApp() {
 
   async function submit(mode) {
     if (!state.api || state.busy) return;
-    const summary = String(document.getElementById("wbSummary")?.value || "").trim();
-    if (!summary) {
-      setStatus("Describe the diagram change first.", "error");
-      document.getElementById("wbSummary")?.focus();
-      return;
-    }
+    const note = String(document.getElementById("wbSummary")?.value || "").trim();
     setBusy(true);
     setStatus(mode === "send" ? "Saving and sending…" : "Saving review draft…");
     try {
@@ -531,16 +652,21 @@ function frameApp() {
           viewBackgroundColor:appState.viewBackgroundColor || "#ffffff",
         },
       });
+      const edits = summarizeSceneEdits(
+        state.baselineElements,
+        record.scene.elements,
+      );
       post({
         type:"submit",
         mode,
-        summary,
+        summary:note,
+        summary_lines:edits.lines,
         scene:record.scene,
         baseline:record.baseline,
         source_hash:record.source_hash,
         text_metrics_version:record.text_metrics_version,
         image_fallback:state.fallback,
-        stats:sceneStats(state.baselineElements, record.scene.elements),
+        stats:edits.stats,
         png_base64:await blobBase64(blob),
       });
     } catch (error) {

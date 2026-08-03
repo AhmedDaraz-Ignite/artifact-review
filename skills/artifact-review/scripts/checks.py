@@ -498,6 +498,17 @@ def _check_diagram_quality(artifact):
                 f"{label} has {len(long_labels)} label(s) over five words, "
                 f"starting with \"{long_labels[0][:60]}\".",
                 labels=long_labels[:5]))
+        directive = re.search(r"%%\{\s*init\b[^}]*", diagram["source"])
+        if directive:
+            themed = "theme" in directive.group(0).lower()
+            findings.append(_finding(
+                "error" if themed else "warn",
+                "diagram-hardcoded-theme",
+                f"{label} carries a Mermaid init directive"
+                + (" that sets a theme" if themed else "")
+                + ". The review runtime derives diagram colors and fonts from"
+                " the page palette and re-renders on theme flips, so a"
+                " hardcoded theme always clashes. Remove the directive."))
     return findings
 
 

@@ -20,9 +20,12 @@ A `mermaid-node` target identifies the exact node through `diagramId`,
 `nodeId`, `label`, and `selector`; change that node in Mermaid source rather
 than treating the SVG or entire diagram as the target.
 
-For `whiteboard`, read the summary and stats first. Inspect `scene_path` when
-needed; inspect `png_path` only if the structured data remains ambiguous. The
-scene and PNG are immutable evidence, not replacement source.
+For `whiteboard`, read the reviewer `note` and the auto-generated
+`summary_lines` first: each line names one element-level edit ("Added arrow
+from rectangle "API" to rectangle "Cache""), so most diagram feedback needs no
+further inspection. Inspect `scene_path` when needed; inspect `png_path` only
+if the structured data remains ambiguous. The scene and PNG are immutable
+evidence, not replacement source.
 
 `layout_warnings` contains only severe findings not sent earlier in this
 session. An empty list means no new warnings, not necessarily a clean page. A
@@ -35,9 +38,13 @@ browser proves a severe integrity problem. Fix every finding in the event,
 save the artifact, and keep polling while the browser re-audits it. Do not ask
 the user to review through a blocking curtain.
 
-Warnings include a kind, selector, severity, and geometry/evidence fields. Use
-the evidence rather than guessing from the label. Minor findings remain
-visible in the browser but do not block the agent loop.
+Warnings include a kind, selector, severity, and geometry/evidence fields, and
+a `viewportClass` (`mobile`, `compact`, or `desktop`) naming the viewport the
+failure was proven in; the audit runs at phone and tablet widths as well as
+desktop. Fix a `mobile` finding with responsive layout (a scroll container,
+`max-width:100%`), not by testing only on a wide screen. Use the evidence
+rather than guessing from the label. Minor findings remain visible in the
+browser but do not block the agent loop.
 
 ## Ended and idle
 

@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>viewport overflow fixture</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 16px; }
+  /* Fixed width with no scroll container: fine on a desktop viewport,
+     proven page overflow on a phone. */
+  .rigid { width: 700px; border: 1px solid #ccc; padding: 8px; }
+</style>
+</head>
+<body>
+  <h1>Desktop-only layout</h1>
+  <p>This artifact reads fine on a wide screen and breaks on a phone.</p>
+  <div class="rigid">
+    A fixed 700px block that refuses to shrink with the viewport, so a phone
+    reader has to scroll sideways to see the end of this sentence.
+  </div>
+</body>
+</html>
