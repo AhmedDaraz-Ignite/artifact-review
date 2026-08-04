@@ -216,12 +216,10 @@
   }
 
   function mermaidNodeGroups(svg) {
-    var groups = svg.querySelectorAll("g.node,g.nodes > g");
-    var unique = [];
-    Array.prototype.forEach.call(groups, function (candidate) {
-      if (unique.indexOf(candidate) === -1) unique.push(candidate);
-    });
-    return unique;
+    // querySelectorAll never repeats an element, even across a selector list.
+    return Array.prototype.slice.call(
+      svg.querySelectorAll("g.node,g.nodes > g"),
+    );
   }
 
   function allMermaidSvgs() {
@@ -233,17 +231,6 @@
       },
     );
     return found;
-  }
-
-  function tagMermaidNodes() {
-    allMermaidSvgs().forEach(function (svg) {
-      mermaidNodeGroups(svg).forEach(function (group, index) {
-        group.setAttribute(
-          "data-arev-node-key",
-          stableNodeKey(group, svg, index),
-        );
-      });
-    });
   }
 
   function mermaidNodeTarget(el) {
@@ -788,16 +775,10 @@
       }
     }
     if (e.data.type === "run-audit") {
-      var passFindings = [];
-      try {
-        passFindings = window.__arevAudit(document, window) || [];
-      } catch (err) {
-        /* a crashed audit must never block review */
-      }
       send({
         type: "audit-pass",
         token: e.data.token,
-        findings: passFindings,
+        findings: safeAudit(),
       });
     }
     if (e.data.type === "get-scroll")
@@ -933,16 +914,27 @@
     });
     svg.addEventListener("pointerdown", function (event) {
       if (annotating || event.button !== 0) return;
-      panning = { x: event.clientX, y: event.clientY, vx: view.x, vy: view.y };
+      // A viewBox write never resizes the client box. One size read per
+      // drag avoids a layout pass on every pointer move.
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      panning = {
+        x: event.clientX,
+        y: event.clientY,
+        vx: view.x,
+        vy: view.y,
+        width: rect.width,
+        height: rect.height,
+      };
       if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
       svg.style.cursor = "grabbing";
     });
     svg.addEventListener("pointermove", function (event) {
       if (!panning) return;
-      var rect = svg.getBoundingClientRect();
-      if (!rect.width || !rect.height) return;
-      view.x = panning.vx - ((event.clientX - panning.x) / rect.width) * view.w;
-      view.y = panning.vy - ((event.clientY - panning.y) / rect.height) * view.h;
+      view.x =
+        panning.vx - ((event.clientX - panning.x) / panning.width) * view.w;
+      view.y =
+        panning.vy - ((event.clientY - panning.y) / panning.height) * view.h;
       apply();
     });
     function endPan(event) {
@@ -968,11 +960,16 @@
   }
 
   function enhanceMermaidSvgs() {
-    tagMermaidNodes();
     exploreViewports = exploreViewports.filter(function (viewport) {
       return viewport.svg.isConnected;
     });
     allMermaidSvgs().forEach(function (svg) {
+      mermaidNodeGroups(svg).forEach(function (group, index) {
+        group.setAttribute(
+          "data-arev-node-key",
+          stableNodeKey(group, svg, index),
+        );
+      });
       if (svg.hasAttribute("data-arev-explore")) return;
       var viewport = createExploreViewport(svg);
       if (!viewport) return;
@@ -1096,13 +1093,17 @@
     return findings;
   }
 
-  function boot() {
-    var findings = [];
+  function safeAudit() {
     try {
-      findings = window.__arevAudit(document, window) || [];
+      return window.__arevAudit(document, window) || [];
     } catch (err) {
       /* a crashed audit must never block review */
+      return [];
     }
+  }
+
+  function boot() {
+    var findings = safeAudit();
     send({ type: "audit-done", findings: findings });
     var mermaidBlocks = findMermaid();
     var rendering = renderMermaidLocally(mermaidBlocks);

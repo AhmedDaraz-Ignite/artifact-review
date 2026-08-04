@@ -92,7 +92,7 @@ function pageIsDark(background) {
 // Mermaid's base theme derives every diagram color from a few variables.
 // Node surfaces, borders, and edges are mixes of the page background toward
 // the page text color, so diagrams inherit any palette without clashing.
-export function pagePalette() {
+function pagePalette() {
   const background = pageBackground();
   const dark = pageIsDark(background);
   const body = document.body || document.documentElement;
@@ -196,7 +196,9 @@ async function drainRenderQueue() {
 
 function queueRender() {
   queued = true;
-  void drainRenderQueue();
+  // The change and transitionend listeners can fire in bursts. Draining on
+  // the next frame costs one palette read per frame instead of one per event.
+  requestAnimationFrame(() => void drainRenderQueue());
 }
 
 function watchThemeChanges() {
@@ -225,13 +227,12 @@ function watchThemeChanges() {
   );
 }
 
-export async function renderPendingMermaid(doc = document) {
+async function renderPendingMermaid(doc = document) {
   collectPending(doc);
   return renderOwned();
 }
 
 // Awaited at the top level so the SDK's dynamic import resolves only once
 // every block has been drawn. That is what lets it audit the result.
-const first = await renderPendingMermaid();
+await renderPendingMermaid();
 watchThemeChanges();
-export default first;

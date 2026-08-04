@@ -143,11 +143,7 @@ function arrowEndpoints(element, elementsMap, boundText) {
 // ids, producing the human-readable lines and counts the agent receives.
 // Bound label text folds into its container, so a renamed node reads as one
 // relabel instead of a moved text element.
-export function summarizeSceneEdits(
-  baselineElements,
-  editedElements,
-  { maxLines = SUMMARY_MAX_LINES } = {},
-) {
+export function summarizeSceneEdits(baselineElements, editedElements) {
   const baseline = liveElements(baselineElements);
   const edited = liveElements(editedElements);
   const baselineMap = new Map(baseline.map(element => [element.id, element]));
@@ -192,17 +188,17 @@ export function summarizeSceneEdits(
   for (const element of edited) {
     const before = baselineMap.get(element.id);
     if (!before) continue;
+    // A bound label's text and geometry both report through its container.
+    if (element.type === "text" && element.containerId) continue;
 
     const beforeLabel = elementLabel(before, baselineText);
     const afterLabel = elementLabel(element, editedText);
-    if (beforeLabel !== afterLabel && !(element.type === "text" && element.containerId)) {
+    if (beforeLabel !== afterLabel) {
       stats.relabeled += 1;
       lines.push(clampLine(
         `Relabeled ${element.type}: "${truncate(beforeLabel, 50)}" is now "${truncate(afterLabel, 50)}"`,
       ));
     }
-
-    if (element.type === "text" && element.containerId) continue; // container reports geometry
 
     const dx = Math.round((element.x ?? 0) - (before.x ?? 0));
     const dy = Math.round((element.y ?? 0) - (before.y ?? 0));
@@ -225,7 +221,7 @@ export function summarizeSceneEdits(
 
   const totalChanges =
     stats.added + stats.removed + stats.moved + stats.relabeled + stats.drawn;
-  const bounded = lines.slice(0, maxLines);
+  const bounded = lines.slice(0, SUMMARY_MAX_LINES);
   if (lines.length > bounded.length) {
     const extra = lines.length - bounded.length;
     bounded.push(`…and ${extra} more change${extra === 1 ? "" : "s"}`);

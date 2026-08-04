@@ -52,8 +52,6 @@ try {
       theme: holder.getAttribute('data-arev-mermaid-theme'),
       svgId: holder.querySelector('svg')?.id || '',
       html: holder.innerHTML,
-      fontFamily: holder.querySelector('svg')?.style.fontFamily ||
-        (holder.innerHTML.match(/font-family:([^;"']+)/) || [])[1] || '',
     };
   });
   test.check(
@@ -66,13 +64,12 @@ try {
     /Georgia/i.test(lightState.html),
   );
 
-  const renderEventArmed = art().evaluate(() => {
+  await art().evaluate(() => {
     window.__rerenderEvents = 0;
     document.addEventListener('arev:mermaid-rendered', () => {
       window.__rerenderEvents += 1;
     });
   });
-  await renderEventArmed;
   await art().locator('#themeToggle').click();
 
   const darkState = await eventually(async () => {
@@ -142,11 +139,9 @@ try {
 
   /* ------------------------------------------------- pan/zoom explore mode */
 
-  const beforeZoom = await art().evaluate(() => {
-    const svg = document.querySelector('#themed-flow svg');
-    return svg.getAttribute('viewBox');
-  });
-  await art().evaluate(() => {
+  const flowViewBox = () => art().evaluate(() =>
+    document.querySelector('#themed-flow svg').getAttribute('viewBox'));
+  const zoomFlow = () => art().evaluate(() => {
     const svg = document.querySelector('#themed-flow svg');
     const rect = svg.getBoundingClientRect();
     svg.dispatchEvent(new WheelEvent('wheel', {
@@ -157,8 +152,10 @@ try {
       clientY:rect.top + rect.height / 2,
     }));
   });
-  const afterZoom = await art().evaluate(() =>
-    document.querySelector('#themed-flow svg').getAttribute('viewBox'));
+
+  const beforeZoom = await flowViewBox();
+  await zoomFlow();
+  const afterZoom = await flowViewBox();
   test.check(
     'wheel zoom changes the diagram viewBox in explore mode',
     Boolean(beforeZoom) && afterZoom !== beforeZoom,
@@ -169,8 +166,7 @@ try {
     const svg = document.querySelector('#themed-flow svg');
     svg.dispatchEvent(new MouseEvent('dblclick', { bubbles:true }));
   });
-  const afterReset = await art().evaluate(() =>
-    document.querySelector('#themed-flow svg').getAttribute('viewBox'));
+  const afterReset = await flowViewBox();
   test.check(
     'double-click resets the explored view',
     afterReset === beforeZoom,
@@ -182,19 +178,8 @@ try {
     (await art().evaluate(() =>
       document.querySelector('#themed-flow svg').style.cursor)) !== 'grab',
   { timeout:5000, label:'annotate freeze reaches the artifact frame' });
-  await art().evaluate(() => {
-    const svg = document.querySelector('#themed-flow svg');
-    const rect = svg.getBoundingClientRect();
-    svg.dispatchEvent(new WheelEvent('wheel', {
-      bubbles:true,
-      cancelable:true,
-      deltaY:-120,
-      clientX:rect.left + rect.width / 2,
-      clientY:rect.top + rect.height / 2,
-    }));
-  });
-  const annotateZoom = await art().evaluate(() =>
-    document.querySelector('#themed-flow svg').getAttribute('viewBox'));
+  await zoomFlow();
+  const annotateZoom = await flowViewBox();
   test.check(
     'annotate mode freezes pan/zoom so picks stay precise',
     annotateZoom === afterReset,

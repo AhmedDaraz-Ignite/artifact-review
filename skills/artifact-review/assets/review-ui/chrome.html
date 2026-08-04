@@ -1076,8 +1076,8 @@ $("showAnyway").addEventListener("click", async () => {
  * Findings come back tagged with the viewport class they were observed in,
  * so a diagram or table that only breaks on a phone still reaches the agent. */
 
-const VIEWPORT_PASSES = [["mobile", 360], ["compact", 800]];
-let auditPassResolvers = new Map();
+const VIEWPORT_PASS_WIDTHS = [360, 800];
+let pendingAuditPass = null;
 let viewportFindingsPromise = null;
 
 function viewportClassFor(width) {
@@ -1089,7 +1089,6 @@ function viewportClassFor(width) {
 function tagViewport(findings) {
   return (findings || []).map(finding => {
     const cls = viewportClassFor(Number(finding.viewportWidth) || 1280);
-    if (finding.viewportClass) return finding;
     const label = cls === "mobile" ? "Mobile" : cls === "compact" ? "Tablet" : "";
     return {
       ...finding,
@@ -1112,31 +1111,29 @@ function dedupFindings(findings) {
   });
 }
 
+// Passes run one at a time, so a single pending slot is enough. The token
+// stops a late reply from a timed-out pass from settling a later one.
 function requestAuditPass() {
   return new Promise(resolve => {
     const token = Math.random().toString(36).slice(2);
-    const timer = setTimeout(() => {
-      auditPassResolvers.delete(token);
-      resolve([]);
-    }, 2000);
-    auditPassResolvers.set(token, findings => {
+    const settle = findings => {
       clearTimeout(timer);
-      auditPassResolvers.delete(token);
+      pendingAuditPass = null;
       resolve(findings);
-    });
+    };
+    const timer = setTimeout(() => settle([]), 2000);
+    pendingAuditPass = { token, settle };
     try {
       art.contentWindow.postMessage({ arev:true, type:"run-audit", token }, "*");
     } catch (error) {
-      clearTimeout(timer);
-      auditPassResolvers.delete(token);
-      resolve([]);
+      settle([]);
     }
   });
 }
 
 async function collectViewportFindings() {
   const collected = [];
-  for (const [, width] of VIEWPORT_PASSES) {
+  for (const width of VIEWPORT_PASS_WIDTHS) {
     art.style.width = `${width}px`;
     // Two frames let the narrowed layout settle before it is measured.
     await new Promise(resolve => requestAnimationFrame(() =>
@@ -1152,9 +1149,9 @@ window.addEventListener("message", async event => {
       (event.origin !== location.origin && event.origin !== "null") ||
       !event.data || !event.data.arev) return;
   const message = event.data;
-  if (message.type === "audit-pass") {
-    const resolver = auditPassResolvers.get(message.token);
-    if (resolver) resolver(message.findings || []);
+  if (message.type === "audit-pass" &&
+      pendingAuditPass?.token === message.token) {
+    pendingAuditPass.settle(message.findings || []);
   }
   if (message.type === "audit-done") {
     try {
@@ -1947,17 +1944,18 @@ async function saveInlineDiagram(record, message) {
 }
 
 function describeEditStats(stats) {
-  const names = { added:"added", removed:"removed", moved:"moved",
-    relabeled:"relabeled", drawn:"drawn" };
-  const parts = Object.entries(names)
-    .filter(([key]) => Number(stats?.[key]) > 0)
-    .map(([key, word]) => `${Number(stats[key])} ${word}`);
-  return parts.join(", ");
+  return ["added", "removed", "moved", "relabeled", "drawn"]
+    .filter(key => Number(stats?.[key]) > 0)
+    .map(key => `${Number(stats[key])} ${key}`)
+    .join(", ");
 }
 
 async function submitInlineDiagram(record, message) {
   const mode = message.mode;
   const note = String(message.summary || "").trim();
+  // The iframe message is untrusted, so the limits are enforced here too.
+  // 40 and 200 mirror SUMMARY_MAX_LINES and SUMMARY_MAX_LINE_CHARS in
+  // tooling/whiteboard-entry.mjs.
   const summaryLines = (Array.isArray(message.summary_lines) ? message.summary_lines : [])
     .filter(line => typeof line === "string" && line.trim())
     .slice(0, 40)
