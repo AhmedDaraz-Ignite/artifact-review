@@ -21,7 +21,12 @@ export default defineConfig({
   use:{
     viewport:{ width:1440, height:950 },
     trace:'retain-on-failure',
-    video:'retain-on-failure',
+    // AREV_E2E_VIDEO=1 records every scenario and slows the driver, so the clip
+    // is watchable. Steps that run in milliseconds are invisible otherwise.
+    video:process.env.AREV_E2E_VIDEO
+      ? { mode:'on', size:{ width:1280, height:844 } }
+      : 'retain-on-failure',
+    launchOptions:{ slowMo:process.env.AREV_E2E_VIDEO ? 250 : 0 },
   },
   projects:[
     { name:'review', testDir:bddTestDir },

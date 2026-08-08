@@ -5,6 +5,8 @@ const TARGETS = {
   'the table':frame => frame.locator('table').first(),
 };
 
+const MENU_ITEM = { 'Send now':'popSend', 'Add to review':'popQueue' };
+
 function target(rail, name) {
   const resolve = TARGETS[name];
   if (!resolve) throw new Error(`unknown annotation target: ${name}`);
@@ -22,28 +24,29 @@ When('the reviewer toggles annotation mode', async ({ rail }) => {
   await rail.annotateToggle.click();
 });
 
-Then('annotation mode is {word}', async ({ rail }, state) => {
+Then(/^annotation mode is (on|off)$/, async ({ rail }, state) => {
   await expect(rail.annotateToggle)
-    .toHaveAttribute('aria-pressed', state === 'on' ? 'true' : 'false');
+    .toHaveAttribute('aria-pressed', String(state === 'on'));
 });
 
-When('the reviewer selects {string}', async ({ rail, popover }, name) => {
+When(/^the reviewer selects "([^"]*)"$/, async ({ rail, popover }, name) => {
   await target(rail, name).click({ clickCount:3 });
   await expect(popover.root).toBeVisible();
 });
 
-When('the reviewer clicks {string}', async ({ rail, popover }, name) => {
+When(/^the reviewer clicks "([^"]*)"$/, async ({ rail, popover }, name) => {
   await target(rail, name).click({ position:{ x:10, y:10 } });
   await expect(popover.root).toBeVisible();
 });
 
-When('the reviewer writes {string} in the annotation', async ({ popover }, text) => {
+When(/^the reviewer writes "([^"]*)" in the annotation$/, async ({ popover }, text) => {
   await popover.text.fill(text);
 });
 
-When('the reviewer chooses {string} in the annotation', async ({ popover }, action) => {
-  await popover.choose(action);
-});
+When(/^the reviewer chooses "(Send now|Add to review)" in the annotation$/,
+  async ({ popover }, action) => {
+    await popover.choose(action);
+  });
 
 When('the reviewer opens the annotation menu with the keyboard', async ({ page, popover }) => {
   await popover.action.focus();
@@ -51,21 +54,20 @@ When('the reviewer opens the annotation menu with the keyboard', async ({ page, 
   await expect(popover.openMenu).toBeVisible();
 });
 
-When('the reviewer presses {word}', async ({ page }, key) => {
+When(/^the reviewer presses (\w+)$/, async ({ page }, key) => {
   await page.keyboard.press(key);
 });
 
-Then('the annotation menu focuses {string}', async ({ page }, label) => {
-  const id = label === 'Send now' ? 'popSend' : 'popQueue';
+Then(/^the annotation menu focuses "(Send now|Add to review)"$/, async ({ page }, label) => {
   await page.waitForFunction(
-    expected => document.activeElement?.id === expected, id);
+    expected => document.activeElement?.id === expected, MENU_ITEM[label]);
 });
 
 Then('the annotation composer is closed', async ({ popover }) => {
   await expect(popover.root).toBeHidden();
 });
 
-Then('the annotation shows {string}', async ({ popover }, state) => {
+Then(/^the annotation shows "(Draft|Sending|Sent|Failed)"$/, async ({ popover }, state) => {
   await expect(popover.state).toHaveText(state);
 });
 

@@ -1,6 +1,6 @@
 import { Given, Then, expect } from '../support/bdd.js';
 
-Given('a {word} artifact', async ({ artifact }, kind) => {
+Given(/^a ([\w-]+) artifact$/, async ({ artifact }, kind) => {
   await artifact.from(`${kind}.html`);
 });
 

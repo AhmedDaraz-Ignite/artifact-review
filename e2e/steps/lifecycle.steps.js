@@ -4,7 +4,7 @@ When('the reviewer opens the composer menu', async ({ rail }) => {
   await rail.chatAction.click();
 });
 
-Then('the end action reads {string}', async ({ rail }, label) => {
+Then(/^the end action reads "(End review|Send and end review)"$/, async ({ rail }, label) => {
   await expect(rail.endLabel).toHaveText(label);
 });
 

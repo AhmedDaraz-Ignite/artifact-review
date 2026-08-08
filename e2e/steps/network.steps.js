@@ -1,6 +1,6 @@
 import { Given, When, expect } from '../support/bdd.js';
 
-Given('delivery will fail with {int}', async ({ network }, status) => {
+Given(/^delivery will fail with (\d+)$/, async ({ network }, status) => {
   await network.failSend(status);
 });
 

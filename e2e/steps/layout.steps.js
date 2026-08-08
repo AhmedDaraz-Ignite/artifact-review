@@ -5,10 +5,8 @@ const VIEWPORTS = {
   phone:{ width:390, height:844 },
 };
 
-When('the viewport is a {word}', async ({ page }, kind) => {
-  const size = VIEWPORTS[kind];
-  if (!size) throw new Error(`unknown viewport: ${kind}`);
-  await page.setViewportSize(size);
+When(/^the viewport is a (desktop|phone)$/, async ({ page }, kind) => {
+  await page.setViewportSize(VIEWPORTS[kind]);
 });
 
 Then('the review rail sits beside the artifact', async ({ page }) => {

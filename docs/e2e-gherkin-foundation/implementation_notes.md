@@ -167,3 +167,55 @@ deleted. `runArev` is no longer imported anywhere, but `openSession` and
 - No orphan server or poll process and no leftover temp directory after a run.
   `arev stop` returns as soon as it signals shutdown, so a check run in the same
   instant can still see the process; it is gone within about a second.
+
+---
+
+# Step definitions use regex capture groups, not Cucumber Expressions
+
+Changed on request, and the request was right.
+
+## Why
+
+`(...)` in a Cucumber Expression means optional text, not a capture group.
+Alternation exists (`start/end`) but it matches without capturing. So any step
+that needs to both constrain and capture has to widen to `{word}` or `{string}`
+and re-check inside the body. Two steps did exactly that, and both were wrong:
+
+```js
+// any word other than "on" silently asserted OFF
+Then('annotation mode is {word}', async ({ rail }, state) => {
+  await expect(rail.annotateToggle)
+    .toHaveAttribute('aria-pressed', state === 'on' ? 'true' : 'false');
+});
+
+// any label other than "Send now" silently asserted popQueue
+Then('the annotation menu focuses {string}', async ({ page }, label) => {
+  const id = label === 'Send now' ? 'popSend' : 'popQueue';
+```
+
+`Then annotation mode is enabled` would have passed while asserting the
+opposite of what it said. With `/^annotation mode is (on|off)$/` the step is
+undefined, `bddgen` prints "Missing step definitions: 1" and exits 1 before any
+browser starts. Verified by adding a feature with that typo.
+
+## What the conversion cost
+
+Nothing. `(\d+)` is matched against Cucumber's registered parameter types, so a
+numeric group still arrives as a Number, exactly like `{int}` did. The only
+real edit was putting back a `String(count)` that had been dropped on the
+mistaken belief that regex hands back strings.
+
+## Convention
+
+Regex where the step captures. A plain string where it does not, since a
+Cucumber Expression with no parameters is just a literal. Recurring vocabularies
+are built once and interpolated:
+
+```js
+const DELIVERY_STATE = '(Draft|Sending|Sent|Received|Answered|Failed)';
+Then(new RegExp(`^the composer shows "${DELIVERY_STATE}"$`), ...);
+```
+
+`defineParameterType` was considered as an alternative and rejected for now.
+It would give the same constraint plus coercion, but it adds a registration
+layer for vocabularies that currently appear in two or three steps each.
