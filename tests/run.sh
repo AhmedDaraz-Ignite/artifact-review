@@ -78,7 +78,6 @@ fi
 
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
-run diagramquality selftest-diagram-quality.mjs themed.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then

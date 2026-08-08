@@ -23,6 +23,32 @@ async function savedScene(arev, id, ready = () => true) {
   return saved;
 }
 
+// Two versions of the same tiny scene: one shape moved, one label changed, one
+// arrow added between them.
+async function sceneSummary(boards) {
+  boards.summary ||= await boards.page.evaluate(async () => {
+    const module = await import('/whiteboard.js');
+    const rect = id => ({
+      id, type:'rectangle', x:10, y:10, width:100, height:40, isDeleted:false,
+    });
+    const text = (id, containerId, value) => ({
+      id, type:'text', containerId, text:value, x:12, y:14, width:60,
+      height:20, isDeleted:false,
+    });
+    return module.summarizeSceneEdits(
+      [rect('a'), text('at', 'a', 'API'), rect('b'), text('bt', 'b', 'Store')],
+      [
+        { ...rect('a'), x:220 }, text('at', 'a', 'API'),
+        rect('b'), text('bt', 'b', 'Cache'),
+        {
+          id:'arrow1', type:'arrow', x:0, y:0, width:10, height:10, isDeleted:false,
+          startBinding:{ elementId:'a' }, endBinding:{ elementId:'b' },
+        },
+      ]);
+  });
+  return boards.summary;
+}
+
 async function unrenderedFindings(arev) {
   let findings = [];
   await expect.poll(async () => {
@@ -75,6 +101,17 @@ When(/^the reviewer clicks the "([^"]*)" diagram node$/, async ({ boards, popove
   await boards.node(label).locator.click();
   await expect(popover.root).toBeVisible();
 });
+
+When(/^the reviewer draws a rectangle on the "([^"]*)" diagram$/, async ({ boards }, id) => {
+  await boards.board(id).drawRectangle();
+});
+
+// Exporting the scene and its preview takes longer than a normal draft.
+When(/^the reviewer adds the "([^"]*)" diagram edit to the review$/,
+  async ({ boards, rail }, id) => {
+    await boards.board(id).editor.locator('#wbQueue').click();
+    await expect(rail.queueCount).not.toHaveText('0', { timeout:20_000 });
+  });
 
 Then(/^the "([^"]*)" diagram rendered offline$/, async ({ boards }, id) => {
   await expect(boards.artifact.locator(`#${id} svg`)).toBeVisible({ timeout:20_000 });
@@ -220,4 +257,60 @@ Then(/^the saved "([^"]*)" scene is rebuilt from the latest source$/,
       arev, id, saved => saved.source_hash !== board.saved.source_hash);
     expect(rebuilt.source_hash).not.toBe(board.saved.source_hash);
     expect(live(rebuilt).length).toBeGreaterThan(0);
+  });
+
+Then('a moved, relabeled, and reconnected scene reads as per-element sentences',
+  async ({ boards }) => {
+    const { lines } = await sceneSummary(boards);
+    const missing = [
+      /Added arrow .*from rectangle "API" to rectangle "Cache"/,
+      /Relabeled rectangle: "Store" is now "Cache"/,
+      /rectangle "API" moved by \(210, 0\)/,
+    ].filter(wanted => !lines.some(line => wanted.test(line)));
+    expect(missing.map(String), `summary lines were ${JSON.stringify(lines)}`).toEqual([]);
+  });
+
+Then('the scene diff counts fold bound labels into their containers', async ({ boards }) => {
+  const summary = await sceneSummary(boards);
+  expect(summary.stats).toMatchObject({ added:1, moved:1, relabeled:1 });
+  expect(summary.totalChanges).toBe(3);
+});
+
+Then('scene link sanitizing keeps only web and mail links', async ({ page }) => {
+  const sanitized = await page.evaluate(async () => {
+    const module = await import('/whiteboard.js');
+    return {
+      script:module.sanitizeSceneLink('javascript:alert(1)'),
+      data:module.sanitizeSceneLink('data:text/html,x'),
+      web:module.sanitizeSceneLink('https://example.com'),
+      mail:module.sanitizeSceneLink('mailto:a@b.c'),
+    };
+  });
+  expect(sanitized).toEqual({
+    script:'',
+    data:'',
+    web:'https://example.com',
+    mail:'mailto:a@b.c',
+  });
+});
+
+Then(/^no hostile link reached the saved "([^"]*)" scene$/, async ({ arev }, id) => {
+  const saved = await savedScene(arev, id, scene => (scene.scene?.elements || []).length > 0);
+  const links = (saved.scene.elements || []).map(element => element.link).filter(Boolean);
+  expect(links.length, 'the safe link from the diagram').toBeGreaterThan(0);
+  expect(links.filter(link => !/^https?:\/\/|^mailto:/i.test(link))).toEqual([]);
+});
+
+Then('the queued whiteboard item summarizes the drawing with no typed note',
+  async ({ arev }) => {
+    let item = null;
+    await expect.poll(async () => {
+      const state = await arev.api('GET', '/state');
+      item = state.queue.find(entry => entry.kind === 'whiteboard');
+      return Boolean(item);
+    }, { timeout:20_000 }).toBe(true);
+    expect(item.summary).toMatch(/\d+ added/);
+    expect(item.summary_lines.filter(line => /^Added rectangle/.test(line)).length,
+      `summary lines were ${JSON.stringify(item.summary_lines)}`).toBeGreaterThan(0);
+    expect(item.note).toBe('');
   });
