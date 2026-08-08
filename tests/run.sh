@@ -76,7 +76,6 @@ else
   tail -20 "$CHECKS_RAW"
 fi
 
-run rail selftest-rail.mjs clean.html
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
 run diagrams selftest-diagram-features.mjs diagram-features.html

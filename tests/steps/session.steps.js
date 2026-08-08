@@ -6,8 +6,13 @@ Given(/^a (broken|clean|diagram-features|mermaid-broken|themed|viewport-overflow
     await artifact.from(`${kind}.html`);
   });
 
-Given('the reviewer has the review session open', async ({ arev, page, rail }) => {
+Given('the review server is running', async ({ arev }) => {
   await arev.open();
+});
+
+Given('the reviewer has the review session open', async ({ arev, page, rail }) => {
+  // A scenario that already started the server only needs the browser.
+  if (!arev.sessionUrl) await arev.open();
   await page.goto(arev.sessionUrl, { waitUntil:'domcontentloaded' });
   await expect(rail.curtain).toBeHidden();
 });
