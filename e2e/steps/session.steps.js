@@ -1,0 +1,27 @@
+import { Given, Then, expect } from '../support/bdd.js';
+
+Given('a {word} artifact', async ({ artifact }, kind) => {
+  await artifact.from(`${kind}.html`);
+});
+
+Given('the reviewer has the review session open', async ({ arev, page, rail }) => {
+  await arev.open();
+  await page.goto(arev.sessionUrl, { waitUntil:'domcontentloaded' });
+  await expect(rail.curtain).toBeHidden();
+});
+
+Then('the artifact is visible in the review surface', async ({ rail }) => {
+  await expect(rail.artifact.locator('body')).not.toBeEmpty();
+});
+
+Then('the review rail is ready for feedback', async ({ rail }) => {
+  await expect(rail.chat).toBeEnabled();
+  await expect(rail.chatAction).toBeEnabled();
+  await expect(rail.queueCount).toHaveText('0');
+});
+
+Then('the review server reports a healthy session', async ({ arev }) => {
+  const health = await arev.api('GET', '/health');
+  expect(health.instance_id).toMatch(/^[a-f0-9-]{36}$/);
+  expect(health.event_schema).toMatch(/^artifact-review\/event\/v\d+$/);
+});
