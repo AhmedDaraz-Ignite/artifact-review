@@ -1,19 +1,19 @@
 @echo off
 where py >nul 2>nul
 if %errorlevel% equ 0 (
-  py -3 "%~dp0arev.py" %*
+  py -3 -B "%~dp0arev.py" %*
   exit /b
 )
 
 where python3 >nul 2>nul
 if %errorlevel% equ 0 (
-  python3 "%~dp0arev.py" %*
+  python3 -B "%~dp0arev.py" %*
   exit /b
 )
 
 where python >nul 2>nul
 if %errorlevel% equ 0 (
-  python "%~dp0arev.py" %*
+  python -B "%~dp0arev.py" %*
   exit /b
 )
 

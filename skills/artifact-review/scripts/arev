@@ -13,11 +13,12 @@ if command -v readlink >/dev/null 2>&1; then
 fi
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
 
+# -B keeps Python from writing __pycache__ into the installed skill directory.
 if command -v python3 >/dev/null 2>&1; then
-  exec python3 "$SCRIPT_DIR/arev.py" "$@"
+  exec python3 -B "$SCRIPT_DIR/arev.py" "$@"
 fi
 if command -v python >/dev/null 2>&1; then
-  exec python "$SCRIPT_DIR/arev.py" "$@"
+  exec python -B "$SCRIPT_DIR/arev.py" "$@"
 fi
 
 echo "artifact-review requires Python 3.9 or newer." >&2
