@@ -18,15 +18,7 @@ trap cleanup EXIT
 run() {
   local name="$1" script="$2" fixture="$3"
   local art="$WORK/$name artifact.html"
-  if [ "$fixture" = "-scaffold-" ]; then
-    # Prove the shipped shell passes the layout gate before any content exists.
-    if ! "$AREV" new "$art" --title "Scaffold check" --force >/dev/null; then
-      echo "FAIL $name could not scaffold the artifact" | tee -a "$OUT"
-      return
-    fi
-  else
-    cp "$ROOT/tests/fixtures/$fixture" "$art"
-  fi
+  cp "$ROOT/tests/fixtures/$fixture" "$art"
   echo "== $name"
   local raw="$WORK/$name.log"
   node "$ROOT/tests/legacy/$script" "$art" > "$raw" 2>&1
@@ -85,15 +77,11 @@ else
 fi
 
 run rail selftest-rail.mjs clean.html
-run gate selftest-gate.mjs clean.html
-run scaffold selftest-gate.mjs -scaffold-
-run security selftest-security.mjs clean.html
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
 run diagrams selftest-diagram-features.mjs diagram-features.html
 run mermaidfail selftest-mermaid-failure.mjs mermaid-broken.html
 run diagramquality selftest-diagram-quality.mjs themed.html
-run viewportaudit selftest-viewport-audit.mjs viewport-overflow.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then

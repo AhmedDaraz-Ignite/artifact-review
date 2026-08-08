@@ -52,6 +52,14 @@ export class Arev {
     this.sessionUrl = match[1];
   }
 
+  get origin() {
+    return new URL(this.sessionUrl).origin;
+  }
+
+  get token() {
+    return new URL(this.sessionUrl).searchParams.get('t');
+  }
+
   reply(text) {
     return this.run(['reply', this.artifact, text]);
   }

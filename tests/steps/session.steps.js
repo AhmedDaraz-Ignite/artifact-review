@@ -1,8 +1,10 @@
 import { Given, Then, expect } from '../support/bdd.js';
 
-Given(/^a ([\w-]+) artifact$/, async ({ artifact }, kind) => {
-  await artifact.from(`${kind}.html`);
-});
+// The fixtures are listed so other "a ... artifact" steps cannot collide here.
+Given(/^a (broken|clean|diagram-features|mermaid-broken|themed|viewport-overflow) artifact$/,
+  async ({ artifact }, kind) => {
+    await artifact.from(`${kind}.html`);
+  });
 
 Given('the reviewer has the review session open', async ({ arev, page, rail }) => {
   await arev.open();
