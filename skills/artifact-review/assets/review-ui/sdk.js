@@ -163,14 +163,22 @@
   }
 
   function selectorForMermaidNode(group) {
-    if (group.id) return "#" + cssEscape(group.id);
     var svg = mermaidSvgFor(group);
     var holder = svg
       ? svg.closest(
           "[data-arev-diagram-id],.mermaid,[id^='arev-board-']",
         )
       : null;
-    var prefix = holder && holder.id ? "#" + cssEscape(holder.id) + " " : "";
+    var prefix =
+      holder && holder.id
+        ? "#" + cssEscape(holder.id) + " "
+        : svg && svg.id
+          ? "#" + cssEscape(svg.id) + " "
+          : "";
+    var key = group.getAttribute("data-arev-node-key");
+    if (key)
+      return prefix + '[data-arev-node-key="' + cssEscape(key) + '"]';
+    if (group.id) return "#" + cssEscape(group.id);
     if (group.parentElement && group.parentElement.matches("g.nodes")) {
       var siblings = Array.prototype.filter.call(
         group.parentElement.children,
@@ -188,10 +196,42 @@
     return prefix + selectorFor(group);
   }
 
+  /* A node's DOM id carries a per-render counter ("flowchart-API-3"), so a
+   * theme re-render would break any anchor built on it. The stable key drops
+   * the counter and is stamped onto every node as data-arev-node-key, giving
+   * annotations an identity and a selector that survive re-renders. */
+
+  function stableNodeKey(group, svg, index) {
+    var key = group.getAttribute("data-id") || "";
+    if (!key) {
+      var raw = group.id || "";
+      // Mermaid 11 prefixes node ids with the svg's render id, which changes
+      // on every render pass. Drop it before dropping the counter.
+      if (svg && svg.id && raw.indexOf(svg.id + "-") === 0)
+        raw = raw.slice(svg.id.length + 1);
+      var counted = raw.match(/^(.*[^-])-\d+$/);
+      key = counted ? counted[1] : raw;
+    }
+    return key || "node-" + index;
+  }
+
+  function mermaidNodeGroups(svg) {
+    // querySelectorAll never repeats an element, even across a selector list.
+    return Array.prototype.slice.call(
+      svg.querySelectorAll("g.node,g.nodes > g"),
+    );
+  }
+
+  function allMermaidSvgs() {
+    return Array.prototype.filter.call(
+      document.querySelectorAll("svg"),
+      mermaidSvgFor,
+    );
+  }
+
   function mermaidNodeTarget(el) {
     var group = mermaidNodeGroup(el);
     if (!group) return null;
-    var svg = mermaidSvgFor(group);
     var labelEl = group.querySelector(
       ".nodeLabel,.label,foreignObject,text,[aria-label]",
     );
@@ -199,15 +239,14 @@
       normalizedText(labelEl) ||
       group.getAttribute("aria-label") ||
       normalizedText(group);
-    var nodeId = group.getAttribute("data-id") || group.id;
-    if (!nodeId && svg) {
-      var groups = svg.querySelectorAll("g.node,g.nodes > g");
-      var unique = [];
-      Array.prototype.forEach.call(groups, function (candidate) {
-        if (unique.indexOf(candidate) === -1) unique.push(candidate);
-      });
-      nodeId = "node-" + Math.max(0, unique.indexOf(group));
-    }
+    var svg = mermaidSvgFor(group);
+    var nodeId =
+      group.getAttribute("data-arev-node-key") ||
+      stableNodeKey(
+        group,
+        svg,
+        svg ? Math.max(0, mermaidNodeGroups(svg).indexOf(group)) : 0,
+      );
     return {
       type: "mermaid-node",
       diagramId: diagramIdFor(group),
@@ -241,12 +280,12 @@
   css.textContent =
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
     ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
-    ".arev-inline-board{position:relative;width:100%;height:52px;margin:8px 0;background:#fff;border:1px solid #d8dbe0;border-radius:8px;overflow:hidden;box-sizing:border-box}" +
-    ".arev-inline-board.arev-inline-active{max-height:420px;margin:0}" +
+    ".arev-inline-board{position:relative;width:100%;height:52px;margin:8px 0;background:transparent;border:1px solid rgba(128,128,128,.4);border-radius:8px;overflow:hidden;box-sizing:border-box}" +
+    ".arev-inline-board.arev-inline-active{max-height:420px;margin:0;background:#fff}" +
     ".arev-inline-board>iframe{display:block;width:100%;height:100%;border:0;background:#fff}" +
-    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(255,255,255,.86);color:#20242a;font:600 13px/1.3 sans-serif;cursor:pointer;text-shadow:0 1px 2px #fff}" +
-    ".arev-inline-unlock:disabled{cursor:wait;color:#626975}" +
-    ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid #c9cdd3;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 2px 8px rgba(0,0,0,.12)}" +
+    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(128,128,128,.08);color:inherit;font:600 13px/1.3 sans-serif;cursor:pointer}" +
+    ".arev-inline-unlock:disabled{cursor:wait;opacity:.6}" +
+    ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid rgba(128,128,128,.5);border-radius:999px;background:rgba(128,128,128,.14)}" +
     ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}";
   document.documentElement.appendChild(css);
 
@@ -256,6 +295,9 @@
       hoverEl.classList.remove("arev-hover");
       hoverEl = null;
     }
+    exploreViewports.forEach(function (viewport) {
+      viewport.setFrozen(on);
+    });
   }
 
   document.addEventListener(
@@ -729,6 +771,13 @@
         }, 1600);
       }
     }
+    if (e.data.type === "run-audit") {
+      send({
+        type: "audit-pass",
+        token: e.data.token,
+        findings: safeAudit(),
+      });
+    }
     if (e.data.type === "get-scroll")
       send({ type: "scroll", y: window.scrollY });
     if (e.data.type === "set-scroll") window.scrollTo(0, e.data.y || 0);
@@ -783,6 +832,152 @@
     };
     host.appendChild(btn);
   }
+
+  /* ------------------------------------------------- diagram explore mode
+   * Dependency-free viewBox pan/zoom on every rendered Mermaid SVG. Frozen
+   * while annotate mode is on so element picks stay precise. Only the
+   * rendered SVG changes. The artifact file is never modified. */
+
+  var exploreViewports = [];
+
+  function createExploreViewport(svg) {
+    var initial = null;
+    var raw = svg.getAttribute("viewBox");
+    if (raw) {
+      var parts = raw.trim().split(/[\s,]+/).map(Number);
+      if (parts.length === 4 && parts.every(isFinite))
+        initial = { x: parts[0], y: parts[1], w: parts[2], h: parts[3] };
+    }
+    if (!initial) {
+      var bbox = null;
+      try {
+        bbox = svg.getBBox();
+      } catch (err) {}
+      if (!bbox || !bbox.width || !bbox.height) return null;
+      initial = { x: bbox.x, y: bbox.y, w: bbox.width, h: bbox.height };
+      svg.setAttribute(
+        "viewBox",
+        initial.x + " " + initial.y + " " + initial.w + " " + initial.h,
+      );
+    }
+
+    var view = { x: initial.x, y: initial.y, w: initial.w, h: initial.h };
+    var panning = null;
+
+    function apply() {
+      svg.setAttribute(
+        "viewBox",
+        view.x + " " + view.y + " " + view.w + " " + view.h,
+      );
+    }
+    function reset() {
+      view = { x: initial.x, y: initial.y, w: initial.w, h: initial.h };
+      apply();
+    }
+    function zoomAt(clientX, clientY, factor) {
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      var px = (clientX - rect.left) / rect.width;
+      var py = (clientY - rect.top) / rect.height;
+      var fx = view.x + view.w * px;
+      var fy = view.y + view.h * py;
+      var next = Math.min(
+        Math.max(view.w * factor, initial.w / 40),
+        initial.w * 8,
+      );
+      var scale = next / view.w;
+      view.w = next;
+      view.h *= scale;
+      view.x = fx - (fx - view.x) * scale;
+      view.y = fy - (fy - view.y) * scale;
+      apply();
+    }
+
+    svg.addEventListener(
+      "wheel",
+      function (event) {
+        if (annotating) return;
+        event.preventDefault();
+        zoomAt(
+          event.clientX,
+          event.clientY,
+          event.deltaY > 0 ? 1.15 : 1 / 1.15,
+        );
+      },
+      { passive: false },
+    );
+    svg.addEventListener("dblclick", function () {
+      if (!annotating) reset();
+    });
+    svg.addEventListener("pointerdown", function (event) {
+      if (annotating || event.button !== 0) return;
+      // A viewBox write never resizes the client box. One size read per
+      // drag avoids a layout pass on every pointer move.
+      var rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      panning = {
+        x: event.clientX,
+        y: event.clientY,
+        vx: view.x,
+        vy: view.y,
+        width: rect.width,
+        height: rect.height,
+      };
+      if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
+      svg.style.cursor = "grabbing";
+    });
+    svg.addEventListener("pointermove", function (event) {
+      if (!panning) return;
+      view.x =
+        panning.vx - ((event.clientX - panning.x) / panning.width) * view.w;
+      view.y =
+        panning.vy - ((event.clientY - panning.y) / panning.height) * view.h;
+      apply();
+    });
+    function endPan(event) {
+      panning = null;
+      if (svg.releasePointerCapture) {
+        try {
+          svg.releasePointerCapture(event.pointerId);
+        } catch (err) {}
+      }
+      svg.style.cursor = annotating ? "" : "grab";
+    }
+    svg.addEventListener("pointerup", endPan);
+    svg.addEventListener("pointercancel", endPan);
+
+    return {
+      svg: svg,
+      setFrozen: function (frozen) {
+        panning = null;
+        svg.style.cursor = frozen ? "" : "grab";
+        svg.style.touchAction = frozen ? "" : "none";
+      },
+    };
+  }
+
+  function enhanceMermaidSvgs() {
+    exploreViewports = exploreViewports.filter(function (viewport) {
+      return viewport.svg.isConnected;
+    });
+    allMermaidSvgs().forEach(function (svg) {
+      // A marked SVG already has its node keys. Re-renders arrive unmarked.
+      if (svg.hasAttribute("data-arev-explore")) return;
+      mermaidNodeGroups(svg).forEach(function (group, index) {
+        group.setAttribute(
+          "data-arev-node-key",
+          stableNodeKey(group, svg, index),
+        );
+      });
+      var viewport = createExploreViewport(svg);
+      if (!viewport) return;
+      svg.setAttribute("data-arev-explore", "true");
+      viewport.setFrozen(annotating);
+      exploreViewports.push(viewport);
+    });
+  }
+
+  document.addEventListener("arev:mermaid-rendered", enhanceMermaidSvgs);
 
   /* -------------------------------------------------- mermaid + audit + boot */
 
@@ -896,13 +1091,17 @@
     return findings;
   }
 
-  function boot() {
-    var findings = [];
+  function safeAudit() {
     try {
-      findings = window.__arevAudit(document, window) || [];
+      return window.__arevAudit(document, window) || [];
     } catch (err) {
       /* a crashed audit must never block review */
+      return [];
     }
+  }
+
+  function boot() {
+    var findings = safeAudit();
     send({ type: "audit-done", findings: findings });
     var mermaidBlocks = findMermaid();
     var rendering = renderMermaidLocally(mermaidBlocks);
@@ -911,8 +1110,14 @@
       mermaid: mermaidBlocks,
       title: document.title || "",
     });
-    if (!rendering) return;
+    if (!rendering) {
+      // Diagrams the artifact rendered itself still get identity keys and
+      // explore mode. The offline renderer's own event covers the other path.
+      enhanceMermaidSvgs();
+      return;
+    }
     rendering.then(function () {
+      enhanceMermaidSvgs();
       var failed = unrenderedMermaidFindings(mermaidBlocks);
       if (!failed.length) return;
       // A later report replaces the earlier one, so resend the whole set.

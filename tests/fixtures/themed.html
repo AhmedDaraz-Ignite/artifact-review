@@ -1,0 +1,45 @@
+<!doctype html>
+<html data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>themed fixture</title>
+<style>
+  html[data-theme="light"] { background: #fdfcf8; }
+  html[data-theme="light"] body { background: #fdfcf8; color: #2a2118; }
+  html[data-theme="dark"] { background: #14161c; }
+  html[data-theme="dark"] body { background: #14161c; color: #e6e4de; }
+  body { font-family: Georgia, serif; margin: 0; padding: 16px; }
+  .diagram-wrap { overflow-x: auto; max-width: 100%; }
+</style>
+</head>
+<body>
+  <h1>Themed artifact fixture</h1>
+  <p>This page ships light and dark palettes toggled by the data-theme attribute.</p>
+  <button id="themeToggle"
+    onclick="document.documentElement.dataset.theme =
+      document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'">
+    Toggle theme
+  </button>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid" id="themed-flow">flowchart TD
+  A[Collect input] --> B{Valid?}
+  B -->|yes| C[Store record]
+  B -->|no| D[Show error]</pre>
+  </div>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid" id="themed-state">stateDiagram-v2
+  [*] --> Draft
+  Draft --> Review
+  Review --> [*]</pre>
+  </div>
+
+  <div class="diagram-wrap">
+    <pre class="mermaid" id="themed-links">flowchart LR
+  Docs[Read docs] --> Site[Visit site]
+  click Docs "javascript:alert(1)" "hostile"
+  click Site "https://example.com" "safe"</pre>
+  </div>
+</body>
+</html>

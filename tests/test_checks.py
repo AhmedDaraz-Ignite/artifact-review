@@ -147,6 +147,29 @@ class DiagramMarkupTests(unittest.TestCase):
             f'<pre class="mermaid" id="d">flowchart LR\n{edges}\n</pre>')
         self.assertIn("diagram-fan-out", self.kinds(report))
 
+    def test_hardcoded_mermaid_theme_is_an_error(self):
+        report = self.check(
+            '<pre class="mermaid" id="d">'
+            "%%{init: {'theme': 'forest'}}%%\n"
+            'flowchart LR\n  a --> b\n</pre>')
+        finding = next(f for f in report["findings"]
+                       if f["kind"] == "diagram-hardcoded-theme")
+        self.assertEqual(finding["severity"], "error")
+
+    def test_non_theme_init_directive_is_a_warning(self):
+        report = self.check(
+            '<pre class="mermaid" id="d">'
+            "%%{init: {'flowchart': {'curve': 'linear'}}}%%\n"
+            'flowchart LR\n  a --> b\n</pre>')
+        finding = next(f for f in report["findings"]
+                       if f["kind"] == "diagram-hardcoded-theme")
+        self.assertEqual(finding["severity"], "warn")
+
+    def test_plain_diagram_has_no_theme_finding(self):
+        report = self.check(
+            '<pre class="mermaid" id="d">flowchart LR\n  a --> b\n</pre>')
+        self.assertNotIn("diagram-hardcoded-theme", self.kinds(report))
+
 
 class SourceCoverageTests(unittest.TestCase):
     SPEC = textwrap.dedent("""\

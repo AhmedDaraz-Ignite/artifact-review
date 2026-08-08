@@ -31,3 +31,4 @@ blob-report/
 .claude/skills/
 .codex/skills/
 skills-lock.json
+.playwright-cli/

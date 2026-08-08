@@ -1071,15 +1071,92 @@ $("showAnyway").addEventListener("click", async () => {
   }
 });
 
+/* Extra audit passes at phone and tablet widths. The artifact iframe narrows
+ * behind the boot curtain and the SDK re-runs the same proven-failure audit.
+ * Findings come back tagged with the viewport class they were observed in,
+ * so a diagram or table that only breaks on a phone still reaches the agent. */
+
+const VIEWPORT_PASSES = [
+  { width:360, cls:"mobile", label:"Mobile" },
+  { width:800, cls:"compact", label:"Tablet" },
+];
+let pendingAuditPass = null;
+let viewportFindingsPromise = null;
+
+// The viewport class comes from the pass that ran, not from the width the
+// artifact reported back.
+function tagViewport(findings, pass) {
+  return (findings || []).map(finding => ({
+    ...finding,
+    viewportClass:pass ? pass.cls : "desktop",
+    evidence:pass
+      ? `[${pass.label} ${finding.viewportWidth}px] ${finding.evidence || ""}`
+      : finding.evidence,
+  }));
+}
+
+function dedupFindings(findings) {
+  const seen = new Set();
+  return findings.filter(finding => {
+    const key = [finding.kind, finding.selector, finding.axis,
+      finding.viewportClass].join("|");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// Passes run one at a time, so a single pending slot is enough. The token
+// stops a late reply from a timed-out pass from settling a later one.
+function requestAuditPass() {
+  return new Promise(resolve => {
+    const token = Math.random().toString(36).slice(2);
+    const settle = findings => {
+      clearTimeout(timer);
+      pendingAuditPass = null;
+      resolve(findings);
+    };
+    const timer = setTimeout(() => settle([]), 2000);
+    pendingAuditPass = { token, settle };
+    try {
+      art.contentWindow.postMessage({ arev:true, type:"run-audit", token }, "*");
+    } catch (error) {
+      settle([]);
+    }
+  });
+}
+
+async function collectViewportFindings() {
+  const collected = [];
+  for (const pass of VIEWPORT_PASSES) {
+    art.style.width = `${pass.width}px`;
+    // Two frames let the narrowed layout settle before it is measured.
+    await new Promise(resolve => requestAnimationFrame(() =>
+      requestAnimationFrame(resolve)));
+    collected.push(...tagViewport(await requestAuditPass(), pass));
+  }
+  art.style.removeProperty("width");
+  return collected;
+}
+
 window.addEventListener("message", async event => {
   if (event.source !== art.contentWindow ||
       (event.origin !== location.origin && event.origin !== "null") ||
       !event.data || !event.data.arev) return;
   const message = event.data;
+  if (message.type === "audit-pass" &&
+      pendingAuditPass?.token === message.token) {
+    pendingAuditPass.settle(message.findings || []);
+  }
   if (message.type === "audit-done") {
     try {
-      const result = await api("POST", "/audit", { findings:message.findings || [] });
-      if (result.status === "blocked") showBlocked(message.findings || []);
+      viewportFindingsPromise ||= collectViewportFindings();
+      const findings = dedupFindings([
+        ...tagViewport(message.findings || []),
+        ...await viewportFindingsPromise,
+      ]);
+      const result = await api("POST", "/audit", { findings });
+      if (result.status === "blocked") showBlocked(findings);
       else liftCurtain();
     } catch (error) {
       liftCurtain();
@@ -1861,24 +1938,36 @@ async function saveInlineDiagram(record, message) {
   }
 }
 
+// Builds the headline from whatever counters the whiteboard sent.
+function describeEditStats(stats) {
+  return Object.entries(stats || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([key, count]) => `${Number(count)} ${key}`)
+    .join(", ")
+    .slice(0, 200);
+}
+
 async function submitInlineDiagram(record, message) {
   const mode = message.mode;
-  const summary = String(message.summary || "").trim();
+  const note = String(message.summary || "").trim();
+  // The iframe message is untrusted, so the limits are enforced here too.
+  // 40 and 200 mirror SUMMARY_MAX_LINES and SUMMARY_MAX_LINE_CHARS in
+  // tooling/whiteboard-entry.mjs.
+  const summaryLines = (Array.isArray(message.summary_lines) ? message.summary_lines : [])
+    .filter(line => typeof line === "string" && line.trim())
+    .slice(0, 40)
+    .map(line => line.slice(0, 200));
+  // The note is the reviewer's intent. The automatic per-element diff always
+  // rides along, so an empty note still tells the agent exactly what changed.
+  const summary = note ||
+    describeEditStats(message.stats) ||
+    "diagram reviewed with no element changes";
   if (mode !== "send" && mode !== "queue") {
     relayToInline(record, {
       type:"submit-result",
       mode,
       ok:false,
       error:"Choose whether to send now or add the diagram to the review.",
-    });
-    return;
-  }
-  if (!summary) {
-    relayToInline(record, {
-      type:"submit-result",
-      mode,
-      ok:false,
-      error:"Describe what changed before adding the diagram.",
     });
     return;
   }
@@ -1901,6 +1990,8 @@ async function submitInlineDiagram(record, message) {
         kind:"whiteboard",
         id:record.block.id,
         summary,
+        note,
+        summary_lines:summaryLines,
         scene_path:saved.scene_path,
         png_path:saved.png_path,
         scene_hash:saved.scene_hash,
