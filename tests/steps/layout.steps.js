@@ -18,7 +18,7 @@ Then('the review rail sits beside the artifact', async ({ page }) => {
       railFits:rail.right <= innerWidth + 1,
     };
   });
-  expect(layout).toEqual({ railAtRight:true, railFits:true });
+  expect(Object.entries(layout).filter(([, ok]) => !ok)).toEqual([]);
 });
 
 Then('the review rail overlays the artifact from the right', async ({ page }) => {

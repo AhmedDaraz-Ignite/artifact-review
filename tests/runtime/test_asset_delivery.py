@@ -14,7 +14,7 @@ import unittest
 import urllib.parse
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 AREV = ROOT / "skills" / "artifact-review" / "scripts" / "arev.py"
 ASSETS = ROOT / "skills" / "artifact-review" / "assets" / "review-ui"
 

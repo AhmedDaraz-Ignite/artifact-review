@@ -4,6 +4,11 @@ const COMPOSER_ACTIONS = {
   'Send and end review':'#chatEnd',
 };
 
+const POPOVER_ACTIONS = {
+  'Send now':'#popSend',
+  'Add to review':'#popQueue',
+};
+
 export class ReviewRail {
   constructor(page) {
     this.page = page;
@@ -20,13 +25,29 @@ export class ReviewRail {
   }
 
   async choose(label) {
-    const action = COMPOSER_ACTIONS[label];
-    if (!action) throw new Error(`unknown composer action: ${label}`);
     await this.chatAction.click();
-    await this.page.locator(action).click();
+    await this.page.locator(COMPOSER_ACTIONS[label]).click();
   }
 
   latest(state) {
     return this.feed.locator('.state-chip', { hasText:state }).last();
+  }
+}
+
+// The popover repeats two of the composer labels. It has its own trigger, so
+// it stays a separate object.
+export class AnnotationPopover {
+  constructor(page) {
+    this.page = page;
+    this.root = page.locator('#pop');
+    this.text = page.locator('#popText');
+    this.action = page.locator('#popAction');
+    this.state = page.locator('#popState');
+    this.openMenu = page.locator('#popMenu:popover-open');
+  }
+
+  async choose(label) {
+    await this.action.click();
+    await this.page.locator(POPOVER_ACTIONS[label]).click();
   }
 }

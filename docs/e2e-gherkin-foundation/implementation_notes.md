@@ -219,3 +219,128 @@ Then(new RegExp(`^the composer shows "${DELIVERY_STATE}"$`), ...);
 `defineParameterType` was considered as an alternative and rejected for now.
 It would give the same constraint plus coercion, but it adds a registration
 layer for vocabularies that currently appear in two or three steps each.
+
+---
+
+# One test root, and a simplification pass
+
+Two jobs in one commit: fold `e2e/` into `tests/`, then delete what the first
+three commits added and did not need.
+
+## The layout
+
+```text
+tests/features/        Gherkin scenarios
+tests/steps/           the step vocabulary
+tests/support/         Playwright fixtures, page objects, the arev driver
+tests/fixtures/        HTML artifacts (path unchanged, both suites read it)
+tests/runtime/         the five Python tests
+tests/perf.spec.js     the latency check
+tests/bench-runtime.mjs
+tests/legacy-drives/   the nine Node drives and their two helper modules
+tests/run.sh
+```
+
+The Gherkin directories sit directly under `tests/`, not under `tests/e2e/`,
+and the drives are the ones quarantined. That is the whole point. The drives
+and the scenarios are the same kind of test: a real browser against a real
+server against a real artifact. Nesting the new suite under `e2e/` would say
+they are different families and would give the drives a permanent address.
+Putting the drives in `legacy-drives/` says the opposite, and the directory
+name carries the migration status without a doc that can go stale. Nine more
+pull requests each delete one file plus one line of `run.sh`, and the last one
+deletes the directory.
+
+`tests/runtime/` exists so the five Python files stop being loose among five
+directories. Each moved file needed `parents[1]` to become `parents[2]`.
+
+The sections above this one quote the old paths, because they record what was
+true when they were written. The live config now reads
+`features:'tests/features/**/*.feature'`,
+`steps:['tests/support/bdd.js', 'tests/steps/**/*.js']`, and
+`testDir:'tests'` for the perf project. `bdd.js` still has to be first in
+`steps` or `bddgen` cannot guess the test instance.
+
+## Rejected
+
+- **`tests/e2e/{features,steps,support}`.** Moves the wall one level down
+  instead of removing it.
+- **`tests/{playwright,node,python}`.** Groups by which tool runs the test,
+  which is the split we were asked to stop having. It would also need renaming
+  as the drives disappear.
+- **`tests/unit`, `tests/integration`, `tests/e2e`.** A taxonomy this repo does
+  not have. Everything except `tests/runtime/` drives a browser.
+- **Moving `playwright.config.js` under `tests/`.** It is tool config, like
+  `package.json`, and moving it buys nothing while costing a `-c` flag on both
+  `bddgen` and `playwright test`.
+- **Moving `bench-runtime.mjs` into `legacy-drives/`.** It shares those helpers
+  but it is not a test and `npm test` never runs it. The contract of
+  `legacy-drives/` is that deleting it is safe, and deleting the benchmark
+  would silently break `docs/skill-efficiency-audit/bench.sh`.
+
+`e2e/support/arev.js` already resolved `ROOT` as `../..`, and
+`tests/support/arev.js` is the same depth, so that line did not move. The two
+paths that did need fixing were `test-helpers.mjs` (`..` to `../..`) and the
+`../package.json` read in `selftest-diagram-features.mjs`.
+
+## What the simplification pass deleted
+
+**One HTTP client, not two.** `Arev.api()` was a second copy of `sessionApi()`
+down to the error shaping. `sessionApi` now lives in `tests/support/arev.js`
+next to the rest of the arev driver, `Arev.api()` calls it, and the drives keep
+importing it from `test-helpers.mjs`, which re-exports. `ROOT`, `AREV`, and
+`PYTHON` were triplicated the same way and collapsed with it.
+
+**One way to run arev.** `poll()` hand-rolled `spawn` plus stdout and stderr
+accumulation plus an explicit `Promise` constructor, next to `run()` which
+already had `execFileAsync`. `promisify(execFile)` exposes the child on
+`promise.child`, so a poll can still be killed. Verified before rewriting.
+
+**`stopping` is now `child.killed`.** The flag existed only so a poll killed
+during teardown resolved null instead of rejecting. Node already sets `killed`
+on the child after a signal, so the flag was bookkeeping for a fact the
+platform tracks. The reason the null matters is a test timeout: the awaiting
+step is gone and the rejection would land unhandled. Proved with a script that
+opens a session, abandons a poll, calls `stop()`, and checks the poll resolved
+null with no unhandled rejection.
+
+**`page.unrouteAll()` instead of a routes array.** `Network` kept every
+`[pattern, handler]` pair so `clear()` could unroute them one at a time.
+Playwright removes all of them in one call. The two deferred-promise pairs
+became `Promise.withResolvers()`, which Node 22 has.
+
+**The page objects are one file.** `review-rail.js` and
+`annotation-popover.js` became `review-ui.js`. They stay two classes, because
+the popover repeats two of the composer's labels behind a different trigger, so
+one `choose(label)` cannot serve both. A comment says so. `popover.menu` was
+never read and is gone.
+
+**Dead guards.** Both `choose()` methods threw on an unknown label, and
+`annotation.steps.js` had a `target()` helper that threw on an unknown target.
+The step regexes constrain those labels, so none of the three could fire. The
+annotation target step was the one exception: it captured `([^"]*)`, so it
+really could reach the lookup. Narrowing it to
+`(the first paragraph|the table)` matches the convention the previous commit
+set and made the helper collapse into the lookup.
+
+**Speculative parameters.** `Arev.open(extraArgs)` was never called with
+arguments, and `open()`'s return value was never read. Both gone.
+
+**`handle.original` reads plainly.** The `artifact` fixture's `from()` assigned
+to the object it was being defined inside, through a `handle` variable that
+existed only for that. It is `this.original` now and the variable is gone.
+
+`layout.steps.js` had two idioms for the same assertion. Both are now the
+filter form, which names the failing key.
+
+## Verification
+
+- `npm run test:e2e`: `21 passed`, the same 21 scenarios asserting the same
+  things. Nothing was removed from a feature file.
+- `npm test`: `SELFTEST: PASS`, 125 PASS lines, zero FAIL lines, exit 0.
+- `npm run build` then `git diff --exit-code` on the four generated files: exit
+  0, so no generated asset moved.
+- No orphan process. Three seconds after both suites, the only `server.py`
+  processes were two review sessions from the user's installed skill in
+  `~/.claude/skills/`, both started before this work and neither from this
+  checkout.

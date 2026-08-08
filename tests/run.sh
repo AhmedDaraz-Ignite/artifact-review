@@ -27,7 +27,7 @@ run() {
   fi
   echo "== $name"
   local raw="$WORK/$name.log"
-  node "$ROOT/tests/$script" "$art" > "$raw" 2>&1
+  node "$ROOT/tests/legacy-drives/$script" "$art" > "$raw" 2>&1
   local code=$?
   grep -E "^(PASS|FAIL|pageerrors)" "$raw" | tee -a "$OUT"
   # A crashed drive prints no FAIL lines. Count the crash itself as one.
@@ -39,7 +39,7 @@ run() {
 
 echo "== cli-foundation"
 CLI_RAW="$WORK/cli-foundation.log"
-if python3 "$ROOT/tests/test_cli_foundation.py" > "$CLI_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_cli_foundation.py" > "$CLI_RAW" 2>&1; then
   echo "PASS CLI lifecycle, registry, URL, and heartbeat foundation" | tee -a "$OUT"
 else
   echo "FAIL CLI foundation - see $CLI_RAW" | tee -a "$OUT"
@@ -48,7 +48,7 @@ fi
 
 echo "== asset-delivery"
 ASSET_RAW="$WORK/asset-delivery.log"
-if python3 "$ROOT/tests/test_asset_delivery.py" > "$ASSET_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_asset_delivery.py" > "$ASSET_RAW" 2>&1; then
   echo "PASS hashed, compressed, conditional asset delivery" | tee -a "$OUT"
 else
   echo "FAIL asset delivery - see $ASSET_RAW" | tee -a "$OUT"
@@ -57,7 +57,7 @@ fi
 
 echo "== review-store"
 STORE_RAW="$WORK/review-store.log"
-if python3 "$ROOT/tests/test_review_store.py" > "$STORE_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_review_store.py" > "$STORE_RAW" 2>&1; then
   echo "PASS normalized SQLite persistence, migration, and recovery" | tee -a "$OUT"
 else
   echo "FAIL review store - see $STORE_RAW" | tee -a "$OUT"
@@ -66,7 +66,7 @@ fi
 
 echo "== reports-retention"
 REPORT_RAW="$WORK/reports-retention.log"
-if python3 "$ROOT/tests/test_reports_retention.py" > "$REPORT_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_reports_retention.py" > "$REPORT_RAW" 2>&1; then
   echo "PASS reusable reports, archives, retention, and delayed shutdown" | tee -a "$OUT"
 else
   echo "FAIL reports and retention - see $REPORT_RAW" | tee -a "$OUT"
@@ -75,7 +75,7 @@ fi
 
 echo "== artifact-checks"
 CHECKS_RAW="$WORK/artifact-checks.log"
-if python3 "$ROOT/tests/test_checks.py" > "$CHECKS_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_checks.py" > "$CHECKS_RAW" 2>&1; then
   echo "PASS artifact checks, source coverage, and guidance staleness" | tee -a "$OUT"
 else
   echo "FAIL artifact checks - see $CHECKS_RAW" | tee -a "$OUT"

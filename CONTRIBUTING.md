@@ -41,7 +41,8 @@ When changing the skill:
   clients;
 - do not require a global `arev` command;
 - keep generated runtime assets text-safe for remote skill installation;
-- keep user artifacts outside the installed skill directory; and
+- keep user artifacts outside the installed skill directory;
+- keep every test and fixture under `tests/`, never in the payload; and
 - do not commit `__pycache__`, local session state, or test output.
 
 The large whiteboard JavaScript and CSS files are generated artifacts. Change
@@ -55,7 +56,31 @@ Run the complete suite before submitting:
 ```bash
 npm run build
 npm test
+npm run test:e2e
 ```
+
+`npm test` runs the Python runtime tests and the remaining browser drives.
+`npm run test:e2e` runs the Gherkin scenarios and the latency check through
+Playwright.
+
+All test code lives under `tests/`:
+
+```text
+features/            Gherkin scenarios, the behavior the review surface owes
+steps/               the step vocabulary those scenarios are written in
+support/             Playwright fixtures, page objects, and the arev driver
+fixtures/            HTML artifacts the tests open
+runtime/             Python tests for the skill runtime
+perf.spec.js         delivery latency check
+bench-runtime.mjs    browser measurements for the efficiency audit
+legacy-drives/       the pre-Playwright Node drives, still being ported
+run.sh               runs runtime/ and legacy-drives/
+```
+
+Write new browser coverage as a scenario under `tests/features/`. The drives
+in `tests/legacy-drives/` predate the Playwright runner. Each one is deleted
+by the pull request that ports its assertions, along with its line in
+`tests/run.sh`, until the directory is empty.
 
 Also smoke-test the installable directory when changing packaging or metadata:
 

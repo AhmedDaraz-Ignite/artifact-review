@@ -2,11 +2,11 @@ import { chromium } from 'playwright';
 import {
   openSession,
   stopSession,
-} from './test-helpers.mjs';
+} from './legacy-drives/test-helpers.mjs';
 import {
   openWhiteboard,
   waitForInlineDiagram,
-} from './whiteboard-test-helpers.mjs';
+} from './legacy-drives/whiteboard-test-helpers.mjs';
 
 const artifact = process.argv[2];
 if (!artifact) throw new Error('usage: node tests/bench-runtime.mjs ARTIFACT');

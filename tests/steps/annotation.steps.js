@@ -1,17 +1,12 @@
 import { Given, When, Then, expect } from '../support/bdd.js';
 
+const TARGET = '(the first paragraph|the table)';
 const TARGETS = {
   'the first paragraph':frame => frame.locator('p').first(),
   'the table':frame => frame.locator('table').first(),
 };
 
 const MENU_ITEM = { 'Send now':'popSend', 'Add to review':'popQueue' };
-
-function target(rail, name) {
-  const resolve = TARGETS[name];
-  if (!resolve) throw new Error(`unknown annotation target: ${name}`);
-  return resolve(rail.artifact);
-}
 
 Given('the reviewer has turned annotation mode on', async ({ rail }) => {
   if (await rail.annotateToggle.getAttribute('aria-pressed') !== 'true') {
@@ -29,13 +24,13 @@ Then(/^annotation mode is (on|off)$/, async ({ rail }, state) => {
     .toHaveAttribute('aria-pressed', String(state === 'on'));
 });
 
-When(/^the reviewer selects "([^"]*)"$/, async ({ rail, popover }, name) => {
-  await target(rail, name).click({ clickCount:3 });
+When(new RegExp(`^the reviewer selects "${TARGET}"$`), async ({ rail, popover }, name) => {
+  await TARGETS[name](rail.artifact).click({ clickCount:3 });
   await expect(popover.root).toBeVisible();
 });
 
-When(/^the reviewer clicks "([^"]*)"$/, async ({ rail, popover }, name) => {
-  await target(rail, name).click({ position:{ x:10, y:10 } });
+When(new RegExp(`^the reviewer clicks "${TARGET}"$`), async ({ rail, popover }, name) => {
+  await TARGETS[name](rail.artifact).click({ position:{ x:10, y:10 } });
   await expect(popover.root).toBeVisible();
 });
 

@@ -1,10 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { AREV, PYTHON, ROOT, sessionApi } from '../support/arev.js';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const AREV = path.join(ROOT, 'skills/artifact-review/scripts/arev.py');
-export const PYTHON = process.env.PYTHON || 'python3';
+export { AREV, PYTHON, ROOT, sessionApi };
 
 export class TestRun {
   constructor() {
@@ -107,30 +104,6 @@ export async function eventually(probe, {
     await new Promise(resolve => setTimeout(resolve, interval));
   }
   throw new Error(`${label} did not become true within ${timeout}ms`, { cause:lastError });
-}
-
-export function sessionApi(url) {
-  const parsed = new URL(url);
-  const origin = parsed.origin;
-  const headers = {
-    'X-Arev-Token': parsed.searchParams.get('t'),
-    'Content-Type': 'application/json',
-  };
-  return async (method, endpoint, body) => {
-    const response = await fetch(origin + endpoint, {
-      method,
-      headers,
-      body:body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      const error = new Error(data.error || `request failed (${response.status})`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
-    }
-    return data;
-  };
 }
 
 export async function waitForQueueCount(page, expected, timeout = 5000) {

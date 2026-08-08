@@ -15,7 +15,7 @@ import unittest
 import zipfile
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "skills" / "artifact-review" / "scripts"
 AREV = SCRIPTS / "arev.py"
 if str(SCRIPTS) not in sys.path:

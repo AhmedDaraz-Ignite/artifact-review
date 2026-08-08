@@ -3,10 +3,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test as base, createBdd } from 'playwright-bdd';
-import { AnnotationPopover } from './annotation-popover.js';
 import { Arev, ROOT } from './arev.js';
 import { Network } from './network.js';
-import { ReviewRail } from './review-rail.js';
+import { AnnotationPopover, ReviewRail } from './review-ui.js';
 
 // Chromium logs these while loading bundled fonts, so they are not review bugs.
 const BENIGN_PAGE_ERRORS = /subset-worker|Failed to use workers/;
@@ -24,18 +23,17 @@ export const test = base.extend({
   artifact:async ({}, use) => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'arev-artifact-'));
     const file = path.join(dir, 'artifact.html');
-    const handle = {
+    await use({
       path:file,
+      original:'',
       // Snapshot the source so a later step can prove nothing rewrote it.
       async from(name) {
         await fs.copyFile(path.join(ROOT, 'tests/fixtures', name), file);
-        handle.original = await fs.readFile(file, 'utf8');
+        this.original = await fs.readFile(file, 'utf8');
       },
       append:html => fs.appendFile(file, html),
       read:() => fs.readFile(file, 'utf8'),
-      original:'',
-    };
-    await use(handle);
+    });
     await fs.rm(dir, { recursive:true, force:true });
   },
 

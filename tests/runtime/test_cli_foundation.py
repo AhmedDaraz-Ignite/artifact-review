@@ -20,7 +20,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[2]
 AREV_PATH = ROOT / "skills" / "artifact-review" / "scripts" / "arev.py"
 MANIFEST_PATH = ROOT / "skills" / "artifact-review" / "manifest.json"
 SPEC = importlib.util.spec_from_file_location("arev_cli", AREV_PATH)
