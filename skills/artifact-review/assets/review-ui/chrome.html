@@ -1076,28 +1076,23 @@ $("showAnyway").addEventListener("click", async () => {
  * Findings come back tagged with the viewport class they were observed in,
  * so a diagram or table that only breaks on a phone still reaches the agent. */
 
-const VIEWPORT_PASS_WIDTHS = [360, 800];
+const VIEWPORT_PASSES = [
+  { width:360, cls:"mobile", label:"Mobile" },
+  { width:800, cls:"compact", label:"Tablet" },
+];
 let pendingAuditPass = null;
 let viewportFindingsPromise = null;
 
-function viewportClassFor(width) {
-  if (width <= 640) return "mobile";
-  if (width <= 1024) return "compact";
-  return "desktop";
-}
-
-function tagViewport(findings) {
-  return (findings || []).map(finding => {
-    const cls = viewportClassFor(Number(finding.viewportWidth) || 1280);
-    const label = cls === "mobile" ? "Mobile" : cls === "compact" ? "Tablet" : "";
-    return {
-      ...finding,
-      viewportClass:cls,
-      evidence:label
-        ? `[${label} ${finding.viewportWidth}px] ${finding.evidence || ""}`
-        : finding.evidence,
-    };
-  });
+// The viewport class comes from the pass that ran, not from the width the
+// artifact reported back.
+function tagViewport(findings, pass) {
+  return (findings || []).map(finding => ({
+    ...finding,
+    viewportClass:pass ? pass.cls : "desktop",
+    evidence:pass
+      ? `[${pass.label} ${finding.viewportWidth}px] ${finding.evidence || ""}`
+      : finding.evidence,
+  }));
 }
 
 function dedupFindings(findings) {
@@ -1133,12 +1128,12 @@ function requestAuditPass() {
 
 async function collectViewportFindings() {
   const collected = [];
-  for (const width of VIEWPORT_PASS_WIDTHS) {
-    art.style.width = `${width}px`;
+  for (const pass of VIEWPORT_PASSES) {
+    art.style.width = `${pass.width}px`;
     // Two frames let the narrowed layout settle before it is measured.
     await new Promise(resolve => requestAnimationFrame(() =>
       requestAnimationFrame(resolve)));
-    collected.push(...tagViewport(await requestAuditPass()));
+    collected.push(...tagViewport(await requestAuditPass(), pass));
   }
   art.style.removeProperty("width");
   return collected;
@@ -1943,11 +1938,13 @@ async function saveInlineDiagram(record, message) {
   }
 }
 
+// Builds the headline from whatever counters the whiteboard sent.
 function describeEditStats(stats) {
-  return ["added", "removed", "moved", "relabeled", "drawn"]
-    .filter(key => Number(stats?.[key]) > 0)
-    .map(key => `${Number(stats[key])} ${key}`)
-    .join(", ");
+  return Object.entries(stats || {})
+    .filter(([, count]) => Number(count) > 0)
+    .map(([key, count]) => `${Number(count)} ${key}`)
+    .join(", ")
+    .slice(0, 200);
 }
 
 async function submitInlineDiagram(record, message) {

@@ -66,11 +66,12 @@ function cssRgb(rgba) {
 // The effective page background: body composited over the root, so any
 // theming mechanism (prefers-color-scheme, data-theme, plain CSS) is
 // reflected by what actually painted.
-function pageBackground() {
-  const root = document.documentElement;
-  const rootBackground = toRgba(getComputedStyle(root).backgroundColor);
+function pageBackground(bodyStyle) {
+  const rootBackground = toRgba(
+    getComputedStyle(document.documentElement).backgroundColor,
+  );
   const bodyBackground = document.body
-    ? toRgba(getComputedStyle(document.body).backgroundColor)
+    ? toRgba(bodyStyle.backgroundColor)
     : [0, 0, 0, 0];
   return compositeRgba(bodyBackground, rootBackground);
 }
@@ -93,10 +94,9 @@ function pageIsDark(background) {
 // Node surfaces, borders, and edges are mixes of the page background toward
 // the page text color, so diagrams inherit any palette without clashing.
 function pagePalette() {
-  const background = pageBackground();
+  const bodyStyle = getComputedStyle(document.body || document.documentElement);
+  const background = pageBackground(bodyStyle);
   const dark = pageIsDark(background);
-  const body = document.body || document.documentElement;
-  const bodyStyle = getComputedStyle(body);
   const text = toRgba(bodyStyle.color);
   const canvas =
     background[3] > 0 ? background : dark ? [24, 26, 31, 255] : [255, 255, 255, 255];
@@ -125,8 +125,8 @@ let applied = null;
 let queued = false;
 let rendering = false;
 
-function collectPending(doc) {
-  const holders = [...doc.querySelectorAll("pre.mermaid, div.mermaid")].filter(
+function collectPending() {
+  const holders = [...document.querySelectorAll("pre.mermaid, div.mermaid")].filter(
     holder =>
       !holder.getAttribute("data-processed") && !holder.querySelector("svg"),
   );
@@ -143,7 +143,7 @@ function collectPending(doc) {
 async function renderOwned() {
   const palette = pagePalette();
   const themeKey = JSON.stringify(palette.themeVariables);
-  if (themeKey === applied) return 0;
+  if (themeKey === applied) return;
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
@@ -176,7 +176,6 @@ async function renderOwned() {
   if (rendered) {
     document.dispatchEvent(new CustomEvent("arev:mermaid-rendered"));
   }
-  return rendered;
 }
 
 // A theme flip during a render queues exactly one more pass. That stops a
@@ -195,9 +194,9 @@ async function drainRenderQueue() {
 }
 
 function queueRender() {
+  // One queued frame absorbs a whole burst of theme events.
+  if (queued) return;
   queued = true;
-  // The change and transitionend listeners can fire in bursts. Draining on
-  // the next frame costs one palette read per frame instead of one per event.
   requestAnimationFrame(() => void drainRenderQueue());
 }
 
@@ -227,12 +226,8 @@ function watchThemeChanges() {
   );
 }
 
-async function renderPendingMermaid(doc = document) {
-  collectPending(doc);
-  return renderOwned();
-}
-
 // Awaited at the top level so the SDK's dynamic import resolves only once
 // every block has been drawn. That is what lets it audit the result.
-await renderPendingMermaid();
+collectPending();
+await renderOwned();
 watchThemeChanges();

@@ -70,6 +70,7 @@ _LABEL_RE = re.compile(_SHAPE + r"|\"(?:.*?)\"")
 # A node is an identifier immediately followed by its shape, which is how a
 # label is told apart from an edge label written between pipes.
 _NODE_RE = re.compile(r"([A-Za-z_][\w.-]*)\s*(" + _SHAPE + r")")
+_INIT_DIRECTIVE_RE = re.compile(r"%%\{\s*init\b[^}]*")
 _SECTION_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)*\b")
 _CITES_SECTION_RE = re.compile(r"section|§", re.IGNORECASE)
 _FLOW_ARROW_RE = re.compile(
@@ -498,7 +499,7 @@ def _check_diagram_quality(artifact):
                 f"{label} has {len(long_labels)} label(s) over five words, "
                 f"starting with \"{long_labels[0][:60]}\".",
                 labels=long_labels[:5]))
-        directive = re.search(r"%%\{\s*init\b[^}]*", diagram["source"])
+        directive = _INIT_DIRECTIVE_RE.search(diagram["source"])
         if directive:
             themed = "theme" in directive.group(0).lower()
             findings.append(_finding(

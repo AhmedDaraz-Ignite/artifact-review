@@ -223,14 +223,10 @@
   }
 
   function allMermaidSvgs() {
-    var found = [];
-    Array.prototype.forEach.call(
+    return Array.prototype.filter.call(
       document.querySelectorAll("svg"),
-      function (svg) {
-        if (mermaidSvgFor(svg)) found.push(svg);
-      },
+      mermaidSvgFor,
     );
-    return found;
   }
 
   function mermaidNodeTarget(el) {
@@ -243,13 +239,14 @@
       normalizedText(labelEl) ||
       group.getAttribute("aria-label") ||
       normalizedText(group);
-    var nodeId = group.getAttribute("data-arev-node-key");
-    if (!nodeId) {
-      var svg = mermaidSvgFor(group);
-      nodeId = group.getAttribute("data-id") || group.id;
-      if (!nodeId && svg)
-        nodeId = "node-" + Math.max(0, mermaidNodeGroups(svg).indexOf(group));
-    }
+    var svg = mermaidSvgFor(group);
+    var nodeId =
+      group.getAttribute("data-arev-node-key") ||
+      stableNodeKey(
+        group,
+        svg,
+        svg ? Math.max(0, mermaidNodeGroups(svg).indexOf(group)) : 0,
+      );
     return {
       type: "mermaid-node",
       diagramId: diagramIdFor(group),
@@ -964,13 +961,14 @@
       return viewport.svg.isConnected;
     });
     allMermaidSvgs().forEach(function (svg) {
+      // A marked SVG already has its node keys. Re-renders arrive unmarked.
+      if (svg.hasAttribute("data-arev-explore")) return;
       mermaidNodeGroups(svg).forEach(function (group, index) {
         group.setAttribute(
           "data-arev-node-key",
           stableNodeKey(group, svg, index),
         );
       });
-      if (svg.hasAttribute("data-arev-explore")) return;
       var viewport = createExploreViewport(svg);
       if (!viewport) return;
       svg.setAttribute("data-arev-explore", "true");
