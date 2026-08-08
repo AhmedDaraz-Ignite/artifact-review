@@ -72,15 +72,17 @@ support/             Playwright fixtures, page objects, and the arev driver
 fixtures/            HTML artifacts the tests open
 runtime/             Python tests for the skill runtime
 perf.spec.js         delivery latency check
-bench-runtime.mjs    browser measurements for the efficiency audit
-legacy-drives/       the pre-Playwright Node drives, still being ported
-run.sh               runs runtime/ and legacy-drives/
+legacy/              the pre-Playwright Node code, still being ported
+run.sh               runs runtime/ and legacy/
 ```
 
-Write new browser coverage as a scenario under `tests/features/`. The drives
-in `tests/legacy-drives/` predate the Playwright runner. Each one is deleted
-by the pull request that ports its assertions, along with its line in
-`tests/run.sh`, until the directory is empty.
+Write new browser coverage as a scenario under `tests/features/`. Everything in
+`tests/legacy/` predates the Playwright runner: nine drives, their two helper
+modules, and `bench-runtime.mjs`, which the efficiency audit runs by hand. The
+directory is a closed set. Nothing inside it may import from the Playwright
+suite, and nothing outside it may import in, so the last pull request of the
+migration deletes the whole directory. Each drive goes with the pull request
+that ports its assertions, along with its line in `tests/run.sh`.
 
 Also smoke-test the installable directory when changing packaging or metadata:
 

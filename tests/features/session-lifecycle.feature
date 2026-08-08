@@ -33,7 +33,7 @@ Feature: Ending and reopening a review
     Then the reopened session accepts feedback again
     And the reopened session keeps the earlier activity
     And the open browser re-audits the reopened session
-    And reopening again changes nothing
+    And reopening again keeps the review open and resets the layout check
 
   Scenario: An authenticated shutdown stops the server it names
     When the agent shuts the review server down

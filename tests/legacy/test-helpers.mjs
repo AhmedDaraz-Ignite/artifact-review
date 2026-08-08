@@ -1,7 +1,35 @@
+// This directory is deleted as the drives are ported, so it owns everything it
+// needs. Nothing here may import from the Playwright suite.
 import { execFileSync, spawn } from 'node:child_process';
-import { AREV, PYTHON, ROOT, sessionApi } from '../support/arev.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-export { AREV, PYTHON, ROOT, sessionApi };
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const AREV = path.join(ROOT, 'skills/artifact-review/scripts/arev.py');
+const PYTHON = process.env.PYTHON || 'python3';
+
+export function sessionApi(url) {
+  const parsed = new URL(url);
+  const headers = {
+    'X-Arev-Token':parsed.searchParams.get('t'),
+    'Content-Type':'application/json',
+  };
+  return async (method, endpoint, body) => {
+    const response = await fetch(parsed.origin + endpoint, {
+      method,
+      headers,
+      body:body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error || `request failed (${response.status})`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  };
+}
 
 export class TestRun {
   constructor() {

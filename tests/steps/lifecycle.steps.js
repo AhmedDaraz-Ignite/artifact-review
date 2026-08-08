@@ -77,11 +77,15 @@ Then('the open browser re-audits the reopened session', async ({ arev }) => {
     .toBe('clear');
 });
 
-Then('reopening again changes nothing', async ({ arev }) => {
-  const reopened = await arev.api('POST', '/reopen', {});
-  expect(reopened.ended).toBe(false);
-  expect(reopened.ended_by).toBe(null);
-});
+// Read the reset off the reopen response, not a later state read. The browser
+// starts clearing the layout check the moment the reopen lands.
+Then('reopening again keeps the review open and resets the layout check',
+  async ({ arev }) => {
+    const reopened = await arev.api('POST', '/reopen', {});
+    expect(reopened.ended).toBe(false);
+    expect(reopened.ended_by).toBe(null);
+    expect(reopened.audit.status).toBe('pending');
+  });
 
 When('the agent shuts the review server down', async ({ page, arev }) => {
   arev.health = await arev.api('GET', '/health');

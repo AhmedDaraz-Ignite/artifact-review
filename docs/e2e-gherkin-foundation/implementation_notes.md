@@ -344,3 +344,132 @@ filter form, which names the failing key.
   processes were two review sessions from the user's installed skill in
   `~/.claude/skills/`, both started before this work and neither from this
   checkout.
+
+---
+
+# Independent review pass
+
+A second pair of eyes went over the three things this pull request decides:
+where test code lives, how the old and new suites depend on each other, and
+whether the port kept every assertion. The layout survived. The coupling and
+three assertions did not.
+
+## The layout stands, with one correction
+
+`tests/features`, `tests/steps`, `tests/support` directly under `tests/`, with
+the drives quarantined in one directory, is the right shape for a migration.
+The new suite holds the permanent names and the dying code sits in a box whose
+name states its status. The rejected alternatives above are still rejected for
+the reasons given.
+
+The correction is what the box holds. `tests/legacy-drives/` promised that
+deleting it was safe, and it was not: `tests/bench-runtime.mjs` imported
+`openSession`, `stopSession`, `openWhiteboard`, and `waitForInlineDiagram` from
+inside it. The stated end state, an empty directory after nine more pull
+requests, was unreachable, because the last drive to go would leave the two
+helper modules behind for the benchmark. The directory is now `tests/legacy/`
+and the benchmark lives in it.
+
+Rejected: giving `bench-runtime.mjs` its own copy of the four helpers.
+`waitForInlineDiagram` and `openWhiteboard` are not small, and the benchmark is
+the same generation of code as the drives. It boots a browser against a real
+session and reads response headers by hand, exactly like they do. It gets
+rewritten or dropped when they do. `docs/skill-efficiency-audit/bench.sh` names
+the path and was updated with the move, which is the whole cost the earlier
+note worried about.
+
+## The dependency ran the wrong way
+
+`tests/legacy-drives/test-helpers.mjs` imported `AREV`, `PYTHON`, `ROOT`, and
+`sessionApi` from `tests/support/arev.js` and re-exported them to the drives.
+That made the living suite's driver load-bearing for nine files scheduled for
+deletion. Every future change to `sessionApi` would have to keep the drives
+working, and nobody reading `support/arev.js` would know why.
+
+Temporary code is frozen and self-contained. `tests/legacy/test-helpers.mjs`
+owns its own path constants and its own `sessionApi` again, which is where they
+were before this pull request. That is roughly 25 duplicated lines with a
+scheduled death date, and it buys a closed set: nothing in `tests/legacy/`
+imports out, nothing outside imports in. `npm run test:e2e` and the drives can
+now change without touching each other, and the final pull request of the
+migration is one `rm -rf`.
+
+## Three assertions were missing
+
+Everything else in `selftest-loop.mjs` maps onto a scenario. Three did not.
+
+**The `element` kind never reached the batch.** The drive queued a text
+annotation, a chat note, and a page control, then sent a fourth annotation made
+by clicking a table, and asserted the delivered kinds sorted to exactly
+`chat, control, element, text`. The port split that in two: the batch scenario
+carried three kinds, and the element annotation moved to the in-flight scenario
+where only its comment text is checked. Nothing asserted that an element
+annotation is delivered as kind `element`. The table annotation is back in the
+batch, which is four drafts and four kinds again.
+
+**The feed never showed `Sent`.** `delivery.feature` opens by naming six
+delivery states. `Received` and `Answered` were asserted on the feed chip and
+`Sent` only on the composer, so the one state that proves delivery left the
+browser before the agent acknowledged it was untested in the feed. One line in
+the retry scenario.
+
+**Reopening no longer proved it resets the layout check.** The drive asserted
+`audit.status == "pending"` right after `--reopen`, then waited for the browser
+to drive it back to `clear`. The port kept only the second half. Without the
+first, a `_reopen` that stopped resetting the audit would leave the status at
+`clear` from the initial load and the wait would pass instantly against a
+regression. The assertion is back, read off the response to `POST /reopen`
+rather than a follow-up `GET /state`. That is deterministic where the drive was
+racing the browser, which starts clearing the check as soon as the reopen
+lands. Confirmed it bites: flipping the expectation to `clear` fails with
+`Received: "pending"`.
+
+Rejected as rightly dropped: the `ended` event's `schema` field.
+`event_envelope` in `versioning.py` stamps `EVENT_SCHEMA` on every event from
+one constant, so checking it on the feedback batch and again on the ended event
+tests the same line twice.
+
+## One weakened assertion
+
+`the artifact has reloaded 1 time so far` counted immediately. The drive slept
+100ms first, and that sleep was load-bearing: the assertion is that a second
+reload never fires, and a broken build fires it a moment after the server bumps
+the version. `expect.poll` can return on its first probe, so the count could be
+read before the extra request. The step waits 200ms before counting.
+
+## `npm test` leaked a temp directory per run
+
+Not this pull request's doing, but found while confirming a clean run.
+`tests/run.sh` creates `mktemp -d "artifact review selftest.XXXXXX"` and never
+removes it. This machine had 91 of them. The `EXIT` trap now deletes the
+directory, and a failing run sets `KEEP_LOGS=1` first so the `see $raw` paths
+it printed still resolve. Deleting from the success path alone did not work:
+the trap runs `arev stop --all` after it, and that recreates
+`$WORK/state` as the registry root.
+
+## Considered and left alone
+
+- **`perf.spec.js` at the top of `tests/`.** A p95 loop is bad Gherkin and a
+  `tests/perf/` directory for one file is worse.
+- **The `perf` project's `testDir:'tests'`.** It scans `legacy/`, `runtime/`,
+  and `fixtures/` for `*.spec.js` and finds nothing. Narrowing it fixes no
+  problem.
+- **`ReviewRail.latest(state)`.** It is the last chip whose text contains the
+  state, not the newest chip, so a newer entry in a different state does not
+  fail it. The drive had the same shape and no scenario currently depends on
+  the difference.
+
+## Verification
+
+- `npm run test:e2e`: `21 passed`. Same count, three more assertions inside it.
+- `npm test`: exit 0, `SELFTEST: PASS`, 125 `PASS` lines, zero `FAIL` lines.
+- `npm run build` then `git diff --exit-code` on the four generated files:
+  exit 0.
+- `node tests/legacy/bench-runtime.mjs tests/fixtures/clean.html` from its new
+  path prints its metrics JSON.
+- The restored reopen assertion bites: flipped to `clear`, the scenario fails
+  with `Received: "pending"`.
+- Temp directory count in `$TMPDIR` unchanged across a full `npm test`, and no
+  `arev-home-*` or `arev-artifact-*` left after `npm run test:e2e`. The only
+  live `server.py` processes belong to the installed skill in
+  `~/.claude/skills/`, neither started from this checkout.

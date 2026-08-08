@@ -64,7 +64,7 @@ row "whiteboard.js gzip transfer" "$whiteboard_gzip" "$(tok "$whiteboard_gzip")"
 if [ -f "$REPO_ROOT/node_modules/playwright/package.json" ]; then
   browser_state="$(mktemp -d "${TMPDIR:-/tmp}/arev-browser-bench.XXXXXX")"
   browser_metrics=$(ARTIFACT_REVIEW_HOME="$browser_state" node \
-    "$REPO_ROOT/tests/bench-runtime.mjs" \
+    "$REPO_ROOT/tests/legacy/bench-runtime.mjs" \
     "$REPO_ROOT/tests/fixtures/clean.html")
   python3 - "$browser_metrics" <<'PY'
 import json

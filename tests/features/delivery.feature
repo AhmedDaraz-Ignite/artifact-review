@@ -26,16 +26,20 @@ Feature: Feedback delivery
     When the reviewer selects "the first paragraph"
     And the reviewer writes "tighten this paragraph" in the annotation
     And the reviewer chooses "Add to review" in the annotation
+    And the reviewer clicks "the table"
+    And the reviewer writes "add a totals row" in the annotation
+    And the reviewer chooses "Add to review" in the annotation
     And the reviewer toggles annotation mode
     Then annotation mode is off
     When the reviewer types "a chat note" in chat
     And the reviewer chooses "Add to review"
     And the reviewer picks page option b
-    Then the review holds 3 drafts
+    Then the review holds 4 drafts
     When the reviewer chooses "Send now"
     Then the agent receives one feedback batch of kinds:
       | chat    |
       | control |
+      | element |
       | text    |
     And the batch carries the review event schema
     And the review holds 0 drafts
@@ -65,6 +69,7 @@ Feature: Feedback delivery
     When delivery starts working again
     And the reviewer chooses "Send now"
     Then the composer shows "Sent"
+    And the newest feed entry shows "Sent"
     And the chat box is empty
     And the review holds 0 drafts
     And the agent receives 2 chat notes

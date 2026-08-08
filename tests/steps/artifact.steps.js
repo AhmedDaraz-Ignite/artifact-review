@@ -33,9 +33,13 @@ Then(/^the artifact reloaded exactly (\d+) times?$/, async ({ network }, count) 
   await expect.poll(() => network.artifactReloads).toBe(count);
 });
 
-Then(/^the artifact has reloaded (\d+) times? so far$/, async ({ network }, count) => {
-  expect(network.artifactReloads).toBe(count);
-});
+// Wait before counting. A build that overlaps reloads fires the second request
+// in this window.
+Then(/^the artifact has reloaded (\d+) times? so far$/,
+  async ({ page, network }, count) => {
+    await page.waitForTimeout(200);
+    expect(network.artifactReloads).toBe(count);
+  });
 
 Then('the artifact exposes a diagram edit entry', async ({ page }) => {
   await expect(

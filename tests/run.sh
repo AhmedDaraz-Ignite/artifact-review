@@ -10,6 +10,8 @@ export ARTIFACT_REVIEW_HOME="$WORK/state"
 
 cleanup() {
   "$AREV" stop --all >/dev/null 2>&1 || true
+  # A passing run keeps nothing. A failing run keeps the logs it just named.
+  [ -n "${KEEP_LOGS-}" ] || rm -rf "$WORK"
 }
 trap cleanup EXIT
 
@@ -27,7 +29,7 @@ run() {
   fi
   echo "== $name"
   local raw="$WORK/$name.log"
-  node "$ROOT/tests/legacy-drives/$script" "$art" > "$raw" 2>&1
+  node "$ROOT/tests/legacy/$script" "$art" > "$raw" 2>&1
   local code=$?
   grep -E "^(PASS|FAIL|pageerrors)" "$raw" | tee -a "$OUT"
   # A crashed drive prints no FAIL lines. Count the crash itself as one.
@@ -95,7 +97,9 @@ run viewportaudit selftest-viewport-audit.mjs viewport-overflow.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then
+  KEEP_LOGS=1
   echo "SELFTEST: FAIL"
+  echo "Logs: $WORK"
   exit 1
 fi
 echo "SELFTEST: PASS"
