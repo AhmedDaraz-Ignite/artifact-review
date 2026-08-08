@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { defineBddConfig } from 'playwright-bdd';
 
-const testDir = defineBddConfig({
+const bddTestDir = defineBddConfig({
   features:'e2e/features/**/*.feature',
   // support/bdd.js belongs here too. It exports the extended test instance that
   // playwright-bdd needs to resolve before it can generate any spec.
@@ -10,7 +10,6 @@ const testDir = defineBddConfig({
 });
 
 export default defineConfig({
-  testDir,
   fullyParallel:true,
   workers:process.env.CI ? 4 : '50%',
   retries:process.env.CI ? 1 : 0,
@@ -24,4 +23,8 @@ export default defineConfig({
     trace:'retain-on-failure',
     video:'retain-on-failure',
   },
+  projects:[
+    { name:'review', testDir:bddTestDir },
+    { name:'perf', testDir:'e2e', testMatch:'**/*.spec.js' },
+  ],
 });

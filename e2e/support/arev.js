@@ -16,6 +16,7 @@ export class Arev {
     this.polls = new Set();
     this.stopping = false;
     this.sessionUrl = null;
+    this.lastEvent = null;
   }
 
   run(args) {
@@ -34,8 +35,7 @@ export class Arev {
     return this.run(['reply', this.artifact, text]);
   }
 
-  // Feedback events stay durable until an agent polls and acknowledges them.
-  // A poll started after the reviewer acts still receives that batch.
+  // Feedback stays durable until acknowledged, so polling after the act still gets it.
   poll(timeoutSeconds = 30) {
     const child = spawn(
       PYTHON,
@@ -60,7 +60,8 @@ export class Arev {
           return;
         }
         try {
-          resolve(JSON.parse(stdout));
+          this.lastEvent = JSON.parse(stdout);
+          resolve(this.lastEvent);
         } catch (cause) {
           reject(new Error(`arev poll returned invalid JSON: ${stdout || stderr}`, { cause }));
         }

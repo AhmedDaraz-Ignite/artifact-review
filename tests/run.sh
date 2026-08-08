@@ -25,15 +25,6 @@ run() {
   else
     cp "$ROOT/tests/fixtures/$fixture" "$art"
   fi
-  if [ "$name" = "loop" ]; then
-    # the loop test needs a page tall enough to genuinely scroll
-    python3 - "$art" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-open(p, "w").write(s.replace("</body>", '<div style="height:1800px"></div></body>'))
-PY
-  fi
   echo "== $name"
   local raw="$WORK/$name.log"
   node "$ROOT/tests/$script" "$art" > "$raw" 2>&1
@@ -91,7 +82,6 @@ else
   tail -20 "$CHECKS_RAW"
 fi
 
-run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html
 run scaffold selftest-gate.mjs -scaffold-

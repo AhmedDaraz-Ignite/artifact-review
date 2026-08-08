@@ -23,5 +23,6 @@ Then('the review rail is ready for feedback', async ({ rail }) => {
 Then('the review server reports a healthy session', async ({ arev }) => {
   const health = await arev.api('GET', '/health');
   expect(health.instance_id).toMatch(/^[a-f0-9-]{36}$/);
+  expect(health.tool_version).toMatch(/^\d+\.\d+\.\d+$/);
   expect(health.event_schema).toMatch(/^artifact-review\/event\/v\d+$/);
 });

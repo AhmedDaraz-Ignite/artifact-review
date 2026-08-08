@@ -24,7 +24,7 @@ export class TestRun {
   }
 }
 
-export function runArev(args, options = {}) {
+function runArev(args, options = {}) {
   return execFileSync(PYTHON, [AREV, ...args], {
     encoding: 'utf8',
     ...options,
@@ -144,10 +144,4 @@ export async function waitForQueueCount(page, expected, timeout = 5000) {
 export async function chooseAction(page, trigger, item) {
   await page.locator(trigger).click();
   await page.locator(item).click();
-}
-
-export function percentile(values, quantile) {
-  const ordered = [...values].sort((left, right) => left - right);
-  const index = Math.max(0, Math.ceil(quantile * ordered.length) - 1);
-  return ordered[index];
 }

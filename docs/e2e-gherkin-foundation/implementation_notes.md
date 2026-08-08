@@ -2,7 +2,7 @@
 
 Plan artifact: https://claude.ai/code/artifact/08ad4285-468b-478d-a9f0-3b7c7a58d89f
 
-Phase 1 of four. Phases 2 to 4 are tracked separately and are not started.
+Phases 1 and 2 are done. Phases 3 and 4 are tracked separately and not started.
 
 ## Why this exists
 
@@ -98,3 +98,72 @@ deleted.
 - Superpowers skills were dropped from the flow on request.
 - Implementation is tracked as four separate dependency-chained tasks so it
   stays separate from the planning session and from `main`.
+
+---
+
+# Phase 2: porting selftest-loop.mjs
+
+The drive held 43 assertion call sites (41 named, plus five templated latency
+samples and one percentile). All of them are now scenarios, and the drive is
+deleted along with its `tests/run.sh` entry in the same commit.
+
+## Where each assertion went
+
+| Drive assertions | Landed in |
+|---|---|
+| Server identity, clean artifact opens | `session.feature` |
+| Menu structure, no second send button, end lives in one menu | `composer.feature` |
+| Desktop and phone rail placement | `layout.feature` |
+| Toggle state, keyboard menu, durable text anchor | `annotation.feature` |
+| Draft, control dedupe, batch send, Sending, Failed, retry, Received, Answered | `delivery.feature` |
+| Scroll restore, Mermaid re-index, rapid-save coalescing, source untouched | `live-reload.feature` |
+| End labels, send and end, read-only, reopen rules, shutdown | `session-lifecycle.feature` |
+| Five latency samples and the p95 SLO | `e2e/perf.spec.js` |
+| No unexpected page errors | the `pageErrors` auto fixture, now on all 21 scenarios |
+| "review loop drive completed" | Dropped. It only existed because one `try` block wrapped the whole drive, and Playwright reports a thrown step natively. |
+
+## Bugs the port found in the old drive
+
+**The menu assertion was reading pre-hydration DOM.** The drive checked that
+`#chatMenu` text contained the lowercase `end review`. The shipped markup says
+`Send and end review`, and the SDK rewrites it to `End review` once nothing is
+drafted. The drive read `textContent` once, early, and matched the static
+string before hydration. Playwright's retrying assertion waits for the settled
+DOM, so the naive port failed. The step now matches `/end review/i` against the
+label element, which is what the assertion always meant.
+
+**Ending a review opens a confirm dialog.** `chrome.html` calls `confirm()`
+before ending. The drive registered `page.on('dialog', d => d.accept())` as
+incidental setup. Playwright dismisses dialogs by default, so the port silently
+cancelled every end action and the agent poll returned `idle`. Dialogs are now
+accepted in a fixture and recorded, and `the reviewer was asked to confirm` is a
+real assertion rather than hidden plumbing.
+
+**Annotation notes are not in `item.text`.** Chat items carry their words in
+`text`, annotations in `comment` (`chrome.html` builds `{ ...popItem, comment }`).
+The shared step reads `item.text ?? item.comment`.
+
+## Deliberate differences from the drive
+
+**Dropped one racy assertion.** The drive checked `audit.status === 'pending'`
+immediately after a live reopen, then waited for it to become `clear`. The first
+check races the browser's re-audit and only passed because it usually won. The
+port keeps the settled `clear` assertion and the feed-preservation check, and
+drops the racy one.
+
+**The perf spec starts its poll before the click.** Gherkin steps can poll after
+the action because events are durable, but a latency measurement cannot: it
+would include Python process startup. `perf.spec.js` keeps the drive's ordering
+for that reason, which is part of why it stayed a plain spec.
+
+**`test-helpers.mjs` lost two exports.** `percentile` became dead and was
+deleted. `runArev` is no longer imported anywhere, but `openSession` and
+`stopSession` still call it, so it stopped being exported instead.
+
+## Verification
+
+- 21 scenarios pass in 6 parallel workers in 7.6 seconds.
+- `npm test` still reports `SELFTEST: PASS` with the drive gone.
+- No orphan server or poll process and no leftover temp directory after a run.
+  `arev stop` returns as soon as it signals shutdown, so a check run in the same
+  instant can still see the process; it is gone within about a second.
