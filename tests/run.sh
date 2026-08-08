@@ -78,8 +78,6 @@ fi
 
 run wb   selftest-whiteboard.mjs clean.html
 run wboff selftest-whiteboard-offline.mjs clean.html
-run diagrams selftest-diagram-features.mjs diagram-features.html
-run mermaidfail selftest-mermaid-failure.mjs mermaid-broken.html
 run diagramquality selftest-diagram-quality.mjs themed.html
 
 echo

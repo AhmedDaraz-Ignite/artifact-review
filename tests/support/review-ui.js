@@ -125,6 +125,7 @@ export class AnnotationPopover {
   constructor(page) {
     this.page = page;
     this.root = page.locator('#pop');
+    this.context = page.locator('#popCtx');
     this.text = page.locator('#popText');
     this.action = page.locator('#popAction');
     this.state = page.locator('#popState');
