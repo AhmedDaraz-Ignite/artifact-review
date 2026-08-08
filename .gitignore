@@ -20,6 +20,7 @@ htmlcov/
 
 .artifact-review/
 .worktrees/
+.bdd-gen/
 test-results/
 playwright-report/
 blob-report/

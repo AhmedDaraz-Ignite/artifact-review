@@ -1,10 +1,35 @@
+// This directory is deleted as the drives are ported, so it owns everything it
+// needs. Nothing here may import from the Playwright suite.
 import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-export const AREV = path.join(ROOT, 'skills/artifact-review/scripts/arev.py');
-export const PYTHON = process.env.PYTHON || 'python3';
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const AREV = path.join(ROOT, 'skills/artifact-review/scripts/arev.py');
+const PYTHON = process.env.PYTHON || 'python3';
+
+export function sessionApi(url) {
+  const parsed = new URL(url);
+  const headers = {
+    'X-Arev-Token':parsed.searchParams.get('t'),
+    'Content-Type':'application/json',
+  };
+  return async (method, endpoint, body) => {
+    const response = await fetch(parsed.origin + endpoint, {
+      method,
+      headers,
+      body:body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error || `request failed (${response.status})`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  };
+}
 
 export class TestRun {
   constructor() {
@@ -24,7 +49,7 @@ export class TestRun {
   }
 }
 
-export function runArev(args, options = {}) {
+function runArev(args, options = {}) {
   return execFileSync(PYTHON, [AREV, ...args], {
     encoding: 'utf8',
     ...options,
@@ -109,30 +134,6 @@ export async function eventually(probe, {
   throw new Error(`${label} did not become true within ${timeout}ms`, { cause:lastError });
 }
 
-export function sessionApi(url) {
-  const parsed = new URL(url);
-  const origin = parsed.origin;
-  const headers = {
-    'X-Arev-Token': parsed.searchParams.get('t'),
-    'Content-Type': 'application/json',
-  };
-  return async (method, endpoint, body) => {
-    const response = await fetch(origin + endpoint, {
-      method,
-      headers,
-      body:body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      const error = new Error(data.error || `request failed (${response.status})`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
-    }
-    return data;
-  };
-}
-
 export async function waitForQueueCount(page, expected, timeout = 5000) {
   await page.waitForFunction(
     value => Number(document.getElementById('qCount')?.textContent) === value,
@@ -144,10 +145,4 @@ export async function waitForQueueCount(page, expected, timeout = 5000) {
 export async function chooseAction(page, trigger, item) {
   await page.locator(trigger).click();
   await page.locator(item).click();
-}
-
-export function percentile(values, quantile) {
-  const ordered = [...values].sort((left, right) => left - right);
-  const index = Math.max(0, Math.ceil(quantile * ordered.length) - 1);
-  return ordered[index];
 }

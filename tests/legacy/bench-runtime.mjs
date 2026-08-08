@@ -9,7 +9,7 @@ import {
 } from './whiteboard-test-helpers.mjs';
 
 const artifact = process.argv[2];
-if (!artifact) throw new Error('usage: node tests/bench-runtime.mjs ARTIFACT');
+if (!artifact) throw new Error('usage: node tests/legacy/bench-runtime.mjs ARTIFACT');
 
 let browser;
 const responses = [];

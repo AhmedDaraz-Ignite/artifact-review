@@ -295,6 +295,7 @@ Clone the repository, then run:
 npm ci
 npm run build
 npm test
+npm run test:e2e
 ```
 
 `npm run build` bundles the offline whiteboard assets, including the pinned
@@ -303,8 +304,8 @@ It embeds Excalidraw's compact fonts and uses the
 browser's installed CJK fallback instead of adding Xiaolai's 12 MB shard set,
 keeping the complete installable skill below 10 MB with no font network
 requests. `npm test` exercises the Python server, conditional asset delivery,
-browser review surface, delivery lifecycle, export path, and installation
-assumptions.
+browser review surface, export path, and installation assumptions.
+`npm run test:e2e` runs the review scenarios in a real browser.
 
 Repository layout:
 

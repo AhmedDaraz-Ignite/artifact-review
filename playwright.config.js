@@ -1,0 +1,35 @@
+import { defineConfig } from '@playwright/test';
+import { defineBddConfig } from 'playwright-bdd';
+
+const bddTestDir = defineBddConfig({
+  features:'tests/features/**/*.feature',
+  // support/bdd.js belongs here too. It exports the extended test instance that
+  // playwright-bdd needs to resolve before it can generate any spec.
+  steps:['tests/support/bdd.js', 'tests/steps/**/*.js'],
+  outputDir:'.bdd-gen',
+});
+
+export default defineConfig({
+  fullyParallel:true,
+  workers:process.env.CI ? 4 : '50%',
+  retries:process.env.CI ? 1 : 0,
+  timeout:60_000,
+  expect:{ timeout:10_000 },
+  reporter:process.env.CI
+    ? [['list'], ['html', { open:'never' }]]
+    : 'list',
+  use:{
+    viewport:{ width:1440, height:950 },
+    trace:'retain-on-failure',
+    // AREV_E2E_VIDEO=1 records every scenario and slows the driver, so the clip
+    // is watchable. Steps that run in milliseconds are invisible otherwise.
+    video:process.env.AREV_E2E_VIDEO
+      ? { mode:'on', size:{ width:1280, height:844 } }
+      : 'retain-on-failure',
+    launchOptions:{ slowMo:process.env.AREV_E2E_VIDEO ? 250 : 0 },
+  },
+  projects:[
+    { name:'review', testDir:bddTestDir },
+    { name:'perf', testDir:'tests', testMatch:'**/*.spec.js' },
+  ],
+});

@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "build": "node tooling/build-whiteboard.mjs && node tooling/generate-notices.mjs",
-    "test": "bash tests/run.sh"
+    "test": "bash tests/run.sh",
+    "test:e2e": "bddgen && playwright test"
   },
   "devDependencies": {
     "@excalidraw/excalidraw": "0.18.1",
     "@excalidraw/mermaid-to-excalidraw": "2.2.2",
+    "@playwright/test": "1.55.1",
     "esbuild": "0.28.1",
     "mermaid": "11.16.0",
     "playwright": "1.55.1",
+    "playwright-bdd": "9.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },

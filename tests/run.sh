@@ -10,6 +10,8 @@ export ARTIFACT_REVIEW_HOME="$WORK/state"
 
 cleanup() {
   "$AREV" stop --all >/dev/null 2>&1 || true
+  # A passing run keeps nothing. A failing run keeps the logs it just named.
+  [ -n "${KEEP_LOGS-}" ] || rm -rf "$WORK"
 }
 trap cleanup EXIT
 
@@ -25,18 +27,9 @@ run() {
   else
     cp "$ROOT/tests/fixtures/$fixture" "$art"
   fi
-  if [ "$name" = "loop" ]; then
-    # the loop test needs a page tall enough to genuinely scroll
-    python3 - "$art" <<'PY'
-import sys
-p = sys.argv[1]
-s = open(p).read()
-open(p, "w").write(s.replace("</body>", '<div style="height:1800px"></div></body>'))
-PY
-  fi
   echo "== $name"
   local raw="$WORK/$name.log"
-  node "$ROOT/tests/$script" "$art" > "$raw" 2>&1
+  node "$ROOT/tests/legacy/$script" "$art" > "$raw" 2>&1
   local code=$?
   grep -E "^(PASS|FAIL|pageerrors)" "$raw" | tee -a "$OUT"
   # A crashed drive prints no FAIL lines. Count the crash itself as one.
@@ -48,7 +41,7 @@ PY
 
 echo "== cli-foundation"
 CLI_RAW="$WORK/cli-foundation.log"
-if python3 "$ROOT/tests/test_cli_foundation.py" > "$CLI_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_cli_foundation.py" > "$CLI_RAW" 2>&1; then
   echo "PASS CLI lifecycle, registry, URL, and heartbeat foundation" | tee -a "$OUT"
 else
   echo "FAIL CLI foundation - see $CLI_RAW" | tee -a "$OUT"
@@ -57,7 +50,7 @@ fi
 
 echo "== asset-delivery"
 ASSET_RAW="$WORK/asset-delivery.log"
-if python3 "$ROOT/tests/test_asset_delivery.py" > "$ASSET_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_asset_delivery.py" > "$ASSET_RAW" 2>&1; then
   echo "PASS hashed, compressed, conditional asset delivery" | tee -a "$OUT"
 else
   echo "FAIL asset delivery - see $ASSET_RAW" | tee -a "$OUT"
@@ -66,7 +59,7 @@ fi
 
 echo "== review-store"
 STORE_RAW="$WORK/review-store.log"
-if python3 "$ROOT/tests/test_review_store.py" > "$STORE_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_review_store.py" > "$STORE_RAW" 2>&1; then
   echo "PASS normalized SQLite persistence, migration, and recovery" | tee -a "$OUT"
 else
   echo "FAIL review store - see $STORE_RAW" | tee -a "$OUT"
@@ -75,7 +68,7 @@ fi
 
 echo "== reports-retention"
 REPORT_RAW="$WORK/reports-retention.log"
-if python3 "$ROOT/tests/test_reports_retention.py" > "$REPORT_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_reports_retention.py" > "$REPORT_RAW" 2>&1; then
   echo "PASS reusable reports, archives, retention, and delayed shutdown" | tee -a "$OUT"
 else
   echo "FAIL reports and retention - see $REPORT_RAW" | tee -a "$OUT"
@@ -84,14 +77,13 @@ fi
 
 echo "== artifact-checks"
 CHECKS_RAW="$WORK/artifact-checks.log"
-if python3 "$ROOT/tests/test_checks.py" > "$CHECKS_RAW" 2>&1; then
+if python3 "$ROOT/tests/runtime/test_checks.py" > "$CHECKS_RAW" 2>&1; then
   echo "PASS artifact checks, source coverage, and guidance staleness" | tee -a "$OUT"
 else
   echo "FAIL artifact checks - see $CHECKS_RAW" | tee -a "$OUT"
   tail -20 "$CHECKS_RAW"
 fi
 
-run loop selftest-loop.mjs clean.html
 run rail selftest-rail.mjs clean.html
 run gate selftest-gate.mjs clean.html
 run scaffold selftest-gate.mjs -scaffold-
@@ -105,7 +97,9 @@ run viewportaudit selftest-viewport-audit.mjs viewport-overflow.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then
+  KEEP_LOGS=1
   echo "SELFTEST: FAIL"
+  echo "Logs: $WORK"
   exit 1
 fi
 echo "SELFTEST: PASS"

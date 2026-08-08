@@ -128,7 +128,7 @@ try {
     JSON.stringify(conversionCoverage),
   );
   const manifest = JSON.parse(
-    fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
   );
   test.check(
     'Mermaid runtime is exactly pinned for reproducible ER support',

@@ -63,6 +63,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: End-to-end scenarios
+        run: npm run test:e2e
+
   install-smoke-posix:
     strategy:
       fail-fast: false
