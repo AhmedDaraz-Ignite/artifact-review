@@ -74,6 +74,34 @@ Artifact Review ships one standard Agent Skills directory for every compatible
 agent. It has no agent-specific updater and performs no background update
 checks.
 
+## Uninstall
+
+Stop any running review server first. The launcher disappears with the skill,
+so this step has to come before the removal:
+
+```bash
+"/absolute/path/to/artifact-review/scripts/arev" stop --all
+```
+
+Then remove the skill from the scope where it was installed:
+
+```bash
+# Project installation
+npx skills remove artifact-review
+
+# Global installation
+npx skills remove artifact-review --global
+```
+
+Project scope is the default, so `remove` takes no `--project` flag. Running
+`npx skills remove` without a skill name opens a picker of the installed
+skills.
+
+Removing the skill leaves your review data in place. Sessions, replies, and
+stored artifacts live under `~/.artifact-review`, or under the directory named
+by `ARTIFACT_REVIEW_HOME`. Delete that directory when you also want the review
+history gone.
+
 ## Use from an agent
 
 Once installed, the agent should reach for the skill on its own whenever it
