@@ -59,6 +59,8 @@ PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
     "/mermaid.js",
+    # The browser asks for the favicon on its own and never carries the token.
+    "/favicon.ico",
 ))
 WHITEBOARD_ID_RE = re.compile(
     rf"^[a-zA-Z0-9_-]{{1,{MAX_WHITEBOARD_ID_LENGTH}}}$")
@@ -107,6 +109,7 @@ MIME = {".js": "application/javascript", ".mjs": "application/javascript",
 REQUIRED_ASSETS = (
     "audit.js",
     "chrome.html",
+    "favicon.svg",
     "sdk.js",
     "whiteboard-frame.html",
     "whiteboard.js",
@@ -152,6 +155,7 @@ def _load_asset_cache(asset_dir):
         "whiteboard.css": _asset_entry(raw["whiteboard.css"], "text/css"),
         "mermaid.js": _asset_entry(
             raw["mermaid.js"], "application/javascript"),
+        "favicon.svg": _asset_entry(raw["favicon.svg"], "image/svg+xml"),
     }
     sdk = raw["audit.js"] + b"\n" + raw["sdk.js"]
     cache["sdk.js"] = _asset_entry(sdk, "application/javascript")
@@ -815,6 +819,8 @@ class Handler(BaseHTTPRequestHandler):
             self._asset("whiteboard-frame", public_static=True)
         elif path in ("/whiteboard.js", "/whiteboard.css", "/mermaid.js"):
             self._asset(path.lstrip("/"), public_static=True)
+        elif path == "/favicon.ico":
+            self._asset("favicon.svg")
         elif path.startswith("/whiteboard/"):
             self._whiteboard_working_get(path[len("/whiteboard/"):])
         elif path == "/state":
