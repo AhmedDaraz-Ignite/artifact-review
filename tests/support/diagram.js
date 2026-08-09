@@ -7,13 +7,20 @@ class Board {
   constructor(page, id) {
     this.page = page;
     this.id = id;
-    this.host = page.frameLocator('#art').locator(`#arev-board-${id}`);
+    this.artifact = page.frameLocator('#art');
+    this.source = this.artifact.locator(`#${id}`);
+    this.host = this.artifact.locator(`#arev-board-${id}`);
     this.activation = this.host.getByRole('button', { name:OPEN_EDITOR });
     this.frames = this.host.locator('iframe');
     this.sharedFrame = this.host.locator('#arev-shared-whiteboard-frame');
     this.editor = null;
     this.saved = null;
     this.drawn = null;
+    this.diagramHeight = 0;
+  }
+
+  get canvas() {
+    return this.editor.locator('canvas.excalidraw__canvas.interactive');
   }
 
   mount() {
@@ -38,6 +45,10 @@ class Board {
 
   async unlock() {
     await this.host.scrollIntoViewIfNeeded();
+    // Measure the SVG the SDK measures, not the source text Mermaid replaces.
+    await this.source.locator('svg').waitFor({ state:'visible', timeout:30_000 });
+    this.diagramHeight = await this.source.evaluate(
+      node => node.getBoundingClientRect().height);
     await this.activation.click();
     await this.frames.waitFor({ state:'visible', timeout:30_000 });
     this.editor = await pollUntil(() => this.readyEditor(), { timeout:30_000 });
@@ -66,7 +77,7 @@ class Board {
     const tool = this.editor.locator('[data-testid="toolbar-rectangle"]');
     await this.editor.locator('body').press('r');
     if (!await tool.isChecked()) await tool.check({ force:true });
-    const canvas = this.editor.locator('canvas.excalidraw__canvas.interactive');
+    const canvas = this.canvas;
     const box = await canvas.boundingBox();
     if (!box) throw new Error('the Excalidraw canvas has no bounding box');
     const width = Math.min(150, Math.max(80, box.width * 0.15));

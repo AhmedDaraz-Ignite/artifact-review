@@ -15,6 +15,7 @@ Feature: Editable diagrams
     When the reviewer opens the "request-flow" diagram editor
     And the reviewer opens the "review-er" diagram editor
     Then only the "review-er" diagram holds the one shared editor frame
+    And the "review-er" editor canvas is at least as tall as the diagram
     And the "review-er" editor is labelled "ER diagram · Editable shapes"
     And the saved "review-er" scene holds more than 5 native shapes
     And the saved "request-flow" scene holds more than 3 native shapes
