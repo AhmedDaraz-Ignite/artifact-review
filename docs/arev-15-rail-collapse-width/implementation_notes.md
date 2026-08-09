@@ -183,3 +183,22 @@ docs but not the template, so running sessions are told the guidance changed.
   horizontal overflow 0.
 - Screenshots in both rail states of an artifact holding a sequence diagram, a wide table, a code
   block, a card pair, two notes, two fieldsets, a nested table in a list, a blockquote and a footer.
+
+### Two recordings, and why one was not enough
+
+The first clip records the review session and collapses the rail. It proves the behaviour, but its
+only marker sits on the review rail, because the artifact is served into a sandboxed cross-origin
+iframe and the annotation overlay runs in the top document. The changed surface therefore carried no
+marker, which the recording rules count as unverified. That gap was accepted at first and challenged
+afterwards, correctly.
+
+The second clip fixes it by loading the same artifact from the session's `/artifact` route, where it
+is the top document and markers reach it. It boxes the paragraph at 840px and the table at the full
+1360px column in the same frame, so one image shows both widths of the rule.
+
+Two limits worth recording. The second clip runs at a 1920px viewport, where the column is on its
+1400px cap, so it does not show the 956 to 1252 figures from the issue; those come from the scenario
+and the Playwright measurements above. And the first take of the second clip failed validation with
+three chapters and three markers against a two-and-two script, including an anchor that is not on the
+page, because harness state from the previous recording had leaked. `vui-record.sh abort` plus a
+reload cleared it.
