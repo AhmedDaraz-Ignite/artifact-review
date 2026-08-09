@@ -59,9 +59,8 @@ npm test
 npm run test:e2e
 ```
 
-`npm test` runs the Python runtime tests and the remaining browser drives.
-`npm run test:e2e` runs the Gherkin scenarios and the latency check through
-Playwright.
+`npm test` runs the Python runtime tests. `npm run test:e2e` runs the Gherkin
+scenarios and the latency check through Playwright.
 
 All test code lives under `tests/`:
 
@@ -72,17 +71,19 @@ support/             Playwright fixtures, page objects, and the arev driver
 fixtures/            HTML artifacts the tests open
 runtime/             Python tests for the skill runtime
 perf.spec.js         delivery latency check
-legacy/              the pre-Playwright Node code, still being ported
-run.sh               runs runtime/ and legacy/
+run.sh               runs runtime/
 ```
 
-Write new browser coverage as a scenario under `tests/features/`. Everything in
-`tests/legacy/` predates the Playwright runner: nine drives, their two helper
-modules, and `bench-runtime.mjs`, which the efficiency audit runs by hand. The
-directory is a closed set. Nothing inside it may import from the Playwright
-suite, and nothing outside it may import in, so the last pull request of the
-migration deletes the whole directory. Each drive goes with the pull request
-that ports its assertions, along with its line in `tests/run.sh`.
+Write new browser coverage as a scenario under `tests/features/`. Keep every
+selector in a page object under `tests/support/`, never in a step or a feature
+file. Step definitions use regular expressions with capture groups, and name
+the allowed values wherever a fixed set exists, so a typo becomes an undefined
+step instead of a silent pass.
+
+The efficiency audit has its own browser measurement script,
+`docs/skill-efficiency-audit/bench-runtime.mjs`. It is deliberately
+self-contained and is run by hand through `docs/skill-efficiency-audit/bench.sh`,
+not by either test command.
 
 Also smoke-test the installable directory when changing packaging or metadata:
 

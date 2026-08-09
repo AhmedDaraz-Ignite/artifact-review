@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +82,17 @@ export class Arev {
   async api(method, endpoint, body) {
     if (!this.sessionUrl) throw new Error('no session is open');
     return sessionApi(this.sessionUrl)(method, endpoint, body);
+  }
+
+  // The scene and its preview are exported after the click.
+  async queuedWhiteboard() {
+    let item = null;
+    await expect.poll(async () => {
+      item = (await this.api('GET', '/state')).queue
+        .find(entry => entry.kind === 'whiteboard');
+      return Boolean(item);
+    }, { timeout:20_000 }).toBe(true);
+    return item;
   }
 
   async stop() {

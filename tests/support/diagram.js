@@ -12,6 +12,7 @@ class Board {
     this.page = page;
     this.id = id;
     this.host = page.frameLocator('#art').locator(`#arev-board-${id}`);
+    this.activation = this.host.getByRole('button', { name:OPEN_EDITOR });
     this.frames = this.host.locator('iframe');
     this.sharedFrame = this.host.locator('#arev-shared-whiteboard-frame');
     this.editor = null;
@@ -39,7 +40,7 @@ class Board {
 
   async unlock() {
     await this.host.scrollIntoViewIfNeeded();
-    await this.host.getByRole('button', { name:OPEN_EDITOR }).click();
+    await this.activation.click();
     await this.frames.waitFor({ state:'visible', timeout:30_000 });
     await expect.poll(async () => {
       this.editor = await this.readyEditor();

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# arev selftest. Runs the acceptance drives against fresh artifact copies.
+# Runs the Python runtime tests against a temporary ARTIFACT_REVIEW_HOME.
 set -uo pipefail
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 A="$ROOT/skills/artifact-review"
@@ -14,22 +14,6 @@ cleanup() {
   [ -n "${KEEP_LOGS-}" ] || rm -rf "$WORK"
 }
 trap cleanup EXIT
-
-run() {
-  local name="$1" script="$2" fixture="$3"
-  local art="$WORK/$name artifact.html"
-  cp "$ROOT/tests/fixtures/$fixture" "$art"
-  echo "== $name"
-  local raw="$WORK/$name.log"
-  node "$ROOT/tests/legacy/$script" "$art" > "$raw" 2>&1
-  local code=$?
-  grep -E "^(PASS|FAIL|pageerrors)" "$raw" | tee -a "$OUT"
-  # A crashed drive prints no FAIL lines. Count the crash itself as one.
-  if [ $code -ne 0 ] && ! grep -q "^FAIL" "$raw"; then
-    echo "FAIL $name drive crashed (exit $code) - see $raw" | tee -a "$OUT"
-    tail -5 "$raw"
-  fi
-}
 
 echo "== cli-foundation"
 CLI_RAW="$WORK/cli-foundation.log"
@@ -75,9 +59,6 @@ else
   echo "FAIL artifact checks - see $CHECKS_RAW" | tee -a "$OUT"
   tail -20 "$CHECKS_RAW"
 fi
-
-run wb   selftest-whiteboard.mjs clean.html
-run wboff selftest-whiteboard-offline.mjs clean.html
 
 echo
 if grep -q "^FAIL" "$OUT"; then

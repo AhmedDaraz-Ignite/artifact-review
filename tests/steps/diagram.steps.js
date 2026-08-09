@@ -303,12 +303,7 @@ Then(/^no hostile link reached the saved "([^"]*)" scene$/, async ({ arev }, id)
 
 Then('the queued whiteboard item summarizes the drawing with no typed note',
   async ({ arev }) => {
-    let item = null;
-    await expect.poll(async () => {
-      const state = await arev.api('GET', '/state');
-      item = state.queue.find(entry => entry.kind === 'whiteboard');
-      return Boolean(item);
-    }, { timeout:20_000 }).toBe(true);
+    const item = await arev.queuedWhiteboard();
     expect(item.summary).toMatch(/\d+ added/);
     expect(item.summary_lines.filter(line => /^Added rectangle/.test(line)).length,
       `summary lines were ${JSON.stringify(item.summary_lines)}`).toBeGreaterThan(0);
