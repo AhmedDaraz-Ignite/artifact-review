@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test as base, createBdd } from 'playwright-bdd';
 import { Arev, ROOT } from './arev.js';
+import { Whiteboards } from './diagram.js';
 import { Network } from './network.js';
 import { AnnotationPopover, ReviewRail } from './review-ui.js';
 
@@ -33,6 +34,10 @@ export const test = base.extend({
       },
       append:html => fs.appendFile(file, html),
       read:() => fs.readFile(file, 'utf8'),
+      async replace(from, to) {
+        const source = await fs.readFile(file, 'utf8');
+        await fs.writeFile(file, source.replace(from, to));
+      },
     });
     await fs.rm(dir, { recursive:true, force:true });
   },
@@ -49,6 +54,10 @@ export const test = base.extend({
 
   popover:async ({ page }, use) => {
     await use(new AnnotationPopover(page));
+  },
+
+  boards:async ({ page }, use) => {
+    await use(new Whiteboards(page));
   },
 
   network:async ({ page }, use) => {

@@ -1,0 +1,182 @@
+import { expect } from '@playwright/test';
+import { pollUntil } from './poll.js';
+
+const OPEN_EDITOR = /Open diagram editor|Click to edit diagram/i;
+
+class Board {
+  constructor(page, id) {
+    this.page = page;
+    this.id = id;
+    this.host = page.frameLocator('#art').locator(`#arev-board-${id}`);
+    this.activation = this.host.getByRole('button', { name:OPEN_EDITOR });
+    this.frames = this.host.locator('iframe');
+    this.sharedFrame = this.host.locator('#arev-shared-whiteboard-frame');
+    this.editor = null;
+    this.saved = null;
+    this.drawn = null;
+  }
+
+  mount() {
+    return this.host.waitFor({ state:'visible', timeout:30_000 });
+  }
+
+  // Every diagram uses the same editor frame. Find it by the diagram in its URL.
+  async readyEditor() {
+    const frame = this.page.frames().find(candidate => {
+      try {
+        const url = new URL(candidate.url());
+        return url.pathname === '/whiteboard-frame' &&
+          url.searchParams.get('diagram') === this.id;
+      } catch {
+        return false;
+      }
+    });
+    if (!frame) return null;
+    const shells = await frame.locator('.wb-shell').count();
+    return shells ? frame : null;
+  }
+
+  async unlock() {
+    await this.host.scrollIntoViewIfNeeded();
+    await this.activation.click();
+    await this.frames.waitFor({ state:'visible', timeout:30_000 });
+    this.editor = await pollUntil(() => this.readyEditor(), { timeout:30_000 });
+    return this.editor;
+  }
+
+  async open() {
+    await this.unlock();
+    await this.editor.locator('.excalidraw').waitFor({ state:'visible', timeout:30_000 });
+    return this.editor;
+  }
+
+  // A Mermaid source edit reloads the artifact, which detaches the editor frame.
+  async reopen() {
+    const detached = this.editor;
+    await expect
+      .poll(() => this.page.frames().includes(detached), { timeout:20_000 })
+      .toBe(false);
+    await this.mount();
+    return this.unlock();
+  }
+
+  // Drawn in the bottom right corner, where the Excalidraw panels are not.
+  async drawRectangle() {
+    await this.host.scrollIntoViewIfNeeded();
+    const tool = this.editor.locator('[data-testid="toolbar-rectangle"]');
+    await this.editor.locator('body').press('r');
+    if (!await tool.isChecked()) await tool.check({ force:true });
+    const canvas = this.editor.locator('canvas.excalidraw__canvas.interactive');
+    const box = await canvas.boundingBox();
+    if (!box) throw new Error('the Excalidraw canvas has no bounding box');
+    const width = Math.min(150, Math.max(80, box.width * 0.15));
+    const height = Math.min(82, Math.max(48, box.height * 0.28));
+    const start = {
+      x:Math.max(12, box.width - width - 24),
+      y:Math.max(12, box.height - height - 18),
+    };
+    await canvas.hover({ position:start, force:true });
+    await this.page.mouse.down();
+    await canvas.hover({ position:{ x:start.x + width, y:start.y + height }, force:true });
+    await this.page.mouse.up();
+    this.drawn = { width, height, completedAt:Date.now() };
+    await this.page.waitForTimeout(200);
+    return this.drawn;
+  }
+}
+
+// A Mermaid block the page rendered to SVG on its own, before any editing.
+class RenderedDiagram {
+  constructor(artifact, id) {
+    this.id = id;
+    this.holder = artifact.locator(`#${id}`);
+    this.svg = this.holder.locator('svg');
+    this.before = null;
+    this.beforeZoom = null;
+    this.keys = null;
+  }
+
+  snapshot() {
+    return this.holder.evaluate(element => ({
+      theme:element.getAttribute('data-arev-mermaid-theme'),
+      svgId:element.querySelector('svg')?.id || '',
+      markup:element.innerHTML,
+      renders:window.__arevRenders || 0,
+    }));
+  }
+
+  watchRenders() {
+    return this.holder.evaluate(() => {
+      window.__arevRenders = 0;
+      document.addEventListener(
+        'arev:mermaid-rendered', () => { window.__arevRenders += 1; });
+    });
+  }
+
+  nodeKeys() {
+    return this.holder.evaluate(element =>
+      [...element.querySelectorAll('[data-arev-node-key]')]
+        .map(node => node.getAttribute('data-arev-node-key')));
+  }
+
+  viewBox() {
+    return this.svg.getAttribute('viewBox');
+  }
+
+  zoom() {
+    return this.svg.evaluate(svg => {
+      const rect = svg.getBoundingClientRect();
+      svg.dispatchEvent(new WheelEvent('wheel', {
+        bubbles:true,
+        cancelable:true,
+        deltaY:-120,
+        clientX:rect.left + rect.width / 2,
+        clientY:rect.top + rect.height / 2,
+      }));
+    });
+  }
+
+  reset() {
+    return this.svg.evaluate(svg =>
+      svg.dispatchEvent(new MouseEvent('dblclick', { bubbles:true })));
+  }
+
+  cursor() {
+    return this.svg.evaluate(svg => svg.style.cursor);
+  }
+}
+
+export class Whiteboards {
+  constructor(page) {
+    this.page = page;
+    this.artifact = page.frameLocator('#art');
+    this.editorFrames = this.artifact.locator('[id^="arev-board-"] iframe');
+    this.themeToggle = this.artifact.locator('#themeToggle');
+    this.byId = new Map();
+    this.renderedById = new Map();
+  }
+
+  board(id) {
+    if (!this.byId.has(id)) this.byId.set(id, new Board(this.page, id));
+    return this.byId.get(id);
+  }
+
+  rendered(id) {
+    if (!this.renderedById.has(id)) {
+      this.renderedById.set(id, new RenderedDiagram(this.artifact, id));
+    }
+    return this.renderedById.get(id);
+  }
+
+  node({ diagramId, nodeId }) {
+    return {
+      diagramId,
+      nodeId,
+      locator:this.artifact.locator(`#${diagramId} #${nodeId} text`),
+    };
+  }
+
+  saved() {
+    return [...this.byId.values()].filter(board => board.saved);
+  }
+}

@@ -1,8 +1,7 @@
 import { When, Then, expect } from '../support/bdd.js';
 
 Then(/^the agent receives feedback saying "([^"]*)"$/, async ({ arev }, text) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('feedback');
+  const event = await arev.awaitEvent('feedback');
   // Chat notes carry words in text, annotations in comment.
   expect(event.items.map(item => item.text ?? item.comment)).toContain(text);
 });
@@ -14,14 +13,12 @@ Then('the agent receives nothing', async ({ arev }) => {
 
 Then('the agent receives one feedback batch of kinds:', async ({ arev }, table) => {
   const expected = table.raw().map(([kind]) => kind).sort();
-  const event = await arev.poll();
-  expect(event.type).toBe('feedback');
+  const event = await arev.awaitEvent('feedback');
   expect(event.items.map(item => item.kind).sort()).toEqual(expected);
 });
 
 Then(/^the agent receives (\d+) chat notes?$/, async ({ arev }, count) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('feedback');
+  const event = await arev.awaitEvent('feedback');
   expect(event.items.filter(item => item.kind === 'chat')).toHaveLength(count);
 });
 

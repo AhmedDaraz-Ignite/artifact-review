@@ -1,11 +1,18 @@
 import { Given, Then, expect } from '../support/bdd.js';
 
-Given(/^a ([\w-]+) artifact$/, async ({ artifact }, kind) => {
-  await artifact.from(`${kind}.html`);
+// The fixtures are listed so other "a ... artifact" steps cannot collide here.
+Given(/^a (broken|clean|diagram-features|mermaid-broken|themed|viewport-overflow) artifact$/,
+  async ({ artifact }, kind) => {
+    await artifact.from(`${kind}.html`);
+  });
+
+Given('the review server is running', async ({ arev }) => {
+  await arev.open();
 });
 
 Given('the reviewer has the review session open', async ({ arev, page, rail }) => {
-  await arev.open();
+  // A scenario that already started the server only needs the browser.
+  if (!arev.sessionUrl) await arev.open();
   await page.goto(arev.sessionUrl, { waitUntil:'domcontentloaded' });
   await expect(rail.curtain).toBeHidden();
 });

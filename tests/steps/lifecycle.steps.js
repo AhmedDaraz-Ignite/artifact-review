@@ -27,13 +27,16 @@ Then('ending the review lives only in the composer menu', async ({ page }) => {
   await expect(page.locator('#endBtn')).toHaveCount(0);
 });
 
+When('the agent ends the review', async ({ arev }) => {
+  await arev.api('POST', '/end', { by:'user' });
+});
+
 Then('the reviewer was asked to confirm', async ({ dialogs }) => {
   expect(dialogs).not.toHaveLength(0);
 });
 
 Then('the agent is told the review ended by the user', async ({ arev }) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('ended');
+  const event = await arev.awaitEvent('ended');
   expect(event.by).toBe('user');
   arev.endedState = await arev.api('GET', '/state');
 });
