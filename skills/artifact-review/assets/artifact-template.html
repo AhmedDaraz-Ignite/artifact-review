@@ -51,7 +51,17 @@ body {
   font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   overflow-x: hidden;
 }
-main { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+/* The column follows the window, so collapsing the review rail hands the freed space to
+   diagrams, tables and code instead of the margins. Below 1200px nothing changes. */
+main { max-width: clamp(880px, 100% - 320px, 1400px); margin: 0 auto; padding: 40px 20px 80px; }
+/* 840px is the old fixed column minus its padding. Text keeps that measure, so a wider
+   window never makes the lines hard to read. */
+main > * { max-width: 840px; }
+/* Wide content, and any box holding it, takes the whole column instead. Without this a
+   table inside a note or a list keeps the scrollbar this width is meant to remove.
+   Headings and the footer join them so their rules span the section, not the prose. */
+main > :is(h1, h2, h3, footer, .scroll, pre, table, .cards, svg, img),
+main > :has(.scroll, pre, table, .cards, svg, img) { max-width: none; }
 h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
 h2 { font-size: 22px; margin: 48px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border-soft); }
 h3 { font-size: 17px; margin: 28px 0 8px; }

@@ -280,7 +280,9 @@
   css.textContent =
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
     ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
-    ".arev-inline-board{position:relative;width:100%;height:52px;margin:8px 0;background:transparent;border:1px solid rgba(128,128,128,.4);border-radius:8px;overflow:hidden;box-sizing:border-box}" +
+    // max-width defends the board against artifact CSS that caps a column, so it always
+    // spans the same width as the diagram it stands in for.
+    ".arev-inline-board{position:relative;width:100%;max-width:none;height:52px;margin:8px 0;background:transparent;border:1px solid rgba(128,128,128,.4);border-radius:8px;overflow:hidden;box-sizing:border-box}" +
     ".arev-inline-board.arev-inline-active{max-height:calc(100vh - 24px);margin:0;background:#fff}" +
     ".arev-inline-board>iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;background:#fff}" +
     ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(128,128,128,.08);color:inherit;font:600 13px/1.3 sans-serif;cursor:pointer}" +
