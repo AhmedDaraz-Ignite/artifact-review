@@ -20,6 +20,10 @@ Feature: Session security
       | /sdk.js   |
     And the artifact injects the SDK from a hashed URL with no token
 
+  Scenario: The favicon the browser asks for on its own needs no token
+    Then these tokenless requests succeed and leak no token:
+      | /favicon.ico |
+
   Scenario: Frame assets stay readable cross-origin without the token
     Then these tokenless requests are cross-origin readable assets:
       | /whiteboard.css   |
