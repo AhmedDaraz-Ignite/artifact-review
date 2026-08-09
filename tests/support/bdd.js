@@ -34,9 +34,12 @@ export const test = base.extend({
       },
       append:html => fs.appendFile(file, html),
       read:() => fs.readFile(file, 'utf8'),
+      // A silent no-op here would leave a scenario green while it tests nothing.
       async replace(from, to) {
         const source = await fs.readFile(file, 'utf8');
-        await fs.writeFile(file, source.replace(from, to));
+        const next = source.replace(from, to);
+        if (next === source) throw new Error(`artifact.replace found no "${from}"`);
+        await fs.writeFile(file, next);
       },
     });
     await fs.rm(dir, { recursive:true, force:true });

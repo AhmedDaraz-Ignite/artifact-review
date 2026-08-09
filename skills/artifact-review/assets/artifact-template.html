@@ -83,6 +83,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .note { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 0 0 20px; font-size: 15px; }
 .card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: 10px; padding: 16px 18px; }
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+/* A grid item starts at min-width:auto, so a wide child stretches its column past the
+   viewport. Zero lets the card shrink and the .scroll or pre inside it do the scrolling. */
+.cards > * { min-width: 0; }
 @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
 
 /* Human decisions belong in these, never in prose asking the reader to reply. */
