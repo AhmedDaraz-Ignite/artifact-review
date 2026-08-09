@@ -154,7 +154,9 @@ Working scenes store the normalized Mermaid source hash. If the source changes
 after an edit, Artifact Review does not merge or discard work silently: the
 reviewer chooses **Re-convert (discard saved edits)** or **Keep editing saved
 scene**. Submitted feedback receives an immutable scene and PNG snapshot;
-working autosaves remain separate.
+working autosaves remain separate, and ending a review discards every one of
+them, so an edit you never sent does not return on the canvas of the next
+review.
 
 When an artifact already contains rendered Mermaid SVG, annotation mode targets
 the exact node group. Delivered element feedback includes a constrained

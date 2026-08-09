@@ -1637,6 +1637,10 @@ function applyState(next) {
   });
   if (ended) {
     setAnnotate(false);
+    // An editor open at this moment belongs to the review that just ended. Its
+    // teardown flush must never land in the next one, and reopening tears every
+    // editor down while the session is live again.
+    inlineDiagrams.forEach(record => { record.retired = true; });
     showBanner(`Review ended by ${next.ended_by}. This session is read-only.`);
   }
   if (wasEnded && !ended) requestArtifactReload(next.version, { force:true });
@@ -1829,6 +1833,7 @@ async function prepareInlineDiagrams(blocks) {
       channel:randomChannel(),
       saved:null,
       saveTail:Promise.resolve(),
+      retired:!!state?.ended,
     };
     if (generation !== inlineGeneration) return;
     inlineDiagrams.set(block.id, record);
@@ -1903,6 +1908,15 @@ function enqueueDiagram(record, task) {
 
 async function saveInlineDiagram(record, message) {
   const saveId = message.saveId;
+  if (record.retired) {
+    relayToInline(record, {
+      type:"save-result",
+      saveId,
+      ok:false,
+      error:"the review ended, so this scene was not autosaved",
+    });
+    return;
+  }
   try {
     const supplied = message.record;
     if (!supplied || typeof supplied !== "object") {

@@ -62,9 +62,11 @@ reasoning, tools, and edits happen after Received.
 
 Diagram hosts are cheap until the reviewer activates one. One shared sandboxed
 editor frame moves between diagrams; the active scene flushes before a switch
-or artifact reload. Working scenes autosave privately. If Mermaid source and a
-saved scene have different hashes, the browser asks the reviewer to re-convert
-or keep the older scene. Never make that choice for them.
+or artifact reload. Working scenes autosave privately and last only as long as
+the review: ending it drops every autosave that was never sent, so the next
+review opens each diagram from the artifact's own Mermaid source. If Mermaid
+source and a saved scene have different hashes, the browser asks the reviewer
+to re-convert or keep the older scene. Never make that choice for them.
 
 Whiteboard feedback contains a `summary`, an optional reviewer `note`,
 auto-generated `summary_lines` (one sentence per added, removed, moved,

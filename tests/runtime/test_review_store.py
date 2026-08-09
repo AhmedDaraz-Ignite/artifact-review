@@ -377,6 +377,23 @@ class ReviewStoreTests(unittest.TestCase):
             SERVER.STORE = previous_store
             store.close()
 
+    def test_ending_a_review_discards_unsent_editor_drafts(self):
+        previous_session = SERVER.SESSION_DIR
+        SERVER.SESSION_DIR = str(self.session_dir)
+        try:
+            directory = pathlib.Path(SERVER._whiteboard_dir_locked())
+            draft = directory / "process-topology.working.json"
+            draft.write_text("{}", encoding="utf-8")
+            blob = pathlib.Path(SERVER._whiteboard_blob_dir_locked()) / "a.excalidraw"
+            blob.write_text("{}", encoding="utf-8")
+
+            SERVER._discard_working_whiteboards_locked()
+
+            self.assertFalse(draft.exists())
+            self.assertTrue(blob.is_file())
+        finally:
+            SERVER.SESSION_DIR = previous_session
+
 
 if __name__ == "__main__":
     unittest.main()
