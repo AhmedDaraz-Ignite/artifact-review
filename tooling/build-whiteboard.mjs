@@ -176,6 +176,60 @@ const mermaidERSelectorCompatibility = {
   },
 };
 
+// A sequence message runs between two lifelines, far below the participant
+// headers, but the converter binds every message arrow to those headers.
+// Excalidraw then re-routes the arrow onto a header the moment anything moves
+// a participant, and the message label lands on the participant labels.
+const mermaidSequenceArrowBinding = {
+  name: "mermaid-sequence-arrow-binding",
+  setup(buildContext) {
+    const original =
+      "        // Attach to actors if available\n" +
+      "        const from = actorMap[message.from];\n" +
+      "        const to = actorMap[message.to];\n" +
+      "        if (from?.topId && to?.topId) {\n" +
+      '            arrow.start = { type: from.bindType || "rectangle", id: from.topId };\n' +
+      '            arrow.end = { type: to.bindType || "rectangle", id: to.topId };\n' +
+      "        }\n";
+    let patched = false;
+
+    buildContext.onLoad(
+      {
+        filter:
+          /@excalidraw[\\/]mermaid-to-excalidraw[\\/]dist[\\/]parser[\\/]sequence\.js$/,
+      },
+      async ({ path: sourcePath }) => {
+        const source = await readFile(sourcePath, "utf8");
+        const matches = source.split(original).length - 1;
+        if (matches !== 1) {
+          throw new Error(
+            `Expected one Mermaid sequence arrow binding, found ${matches}`,
+          );
+        }
+        patched = true;
+        return {
+          contents: source.replace(original, ""),
+          loader: "js",
+          resolveDir: path.dirname(sourcePath),
+        };
+      },
+    );
+
+    buildContext.onEnd(() => {
+      if (!patched) {
+        return {
+          errors: [{
+            text:
+              "Mermaid's sequence arrow binding transform did not match the " +
+              "expected converter source",
+          }],
+        };
+      }
+      return undefined;
+    });
+  },
+};
+
 // Mermaid 11 prefixes every rendered DOM id with the svg id ("<svgId>-S"),
 // while the converter still looks elements up by the id alone. Each miss
 // makes a supported diagram silently fall back to a flat image.
@@ -302,6 +356,7 @@ const result = await build({
   plugins: [
     offlineExcalidrawFonts,
     mermaidERSelectorCompatibility,
+    mermaidSequenceArrowBinding,
     mermaid11IdPrefixCompatibility,
   ],
 });

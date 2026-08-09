@@ -71,6 +71,31 @@ class Board {
     return this.unlock();
   }
 
+  // Moving a shape is what makes Excalidraw re-derive every endpoint bound to
+  // it, so this is the action that shows a wrong binding. The scene's own
+  // scroll and zoom turn the saved coordinates into canvas ones.
+  async dragShape(element, appState) {
+    await this.host.scrollIntoViewIfNeeded();
+    const canvas = this.canvas;
+    if (!await canvas.boundingBox()) {
+      throw new Error('the Excalidraw canvas has no bounding box');
+    }
+    const box = await canvas.boundingBox();
+    const zoom = appState.zoom?.value || 1;
+    const x = box.x + (element.x + element.width / 2 + appState.scrollX) * zoom;
+    const y = box.y + (element.y + element.height / 2 + appState.scrollY) * zoom;
+    // Excalidraw re-derives bound endpoints as the pointer moves, so the drag
+    // has to arrive as many small steps rather than one jump.
+    await this.page.mouse.move(x, y);
+    await this.page.mouse.down();
+    for (let step = 1; step <= 12; step += 1) {
+      await this.page.mouse.move(x + step * 3, y + step, { steps:1 });
+      await this.page.waitForTimeout(16);
+    }
+    await this.page.mouse.up();
+    await this.page.waitForTimeout(200);
+  }
+
   // Drawn in the bottom right corner, where the Excalidraw panels are not.
   async drawRectangle() {
     await this.host.scrollIntoViewIfNeeded();

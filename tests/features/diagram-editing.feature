@@ -22,6 +22,14 @@ Feature: Editable diagrams
     And the "request-flow" diagram kept the Mermaid source it was rendered from
     And no saved scene repeats an element id
 
+  Scenario: Sequence message labels keep their own arrow and their source order
+    When the reviewer opens the "message-sequence" diagram editor
+    Then the saved "message-sequence" scene holds more than 15 native shapes
+    And the "message-sequence" message labels run top to bottom in source order
+    And no "message-sequence" message arrow is bound to a participant box
+    When the reviewer moves the "message-sequence" first participant box
+    Then the "message-sequence" message labels run top to bottom in source order
+
   Scenario: Every supported Mermaid dialect converts to native shapes
     Then subgraph, state, and class diagrams convert to native shapes
     And the bundled Mermaid runtime is pinned to "11.16.0"
