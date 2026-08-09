@@ -262,6 +262,7 @@ function frameApp() {
     fallback:false,
     saveTimer:0,
     saveSequence:0,
+    fitTimer:0,
     fullscreen:false,
     busy:false,
     root:null,
@@ -381,6 +382,48 @@ function frameApp() {
     document.body.replaceChildren(shell);
   }
 
+  // A fit centres the scene, and Excalidraw's toolbar floats over the top of
+  // the canvas, so the first row of shapes lands underneath it. Move the scene
+  // down by what the toolbar covers, taking it from the slack below.
+  function clearToolbar() {
+    const canvas = document.querySelector("canvas.excalidraw__canvas.interactive");
+    const toolbar = document.querySelector(".App-toolbar");
+    if (!state.api || !canvas || !toolbar) return;
+    const elements = liveElements(state.api.getSceneElements());
+    if (!elements.length) return;
+    const appState = state.api.getAppState();
+    const zoom = appState.zoom.value;
+    const box = canvas.getBoundingClientRect();
+    const screenY = sceneY => (sceneY + appState.scrollY) * zoom;
+    const covered =
+      toolbar.getBoundingClientRect().bottom - box.top + 8 -
+      screenY(Math.min(...elements.map(element => element.y)));
+    const slack =
+      box.height - 8 -
+      screenY(Math.max(...elements.map(element => element.y + (element.height || 0))));
+    const shift = Math.min(covered, slack);
+    if (shift <= 0) return;
+    state.api.updateScene({ appState:{ scrollY:appState.scrollY + shift / zoom } });
+  }
+
+  function fitScene() {
+    if (!state.api) return;
+    try {
+      state.api.scrollToContent(state.api.getSceneElements(), { fitToContent:true });
+      window.setTimeout(clearToolbar, 50);
+    } catch {
+      // Fitting is cosmetic; Excalidraw already centers initialData.
+    }
+  }
+
+  // Excalidraw keeps the zoom it had when the canvas changes size, so the two
+  // changes that matter - the editor mounting and fullscreen - refit once the
+  // new size settles.
+  function queueFit() {
+    clearTimeout(state.fitTimer);
+    state.fitTimer = window.setTimeout(fitScene, 100);
+  }
+
   function currentScene() {
     if (!state.api) return null;
     return {
@@ -474,13 +517,7 @@ function frameApp() {
         onChange:scheduleSave,
         excalidrawAPI:api => {
           state.api = api;
-          window.setTimeout(() => {
-            try {
-              api.scrollToContent(api.getSceneElements(), { fitToContent:true });
-            } catch {
-              // Fitting is cosmetic; Excalidraw already centers initialData.
-            }
-          }, 0);
+          queueFit();
         },
         UIOptions:{
           canvasActions:{
@@ -694,6 +731,9 @@ function frameApp() {
         setStatus(`Feedback failed: ${message.error || "unknown error"}`, "error");
       }
     }
+    // Sent for the frame's own button and for every path the parent drives:
+    // Escape, closing the board, and switching to another one.
+    if (message.type === "fullscreen-state") queueFit();
     if (message.type === "flush") saveNow("flush");
     if (message.type === "unlock") {
       try {

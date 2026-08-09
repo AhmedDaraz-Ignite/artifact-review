@@ -143,6 +143,14 @@ Then(/^only the "([^"]*)" diagram holds the one shared editor frame$/,
     expect(new URL(board.editor.url()).searchParams.get('diagram')).toBe(id);
   });
 
+Then(/^the "([^"]*)" editor canvas is at least as tall as the diagram$/,
+  async ({ boards }, id) => {
+    const board = boards.board(id);
+    const box = await board.canvas.boundingBox();
+    expect(box.height, `${id} canvas height`)
+      .toBeGreaterThanOrEqual(board.diagramHeight);
+  });
+
 Then(/^the "([^"]*)" editor is labelled "([^"]*)"$/, async ({ boards }, id, label) => {
   await expect(boards.board(id).editor.locator('#wbTypeBadge')).toHaveText(label);
 });

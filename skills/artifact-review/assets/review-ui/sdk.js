@@ -281,8 +281,8 @@
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
     ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
     ".arev-inline-board{position:relative;width:100%;height:52px;margin:8px 0;background:transparent;border:1px solid rgba(128,128,128,.4);border-radius:8px;overflow:hidden;box-sizing:border-box}" +
-    ".arev-inline-board.arev-inline-active{max-height:420px;margin:0;background:#fff}" +
-    ".arev-inline-board>iframe{display:block;width:100%;height:100%;border:0;background:#fff}" +
+    ".arev-inline-board.arev-inline-active{max-height:calc(100vh - 24px);margin:0;background:#fff}" +
+    ".arev-inline-board>iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;background:#fff}" +
     ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(128,128,128,.08);color:inherit;font:600 13px/1.3 sans-serif;cursor:pointer}" +
     ".arev-inline-unlock:disabled{cursor:wait;opacity:.6}" +
     ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid rgba(128,128,128,.5);border-radius:999px;background:rgba(128,128,128,.14)}" +
@@ -575,6 +575,17 @@
       return;
     }
 
+    // Read before the style writes below, so the rect costs no extra reflow.
+    // Measured on activation, not at mount: the block keeps growing while
+    // Mermaid renders and fonts settle. The 216px covers the frame's header,
+    // feedback bar, and fallback banner, about 145px owned by
+    // tooling/whiteboard-frame.css and unreadable from here, plus room for
+    // Excalidraw's toolbar, which floats over the canvas.
+    var editorHeight = Math.max(
+      300,
+      Math.round(board.block.getBoundingClientRect().height) + 216,
+    );
+
     var previous = inlineBoards[activeInlineBoardId];
     if (previous) deactivateInlineBoard(previous);
 
@@ -585,7 +596,7 @@
     board.unlocked = false;
     board.wantsUnlock = true;
     board.host.classList.add("arev-inline-active");
-    board.host.style.height = board.editorHeight + "px";
+    board.host.style.height = editorHeight + "px";
     board.host.setAttribute("aria-label", "Inline editable diagram");
     board.overlay.hidden = false;
     board.overlay.disabled = true;
@@ -655,11 +666,6 @@
       host.setAttribute("data-arev-internal", "");
       host.setAttribute("data-arev-diagram-id", id);
       host.setAttribute("aria-label", "Diagram editor available");
-      var measuredHeight = Math.round(
-        block.getBoundingClientRect().height || 320,
-      );
-      var editorHeight = Math.max(300, Math.min(420, measuredHeight + 64));
-
       var overlay = document.createElement("button");
       overlay.type = "button";
       overlay.className = "arev-inline-unlock";
@@ -679,7 +685,6 @@
         iframe: null,
         overlay: overlay,
         overlayLabel: overlayLabel,
-        editorHeight: editorHeight,
         frameVersion: frameVersion,
         unlocked: false,
         wantsUnlock: false,
