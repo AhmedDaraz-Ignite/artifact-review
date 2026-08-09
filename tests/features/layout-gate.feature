@@ -11,9 +11,10 @@ Feature: Layout gate
     And the review is not blocked
 
     Examples:
-      | artifact              |
-      | a clean artifact      |
-      | a scaffolded artifact |
+      | artifact                                    |
+      | a clean artifact                            |
+      | a scaffolded artifact                       |
+      | a scaffolded artifact whose cards hold code |
 
   Scenario: Saving a broken layout blocks the review and tells the agent
     Given a clean artifact

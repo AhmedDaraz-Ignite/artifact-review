@@ -8,8 +8,17 @@ function settledAudit(arev) {
   }, { timeout:20_000 });
 }
 
-Given('a scaffolded artifact', async ({ arev, artifact }) => {
+const WIDE_CARDS = `
+<div class="cards">
+  <div class="card"><h3>Before</h3>
+    <div class="scroll"><pre><code>{ "status": "answered" }</code></pre></div></div>
+  <div class="card"><h3>After</h3>
+    <div class="scroll"><pre><code>{ "item_status": { "a1b2c3d4": "answered", "e5f6": "changes" } }</code></pre></div></div>
+</div>`;
+
+Given(/^a scaffolded artifact( whose cards hold code)?$/, async ({ arev, artifact }, cards) => {
   await arev.run(['new', artifact.path, '--title', 'Scaffold check', '--force']);
+  if (cards) await artifact.replace('<!-- arev:content -->', `<!-- arev:content -->${WIDE_CARDS}`);
   artifact.original = await artifact.read();
 });
 
