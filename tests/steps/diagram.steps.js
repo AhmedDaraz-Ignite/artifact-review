@@ -5,6 +5,11 @@ import { ROOT } from '../support/arev.js';
 
 const EDITOR_CHOICE = '(Keep editing saved scene|Re-convert \\(discard saved edits\\))';
 
+// The fixture's node ids, keyed by the label a reviewer reads on the diagram.
+const NODES = {
+  'API Service':{ diagramId:'rendered-flow-map', nodeId:'node-api-service' },
+};
+
 // The Mermaid dialects the converter must turn into shapes, one sample each.
 const DIALECTS = {
   subgraph:'flowchart LR\n  A["one"] --> P\n  subgraph S["box"]\n    P["proc"]\n  end',
@@ -13,15 +18,6 @@ const DIALECTS = {
 };
 
 const live = saved => (saved.scene?.elements || []).filter(element => !element.isDeleted);
-
-async function savedScene(arev, id, ready = () => true) {
-  let saved = null;
-  await expect.poll(async () => {
-    saved = (await arev.api('GET', `/whiteboard/${id}`)).saved;
-    return Boolean(saved && ready(saved));
-  }, { timeout:20_000 }).toBe(true);
-  return saved;
-}
 
 // Two versions of the same tiny scene: one shape moved, one label changed, one
 // arrow added between them.
@@ -67,7 +63,7 @@ Given(/^the "([^"]*)" diagram has mounted$/, async ({ boards }, id) => {
 Given(/^the reviewer has opened the "([^"]*)" diagram editor$/, async ({ arev, boards }, id) => {
   const board = boards.board(id);
   await board.open();
-  board.saved = await savedScene(arev, id, saved => live(saved).length > 0);
+  board.saved = await arev.savedScene(id, saved => live(saved).length > 0);
 });
 
 When(/^the reviewer opens the "([^"]*)" diagram editor$/, async ({ boards }, id) => {
@@ -98,7 +94,7 @@ When(new RegExp(`^the reviewer chooses "${EDITOR_CHOICE}" in the diagram editor$
   });
 
 When(/^the reviewer clicks the "([^"]*)" diagram node$/, async ({ boards, popover }, label) => {
-  await boards.node(label).locator.click();
+  await boards.node(NODES[label]).locator.click();
   await expect(popover.root).toBeVisible();
 });
 
@@ -154,7 +150,7 @@ Then(/^the "([^"]*)" editor is labelled "([^"]*)"$/, async ({ boards }, id, labe
 Then(/^the saved "([^"]*)" scene holds more than (\d+) native shapes$/,
   async ({ arev, boards }, id, least) => {
     const board = boards.board(id);
-    board.saved = await savedScene(arev, id, saved => live(saved).length > least);
+    board.saved = await arev.savedScene(id, saved => live(saved).length > least);
     const elements = live(board.saved);
     const types = [...new Set(elements.map(element => element.type))];
     expect(elements.length, `${id} element count`).toBeGreaterThan(least);
@@ -211,7 +207,7 @@ Then(/^the annotation names "([^"]*)"$/, async ({ popover }, label) => {
 
 Then(/^the queued diagram-node target names "([^"]*)" and nothing more$/,
   async ({ arev, boards }, label) => {
-    const node = boards.node(label);
+    const node = boards.node(NODES[label]);
     let target = null;
     await expect.poll(async () => {
       const state = await arev.api('GET', '/state');
@@ -229,7 +225,7 @@ Then(/^the delivered diagram-node target still names "([^"]*)"$/,
   async ({ arev, boards }, label) => {
     const delivered = arev.lastEvent.items.find(
       item => item.target?.type === 'mermaid-node');
-    expect(delivered?.target.nodeId).toBe(boards.node(label).nodeId);
+    expect(delivered?.target.nodeId).toBe(boards.node(NODES[label]).nodeId);
   });
 
 Then('the editor offers to keep the saved scene or re-convert it', async ({ boards }) => {
@@ -253,8 +249,7 @@ Then(/^the saved "([^"]*)" scene keeps the hash it was converted from$/,
 Then(/^the saved "([^"]*)" scene is rebuilt from the latest source$/,
   async ({ arev, boards }, id) => {
     const board = boards.board(id);
-    const rebuilt = await savedScene(
-      arev, id, saved => saved.source_hash !== board.saved.source_hash);
+    const rebuilt = await arev.savedScene(id, saved => saved.source_hash !== board.saved.source_hash);
     expect(rebuilt.source_hash).not.toBe(board.saved.source_hash);
     expect(live(rebuilt).length).toBeGreaterThan(0);
   });
@@ -295,7 +290,7 @@ Then('scene link sanitizing keeps only web and mail links', async ({ page }) => 
 });
 
 Then(/^no hostile link reached the saved "([^"]*)" scene$/, async ({ arev }, id) => {
-  const saved = await savedScene(arev, id, scene => (scene.scene?.elements || []).length > 0);
+  const saved = await arev.savedScene(id, scene => (scene.scene?.elements || []).length > 0);
   const links = (saved.scene.elements || []).map(element => element.link).filter(Boolean);
   expect(links.length, 'the safe link from the diagram').toBeGreaterThan(0);
   expect(links.filter(link => !/^https?:\/\/|^mailto:/i.test(link))).toEqual([]);

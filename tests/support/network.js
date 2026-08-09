@@ -1,6 +1,6 @@
 const SEND = '**/send';
 const ARTIFACT_RELOAD = '**/artifact?v=*';
-const HEAVY_ASSETS = ['/whiteboard-frame', '/whiteboard.js', '/whiteboard.css'];
+export const HEAVY_ASSETS = ['/whiteboard-frame', '/whiteboard.js', '/whiteboard.css'];
 const WHITEBOARD_PATH = /whiteboard(?:-frame)?(?:\.js|\.css)?/;
 const SCENE_SAVE = /\/whiteboard\/[^/?]+(?:\?|$)/;
 

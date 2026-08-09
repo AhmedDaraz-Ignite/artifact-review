@@ -52,8 +52,7 @@ When('the reviewer chooses {string} on the curtain', async ({ page }, label) => 
 });
 
 Then('the agent receives a layout event', async ({ arev }) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('layout');
+  await arev.awaitEvent('layout');
 });
 
 Then('the layout event names the kinds:', async ({ arev }, table) => {
@@ -94,8 +93,7 @@ Then('the artifact frame width is restored', async ({ page }) => {
 });
 
 Then('the agent hears about the phone overflow', async ({ arev }) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('layout');
+  const event = await arev.awaitEvent('layout');
   expect((event.layout_warnings || []).some(
     warning => warning.kind === 'h-overflow' && warning.viewportClass === 'mobile',
   )).toBe(true);

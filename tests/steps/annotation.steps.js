@@ -6,8 +6,6 @@ const TARGETS = {
   'the table':frame => frame.locator('table').first(),
 };
 
-const MENU_ITEM = { 'Send now':'popSend', 'Add to review':'popQueue' };
-
 Given('the reviewer has turned annotation mode on', async ({ rail }) => {
   if (await rail.annotateToggle.getAttribute('aria-pressed') !== 'true') {
     await rail.annotateToggle.click();
@@ -53,10 +51,10 @@ When(/^the reviewer presses (\w+)$/, async ({ page }, key) => {
   await page.keyboard.press(key);
 });
 
-Then(/^the annotation menu focuses "(Send now|Add to review)"$/, async ({ page }, label) => {
-  await page.waitForFunction(
-    expected => document.activeElement?.id === expected, MENU_ITEM[label]);
-});
+Then(/^the annotation menu focuses "(Send now|Add to review)"$/,
+  async ({ popover }, label) => {
+    await expect(popover.menuItem(label)).toBeFocused();
+  });
 
 Then('the annotation composer is closed', async ({ popover }) => {
   await expect(popover.root).toBeHidden();

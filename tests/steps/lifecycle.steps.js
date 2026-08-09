@@ -36,8 +36,7 @@ Then('the reviewer was asked to confirm', async ({ dialogs }) => {
 });
 
 Then('the agent is told the review ended by the user', async ({ arev }) => {
-  const event = await arev.poll();
-  expect(event.type).toBe('ended');
+  const event = await arev.awaitEvent('ended');
   expect(event.by).toBe('user');
   arev.endedState = await arev.api('GET', '/state');
 });

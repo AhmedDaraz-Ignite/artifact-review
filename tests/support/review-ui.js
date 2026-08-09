@@ -132,8 +132,12 @@ export class AnnotationPopover {
     this.openMenu = page.locator('#popMenu:popover-open');
   }
 
+  menuItem(label) {
+    return this.page.locator(POPOVER_ACTIONS[label]);
+  }
+
   async choose(label) {
     await this.action.click();
-    await this.page.locator(POPOVER_ACTIONS[label]).click();
+    await this.menuItem(label).click();
   }
 }

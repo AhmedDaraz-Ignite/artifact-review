@@ -10,29 +10,6 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export const AREV = path.join(ROOT, 'skills/artifact-review/scripts/arev.py');
 export const PYTHON = process.env.PYTHON || 'python3';
 
-export function sessionApi(sessionUrl) {
-  const url = new URL(sessionUrl);
-  const headers = {
-    'X-Arev-Token':url.searchParams.get('t'),
-    'Content-Type':'application/json',
-  };
-  return async (method, endpoint, body) => {
-    const response = await fetch(url.origin + endpoint, {
-      method,
-      headers,
-      body:body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      const error = new Error(data.error || `request failed (${response.status})`);
-      error.status = response.status;
-      error.data = data;
-      throw error;
-    }
-    return data;
-  };
-}
-
 export class Arev {
   constructor({ home, artifact }) {
     this.artifact = artifact;
@@ -81,7 +58,38 @@ export class Arev {
 
   async api(method, endpoint, body) {
     if (!this.sessionUrl) throw new Error('no session is open');
-    return sessionApi(this.sessionUrl)(method, endpoint, body);
+    const url = new URL(this.sessionUrl);
+    const response = await fetch(url.origin + endpoint, {
+      method,
+      headers:{
+        'X-Arev-Token':url.searchParams.get('t'),
+        'Content-Type':'application/json',
+      },
+      body:body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      const error = new Error(data.error || `request failed (${response.status})`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async awaitEvent(type) {
+    const event = await this.poll();
+    expect(event.type, `expected a ${type} event`).toBe(type);
+    return event;
+  }
+
+  async savedScene(id, ready = () => true) {
+    let saved = null;
+    await expect.poll(async () => {
+      saved = (await this.api('GET', `/whiteboard/${id}`)).saved;
+      return Boolean(saved && ready(saved));
+    }, { timeout:20_000 }).toBe(true);
+    return saved;
   }
 
   // The scene and its preview are exported after the click.

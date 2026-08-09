@@ -2,11 +2,6 @@ import { expect } from '@playwright/test';
 
 const OPEN_EDITOR = /Open diagram editor|Click to edit diagram/i;
 
-// Maps the label a reviewer sees to the diagram and node ids behind it.
-const NODES = {
-  'API Service':{ diagramId:'rendered-flow-map', nodeId:'node-api-service' },
-};
-
 class Board {
   constructor(page, id) {
     this.page = page;
@@ -173,8 +168,7 @@ export class Whiteboards {
     return this.renderedById.get(id);
   }
 
-  node(label) {
-    const { diagramId, nodeId } = NODES[label];
+  node({ diagramId, nodeId }) {
     return {
       diagramId,
       nodeId,

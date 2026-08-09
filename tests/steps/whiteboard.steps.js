@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { Given, When, Then, expect } from '../support/bdd.js';
+import { HEAVY_ASSETS } from '../support/network.js';
 
 const PNG_MAGIC = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const HEAVY_ASSETS = ['/whiteboard-frame', '/whiteboard.js', '/whiteboard.css'];
 
 function isPng(file) {
   if (!file || !fs.existsSync(file)) return false;
@@ -27,10 +27,7 @@ Given('every request outside the review server is blocked', async ({ arev, netwo
 });
 
 Given(/^the converted "([^"]*)" scene is saved$/, async ({ arev, network }, id) => {
-  await expect
-    .poll(async () => Boolean((await arev.api('GET', `/whiteboard/${id}`)).saved),
-      { timeout:15_000 })
-    .toBe(true);
+  await arev.savedScene(id);
   network.sceneSaves.length = 0;
 });
 
@@ -92,11 +89,8 @@ Then(/^the scene save lands inside the (\d+)ms debounce window$/,
 Then(/^the saved "([^"]*)" scene holds the drawn rectangle and its source identity$/,
   async ({ arev, boards }, id) => {
     const board = boards.board(id);
-    let saved = null;
-    await expect.poll(async () => {
-      saved = (await arev.api('GET', `/whiteboard/${id}`)).saved;
-      return Boolean(saved && drawnRectangle(saved.scene || {}, board.drawn));
-    }, { timeout:15_000 }).toBe(true);
+    const saved = await arev.savedScene(
+      id, entry => drawnRectangle(entry.scene || {}, board.drawn));
     expect(saved.source_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(saved.text_metrics_version).toBe(1);
     expect(saved.updated_at, 'a save timestamp').toBeTruthy();
@@ -124,8 +118,7 @@ Then('the queued whiteboard item has a scene file and a PNG preview', async ({ a
 
 Then('the agent receives one diagram batch summarizing:', async ({ arev }, table) => {
   const expected = table.raw().map(([summary]) => summary).sort();
-  const event = await arev.poll();
-  expect(event.type).toBe('feedback');
+  const event = await arev.awaitEvent('feedback');
   arev.deliveredBoards = event.items.filter(item => item.kind === 'whiteboard');
   expect(arev.deliveredBoards.map(item => item.summary).sort()).toEqual(expected);
 });
@@ -156,8 +149,7 @@ Then('the artifact renders its Mermaid to SVG offline', async ({ boards }) => {
 
 Then(/^the agent receives the diagram note "([^"]*)" with no draft left$/,
   async ({ arev, rail }, summary) => {
-    const event = await arev.poll();
-    expect(event.type).toBe('feedback');
+    const event = await arev.awaitEvent('feedback');
     arev.deliveredBoards = event.items.filter(item => item.kind === 'whiteboard');
     expect(arev.deliveredBoards.map(item => item.summary)).toEqual([summary]);
     await expect(rail.queueCount).toHaveText('0');
