@@ -3,7 +3,7 @@ import { When, Then, expect } from '../support/bdd.js';
 When('the reviewer switches the page theme', async ({ boards }) => {
   const flow = boards.rendered('themed-flow');
   flow.before = await flow.snapshot();
-  await flow.countRenders();
+  await flow.watchRenders();
   await boards.themeToggle.click();
 });
 

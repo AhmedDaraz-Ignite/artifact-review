@@ -70,13 +70,9 @@ When('the reviewer taps the scrim', async ({ rail }) => {
 });
 
 When(/^the agent queues (\d+) drafts$/, async ({ arev, rail }, count) => {
-  for (let start = 0; start < count; start += 20) {
-    await Promise.all(Array.from(
-      { length:Math.min(20, count - start) },
-      (_, offset) => arev.api('POST', '/queue', {
-        item:{ kind:'chat', text:`dock draft ${start + offset + 1}` },
-      })));
-  }
+  await arev.postMany(count, '/queue', index => ({
+    item:{ kind:'chat', text:`dock draft ${index + 1}` },
+  }));
   await expect(rail.queueCount).toHaveText(String(count));
 });
 

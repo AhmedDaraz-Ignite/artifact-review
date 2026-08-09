@@ -1,13 +1,19 @@
 import { Then, expect } from '../support/bdd.js';
 import { rawRequest } from '../support/raw-http.js';
 
+const DRAFT_BODY = JSON.stringify({ item:{ kind:'chat', text:'must not queue' } });
+
+const tokened = (arev, path, headers = {}) =>
+  rawRequest(arev.origin, { path, headers:{ 'X-Arev-Token':arev.token, ...headers } });
+
 Then('these tokenless requests are refused:', async ({ arev }, table) => {
   for (const [method, endpoint] of table.raw()) {
+    const posting = method === 'POST';
     const response = await rawRequest(arev.origin, {
       path:endpoint,
       method,
-      headers:method === 'POST' ? { 'Content-Type':'application/json' } : {},
-      body:method === 'POST' ? JSON.stringify({ item:{ kind:'chat', text:'must not queue' } }) : undefined,
+      headers:posting ? { 'Content-Type':'application/json' } : {},
+      body:posting ? DRAFT_BODY : undefined,
     });
     expect(response.status, `${method} ${endpoint}`).toBe(403);
   }
@@ -46,19 +52,13 @@ Then(/^a request to "([^"]*)" with a wrong token is refused$/, async ({ arev }, 
 
 Then('these requests with the session token succeed:', async ({ arev }, table) => {
   for (const [endpoint] of table.raw()) {
-    const response = await rawRequest(arev.origin, {
-      path:endpoint,
-      headers:{ 'X-Arev-Token':arev.token },
-    });
+    const response = await tokened(arev, endpoint);
     expect(response.status, endpoint).toBe(200);
   }
 });
 
 Then('the review state grants no cross-origin access', async ({ arev }) => {
-  const response = await rawRequest(arev.origin, {
-    path:'/state',
-    headers:{ 'X-Arev-Token':arev.token },
-  });
+  const response = await tokened(arev, '/state');
   expect(response.headers['access-control-allow-origin']).toBeUndefined();
 });
 
@@ -72,19 +72,13 @@ Then(/^a request to "([^"]*)" from another host is refused$/, async ({ arev }, e
 
 Then(/^a tokened request to "([^"]*)" from another host is refused$/,
   async ({ arev }, endpoint) => {
-    const response = await rawRequest(arev.origin, {
-      path:endpoint,
-      headers:{ Host:'attacker.invalid', 'X-Arev-Token':arev.token },
-    });
+    const response = await tokened(arev, endpoint, { Host:'attacker.invalid' });
     expect(response.status).toBe(403);
   });
 
 Then(/^requesting "([^"]*)" with the session token returns (\d+)$/,
   async ({ arev }, endpoint, status) => {
-    const response = await rawRequest(arev.origin, {
-      path:endpoint,
-      headers:{ 'X-Arev-Token':arev.token },
-    });
+    const response = await tokened(arev, endpoint);
     expect(response.status).toBe(status);
     arev.lastRawBody = response.body;
   });

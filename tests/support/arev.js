@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { pollUntil } from './poll.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -58,11 +59,10 @@ export class Arev {
 
   async api(method, endpoint, body) {
     if (!this.sessionUrl) throw new Error('no session is open');
-    const url = new URL(this.sessionUrl);
-    const response = await fetch(url.origin + endpoint, {
+    const response = await fetch(this.origin + endpoint, {
       method,
       headers:{
-        'X-Arev-Token':url.searchParams.get('t'),
+        'X-Arev-Token':this.token,
         'Content-Type':'application/json',
       },
       body:body === undefined ? undefined : JSON.stringify(body),
@@ -77,30 +77,35 @@ export class Arev {
     return data;
   }
 
+  // Twenty calls in flight at a time, so a long setup stays quick without
+  // burying the single-threaded review server.
+  async postMany(count, endpoint, body) {
+    for (let start = 0; start < count; start += 20) {
+      await Promise.all(Array.from(
+        { length:Math.min(20, count - start) },
+        (_, offset) => this.api('POST', endpoint, body(start + offset))));
+    }
+  }
+
   async awaitEvent(type) {
     const event = await this.poll();
     expect(event.type, `expected a ${type} event`).toBe(type);
     return event;
   }
 
-  async savedScene(id, ready = () => true) {
-    let saved = null;
-    await expect.poll(async () => {
-      saved = (await this.api('GET', `/whiteboard/${id}`)).saved;
-      return Boolean(saved && ready(saved));
-    }, { timeout:20_000 }).toBe(true);
-    return saved;
+  savedScene(id, ready = () => true) {
+    return pollUntil(async () => {
+      const { saved } = await this.api('GET', `/whiteboard/${id}`);
+      return saved && ready(saved) ? saved : null;
+    }, { timeout:20_000 });
   }
 
   // The scene and its preview are exported after the click.
-  async queuedWhiteboard() {
-    let item = null;
-    await expect.poll(async () => {
-      item = (await this.api('GET', '/state')).queue
-        .find(entry => entry.kind === 'whiteboard');
-      return Boolean(item);
-    }, { timeout:20_000 }).toBe(true);
-    return item;
+  queuedWhiteboard() {
+    return pollUntil(
+      async () => (await this.api('GET', '/state')).queue
+        .find(entry => entry.kind === 'whiteboard'),
+      { timeout:20_000 });
   }
 
   async stop() {

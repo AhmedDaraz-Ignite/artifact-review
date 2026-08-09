@@ -1,4 +1,5 @@
 import { expect } from '@playwright/test';
+import { pollUntil } from './poll.js';
 
 const OPEN_EDITOR = /Open diagram editor|Click to edit diagram/i;
 
@@ -12,6 +13,7 @@ class Board {
     this.sharedFrame = this.host.locator('#arev-shared-whiteboard-frame');
     this.editor = null;
     this.saved = null;
+    this.drawn = null;
   }
 
   mount() {
@@ -30,17 +32,15 @@ class Board {
       }
     });
     if (!frame) return null;
-    return await frame.locator('.wb-shell').count() ? frame : null;
+    const shells = await frame.locator('.wb-shell').count();
+    return shells ? frame : null;
   }
 
   async unlock() {
     await this.host.scrollIntoViewIfNeeded();
     await this.activation.click();
     await this.frames.waitFor({ state:'visible', timeout:30_000 });
-    await expect.poll(async () => {
-      this.editor = await this.readyEditor();
-      return Boolean(this.editor);
-    }, { timeout:30_000 }).toBe(true);
+    this.editor = await pollUntil(() => this.readyEditor(), { timeout:30_000 });
     return this.editor;
   }
 
@@ -105,7 +105,7 @@ class RenderedDiagram {
     }));
   }
 
-  countRenders() {
+  watchRenders() {
     return this.holder.evaluate(() => {
       window.__arevRenders = 0;
       document.addEventListener(

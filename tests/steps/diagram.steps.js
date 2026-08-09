@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Given, When, Then, expect } from '../support/bdd.js';
 import { ROOT } from '../support/arev.js';
+import { pollUntil } from '../support/poll.js';
 
 const EDITOR_CHOICE = '(Keep editing saved scene|Re-convert \\(discard saved edits\\))';
 
@@ -17,7 +18,8 @@ const DIALECTS = {
   class:'classDiagram\n  class Job {\n    +id\n  }\n  Job <|-- Run',
 };
 
-const live = saved => (saved.scene?.elements || []).filter(element => !element.isDeleted);
+const elements = saved => saved.scene?.elements || [];
+const live = saved => elements(saved).filter(element => !element.isDeleted);
 
 // Two versions of the same tiny scene: one shape moved, one label changed, one
 // arrow added between them.
@@ -45,15 +47,13 @@ async function sceneSummary(boards) {
   return boards.summary;
 }
 
-async function unrenderedFindings(arev) {
-  let findings = [];
-  await expect.poll(async () => {
+function unrenderedFindings(arev) {
+  return pollUntil(async () => {
     const { audit } = await arev.api('GET', '/state');
-    findings = (audit.findings || []).filter(
+    const findings = (audit.findings || []).filter(
       finding => finding.kind === 'mermaid-render-failed');
-    return findings.length;
-  }, { timeout:20_000 }).toBeGreaterThan(0);
-  return findings;
+    return findings.length ? findings : null;
+  }, { timeout:20_000 });
 }
 
 Given(/^the "([^"]*)" diagram has mounted$/, async ({ boards }, id) => {
@@ -208,12 +208,10 @@ Then(/^the annotation names "([^"]*)"$/, async ({ popover }, label) => {
 Then(/^the queued diagram-node target names "([^"]*)" and nothing more$/,
   async ({ arev, boards }, label) => {
     const node = boards.node(NODES[label]);
-    let target = null;
-    await expect.poll(async () => {
+    const target = await pollUntil(async () => {
       const state = await arev.api('GET', '/state');
-      target = state.queue.find(item => item.target?.type === 'mermaid-node')?.target;
-      return Boolean(target);
-    }).toBe(true);
+      return state.queue.find(item => item.target?.type === 'mermaid-node')?.target;
+    });
     expect(Object.keys(target).sort())
       .toEqual(['diagramId', 'label', 'nodeId', 'selector', 'type']);
     expect(target.diagramId).toBe(node.diagramId);
@@ -229,7 +227,7 @@ Then(/^the delivered diagram-node target still names "([^"]*)"$/,
   });
 
 Then('the editor offers to keep the saved scene or re-convert it', async ({ boards }) => {
-  const editor = boards.board('request-flow').editor;
+  const { editor } = boards.board('request-flow');
   await expect(editor.getByRole('button', { name:'Keep editing saved scene' })).toBeVisible();
   await expect(
     editor.getByRole('button', { name:'Re-convert (discard saved edits)' })).toBeVisible();
@@ -248,9 +246,9 @@ Then(/^the saved "([^"]*)" scene keeps the hash it was converted from$/,
 
 Then(/^the saved "([^"]*)" scene is rebuilt from the latest source$/,
   async ({ arev, boards }, id) => {
-    const board = boards.board(id);
-    const rebuilt = await arev.savedScene(id, saved => saved.source_hash !== board.saved.source_hash);
-    expect(rebuilt.source_hash).not.toBe(board.saved.source_hash);
+    const converted = boards.board(id).saved.source_hash;
+    const rebuilt = await arev.savedScene(id, saved => saved.source_hash !== converted);
+    expect(rebuilt.source_hash).not.toBe(converted);
     expect(live(rebuilt).length).toBeGreaterThan(0);
   });
 
@@ -290,8 +288,8 @@ Then('scene link sanitizing keeps only web and mail links', async ({ page }) => 
 });
 
 Then(/^no hostile link reached the saved "([^"]*)" scene$/, async ({ arev }, id) => {
-  const saved = await arev.savedScene(id, scene => (scene.scene?.elements || []).length > 0);
-  const links = (saved.scene.elements || []).map(element => element.link).filter(Boolean);
+  const saved = await arev.savedScene(id, entry => elements(entry).length > 0);
+  const links = elements(saved).map(element => element.link).filter(Boolean);
   expect(links.length, 'the safe link from the diagram').toBeGreaterThan(0);
   expect(links.filter(link => !/^https?:\/\/|^mailto:/i.test(link))).toEqual([]);
 });

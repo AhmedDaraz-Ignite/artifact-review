@@ -32,8 +32,8 @@ export class Network {
     const context = this.page.context();
     context.on('request', request => {
       const url = new URL(request.url());
-      if (url.origin === origin) {
-        if (WHITEBOARD_PATH.test(url.pathname)) this.whiteboardAssets.push(url.href);
+      if (url.origin === origin && WHITEBOARD_PATH.test(url.pathname)) {
+        this.whiteboardAssets.push(url.href);
       } else if (!reachable(url)) {
         this.external.push(url.href);
       }

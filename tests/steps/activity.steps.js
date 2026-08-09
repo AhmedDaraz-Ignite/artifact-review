@@ -15,21 +15,15 @@ When('the reviewer queues a draft through the review API', async ({ arev }) => {
 });
 
 When(/^(\d+) agent status updates overrun the delta window$/, async ({ arev }, count) => {
-  for (let start = 0; start < count; start += 20) {
-    await Promise.all(Array.from(
-      { length:Math.min(20, count - start) },
-      () => arev.api('POST', '/agent-status', { status:'working' })));
-  }
+  await arev.postMany(count, '/agent-status', () => ({ status:'working' }));
 });
 
 When('the reviewer loads every earlier activity page', async ({ arev, rail }) => {
-  for (
-    let loaded = await rail.feedEntries.count();
-    loaded < arev.opening.activity.total;
-    loaded = await rail.feedEntries.count()
-  ) {
+  let loaded = await rail.feedEntries.count();
+  while (loaded < arev.opening.activity.total) {
     await rail.loadEarlier.click();
     await expect.poll(() => rail.feedEntries.count()).toBeGreaterThan(loaded);
+    loaded = await rail.feedEntries.count();
   }
 });
 

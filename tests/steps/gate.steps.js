@@ -1,11 +1,11 @@
 import { Given, When, Then, expect } from '../support/bdd.js';
+import { pollUntil } from '../support/poll.js';
 
-async function settledAudit(arev) {
-  return expect.poll(async () => {
-    const state = await arev.api('GET', '/state');
-    return state.audit.status === 'pending' ? null : state.audit;
-  }, { timeout:20_000 }).not.toBe(null)
-    .then(async () => (await arev.api('GET', '/state')).audit);
+function settledAudit(arev) {
+  return pollUntil(async () => {
+    const { audit } = await arev.api('GET', '/state');
+    return audit.status === 'pending' ? null : audit;
+  }, { timeout:20_000 });
 }
 
 Given('a scaffolded artifact', async ({ arev, artifact }) => {
@@ -43,11 +43,11 @@ Then(/^the review is blocked with at least (\d+) proven failures$/,
       .toBeGreaterThanOrEqual(count);
   });
 
-Then('{string} is offered', async ({ page }, label) => {
+Then(/^"(Show anyway)" is offered$/, async ({ page }, label) => {
   await expect(page.getByRole('button', { name:label })).toBeVisible();
 });
 
-When('the reviewer chooses {string} on the curtain', async ({ page }, label) => {
+When(/^the reviewer chooses "(Show anyway)" on the curtain$/, async ({ page }, label) => {
   await page.getByRole('button', { name:label }).click();
 });
 

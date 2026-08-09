@@ -10,6 +10,14 @@ function isPng(file) {
   return bytes.length > 100 && bytes.subarray(0, 8).equals(PNG_MAGIC);
 }
 
+// Kept on the session so the later "same blobs" and "valid PNG" steps can
+// assert against the batch this one received.
+async function deliveredBoards(arev) {
+  const event = await arev.awaitEvent('feedback');
+  arev.deliveredBoards = event.items.filter(item => item.kind === 'whiteboard');
+  return arev.deliveredBoards;
+}
+
 function drawnRectangle(scene, expected) {
   return (scene.elements || []).some(element =>
     !element.isDeleted &&
@@ -118,9 +126,8 @@ Then('the queued whiteboard item has a scene file and a PNG preview', async ({ a
 
 Then('the agent receives one diagram batch summarizing:', async ({ arev }, table) => {
   const expected = table.raw().map(([summary]) => summary).sort();
-  const event = await arev.awaitEvent('feedback');
-  arev.deliveredBoards = event.items.filter(item => item.kind === 'whiteboard');
-  expect(arev.deliveredBoards.map(item => item.summary).sort()).toEqual(expected);
+  const delivered = await deliveredBoards(arev);
+  expect(delivered.map(item => item.summary).sort()).toEqual(expected);
 });
 
 Then('both snapshots reuse the same content-addressed blobs', async ({ arev }) => {
@@ -149,9 +156,8 @@ Then('the artifact renders its Mermaid to SVG offline', async ({ boards }) => {
 
 Then(/^the agent receives the diagram note "([^"]*)" with no draft left$/,
   async ({ arev, rail }, summary) => {
-    const event = await arev.awaitEvent('feedback');
-    arev.deliveredBoards = event.items.filter(item => item.kind === 'whiteboard');
-    expect(arev.deliveredBoards.map(item => item.summary)).toEqual([summary]);
+    const delivered = await deliveredBoards(arev);
+    expect(delivered.map(item => item.summary)).toEqual([summary]);
     await expect(rail.queueCount).toHaveText('0');
   });
 
