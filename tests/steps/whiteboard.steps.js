@@ -70,10 +70,15 @@ Then(/^the "([^"]*)" editor URL carries no session token$/, async ({ arev, board
   expect(boards.board(id).editor.url()).not.toContain(arev.token);
 });
 
-Then(/^no scene save leaves the browser for (\d+)ms$/, async ({ page, network }, quiet) => {
-  await page.waitForTimeout(quiet);
-  expect(network.sceneSaves).toEqual([]);
-});
+Then(/^no scene save leaves the browser for (\d+)ms$/,
+  async ({ page, boards, network }, quiet) => {
+    // Start the quiet window at the edit, not when this step runs.
+    // A slow machine can reach this step after a debounced save already fired.
+    const drawnAt = boards.board('clean-flow').drawn.completedAt;
+    const elapsed = Date.now() - drawnAt;
+    if (elapsed < quiet) await page.waitForTimeout(quiet - elapsed);
+    expect(network.sceneSaves.filter(at => at - drawnAt < quiet)).toEqual([]);
+  });
 
 Then(/^the scene save lands inside the (\d+)ms debounce window$/,
   async ({ boards, network }, debounce) => {
