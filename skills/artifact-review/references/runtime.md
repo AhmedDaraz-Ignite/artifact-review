@@ -19,11 +19,15 @@ The review server renders every `<pre class="mermaid">` block in the page
 offline with its own pinned Mermaid; artifacts must not load a Mermaid CDN.
 Diagram colors, text, and font derive from the page's rendered palette, and
 diagrams re-render automatically when the viewer flips the page theme, so
-never hardcode a Mermaid theme. Rendered diagrams support wheel zoom and drag
-pan (double-click resets; both freeze in annotate mode), and every node gets
-a stable identity key that survives re-renders. Flowchart, sequence, class,
-ER, and state Mermaid diagrams become editable shapes. Other valid Mermaid
-types use a labeled image-annotation fallback.
+never hardcode a Mermaid theme. Rendered diagrams zoom on a Ctrl or Cmd wheel
+and pan on a drag. A plain wheel and a vertical finger drag stay with the page.
+A double click restores the original size, and all three gestures freeze in
+annotate mode. A diagram with no title of its own gets one naming the gestures,
+which the browser shows as a tooltip. Set `accTitle` to keep your own title
+instead. Every node gets a stable identity key that survives
+re-renders. Flowchart, sequence, class, ER, and state Mermaid diagrams become
+editable shapes. Other valid Mermaid types use a labeled image-annotation
+fallback.
 
 The boot layout audit runs at desktop width and again at phone (360px) and
 tablet (800px) widths behind the curtain. Findings carry a `viewportClass`
