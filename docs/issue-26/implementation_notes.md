@@ -209,8 +209,11 @@ to the accessible name rather than disappearing.
 Recorded in a real, visible browser window at 1920x1080. The harness validated the delivered video
 frames, not just the DOM: `VALIDATION PASS duration=147s canvas=3840x2160 chapters=2 markers=3`.
 
-- Recording: `/Users/ahmeddaraz/Work/open-source/worktrees/artifact-review/bug-26-i-m-ready-to-help-could-you-please-provide/.playwright-cli/videos/verify-ui-diagram-list-names.mp4`
-- Screenshot: `/Users/ahmeddaraz/Work/open-source/worktrees/artifact-review/bug-26-i-m-ready-to-help-could-you-please-provide/.playwright-cli/videos/verify-ui-diagram-list-names.png`
+The proof files live in the primary checkout, not in the branch worktree, because a worktree is
+deleted once its branch merges and would take the recording with it.
+
+- Recording: `/Users/ahmeddaraz/Work/open-source/artifact-review/.playwright-cli/videos/verify-ui-diagram-list-names.mp4`
+- Screenshot: `/Users/ahmeddaraz/Work/open-source/artifact-review/.playwright-cli/videos/verify-ui-diagram-list-names.png`
 - Frames: `frame-diagram-list-names-marker1-Diagrams.png`, `-marker2-Process-topology.png`,
   `-marker3-Diagram-8.png`, `-chapter1.png`, `-chapter2.png`, in that same directory.
 
