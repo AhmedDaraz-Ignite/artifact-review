@@ -33,3 +33,4 @@ Feature: Annotating the artifact
     And the reviewer chooses "Send now" in the annotation
     Then the agent receives feedback saying "tighten this paragraph"
     And the text annotation carries a durable anchor
+    And the annotation button reads "Send or add"

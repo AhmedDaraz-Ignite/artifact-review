@@ -68,6 +68,10 @@ Then('the annotation text box is disabled', async ({ popover }) => {
   await expect(popover.text).toBeDisabled();
 });
 
+Then('the annotation button reads "Send or add"', async ({ popover }) => {
+  await expect(popover.action).toHaveText('Send or add');
+});
+
 Then('the text annotation carries a durable anchor', async ({ arev }) => {
   const anchor = arev.lastEvent?.items.find(item => item.kind === 'text')?.anchor;
   expect(anchor?.exact, 'anchor exact text').toBeTruthy();

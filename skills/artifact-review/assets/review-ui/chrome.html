@@ -645,7 +645,7 @@
         <button class="button" id="popCancel" type="button">Cancel</button>
         <button class="button primary" id="popAction" type="button"
                 aria-haspopup="menu" aria-controls="popMenu">
-          <span class="action-label">Send or add</span>
+          <span>Send or add</span>
           <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
         </button>
       </div>
@@ -716,7 +716,7 @@
         <span class="action-state" id="composerState">Draft</span>
         <button class="button primary" id="chatAction" type="button"
                 aria-haspopup="menu" aria-controls="chatMenu">
-          <span class="action-label">Send or add</span>
+          <span>Send or add</span>
           <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
         </button>
       </div>
@@ -775,7 +775,7 @@
         <span class="action-state" id="boardState">Draft</span>
         <button class="button primary" id="boardAction" type="button"
                 aria-haspopup="menu" aria-controls="boardMenu">
-          <span class="action-label">Send or add</span>
+          <span>Send or add</span>
           <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
         </button>
       </div>
@@ -1021,19 +1021,6 @@ attachMenu($("sessionMenuBtn"), $("sessionMenu"));
 attachMenu($("chatAction"), $("chatMenu"));
 attachMenu($("popAction"), $("popMenu"));
 attachMenu($("boardAction"), $("boardMenu"));
-
-function rememberChoice(mode) {
-  const label = mode === "send" ? "Send now" : "Add to review";
-  document.querySelectorAll(".action-label").forEach(host => {
-    host.textContent = label;
-  });
-  try { localStorage.setItem("artifact-review:last-action", mode); } catch (error) {}
-}
-
-try {
-  const remembered = localStorage.getItem("artifact-review:last-action");
-  if (remembered === "send" || remembered === "queue") rememberChoice(remembered);
-} catch (error) {}
 
 $("hName").textContent = B.name;
 $("hName").title = B.name;
@@ -1309,14 +1296,8 @@ async function submitAnnotation(mode) {
   }
 }
 
-$("popSend").addEventListener("click", () => {
-  rememberChoice("send");
-  submitAnnotation("send");
-});
-$("popQueue").addEventListener("click", () => {
-  rememberChoice("queue");
-  submitAnnotation("queue");
-});
+$("popSend").addEventListener("click", () => submitAnnotation("send"));
+$("popQueue").addEventListener("click", () => submitAnnotation("queue"));
 
 function describeItem(item) {
   if (item.kind === "chat") return item.text || "(empty note)";
@@ -1531,14 +1512,8 @@ async function submitChat(mode) {
   }
 }
 
-$("chatSend").addEventListener("click", () => {
-  rememberChoice("send");
-  submitChat("send");
-});
-$("chatQueue").addEventListener("click", () => {
-  rememberChoice("queue");
-  submitChat("queue");
-});
+$("chatSend").addEventListener("click", () => submitChat("send"));
+$("chatQueue").addEventListener("click", () => submitChat("queue"));
 
 function pendingFeedback() {
   return !!$("chat").value.trim() || !!state?.queue?.length;
@@ -1555,7 +1530,6 @@ $("chatMenu").addEventListener("beforetoggle", event => {
     : "Stop accepting feedback for this session.";
 });
 
-/* Ending is final, so it never becomes the remembered default action. */
 $("chatEnd").addEventListener("click", async () => {
   const pending = pendingFeedback();
   const question = pending
@@ -2008,7 +1982,6 @@ async function submitInlineDiagram(record, message) {
     return;
   }
 
-  rememberChoice(mode);
   actionState("composerState", mode === "send" ? "Sending" : "Draft",
     mode === "send" ? "Saving and sending diagram." : "Adding diagram to the review.");
   try {
