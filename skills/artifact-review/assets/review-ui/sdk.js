@@ -1016,6 +1016,21 @@
     });
   }
 
+  // The review rail lists diagrams by name: the caption the artifact declares,
+  // else the id its author wrote, else the reading position. Reading the
+  // author's id keeps a generated hash suffix out of the name.
+  function diagramTitle(holder, authoredId, index) {
+    var figure = holder.closest("figure");
+    var caption = figure ? figure.querySelector(":scope > figcaption") : null;
+    var title =
+      normalizedText(caption) ||
+      (holder.getAttribute("aria-label") || "").trim();
+    if (title) return title.slice(0, 80);
+    var words = String(authoredId || "").replace(/[-_]+/g, " ").trim();
+    if (!words) return "Diagram " + (index + 1);
+    return (words.charAt(0).toUpperCase() + words.slice(1)).slice(0, 80);
+  }
+
   function findMermaid() {
     var blocks = [];
     var holders = [];
@@ -1046,6 +1061,7 @@
         "";
       blocks.push({
         id: id,
+        title: diagramTitle(holder, authoredId, index),
         selector: "#" + cssEscape(holder.id),
         source: source.trim(),
         index: index,
