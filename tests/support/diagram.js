@@ -136,6 +136,37 @@ class RenderedDiagram {
     return this.svg.getAttribute('viewBox');
   }
 
+  // Every pair of transition labels whose painted chips share a pixel, and the
+  // labels they were found among. A covered label cannot be read, so a
+  // readable diagram reports no pairs. The count keeps "no pairs" from also
+  // meaning "no labels".
+  labelOverlaps() {
+    return this.holder.evaluate(element => {
+      const labels = [...element.querySelectorAll('g.edgeLabel')]
+        .map(label => ({
+          text:label.textContent.trim(),
+          ...label.getBoundingClientRect().toJSON(),
+        }))
+        .filter(label => label.text && label.width > 0);
+      const pairs = [];
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const a = labels[i], b = labels[j];
+          const shared = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const stacked = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (shared > 0 && stacked > 0) pairs.push(`"${a.text}" over "${b.text}"`);
+        }
+      }
+      return { count:labels.length, pairs };
+    });
+  }
+
+  reveal() {
+    return this.holder.evaluate(element => {
+      element.closest('.diagram-wrap').style.display = '';
+    });
+  }
+
   // One notch is deltaY 120. A trackpad sends one gesture as many small
   // deltas. Returns true when the diagram took the wheel away from the page.
   wheel({ ctrlKey = false, deltaY = -120, times = 1 } = {}) {

@@ -17,6 +17,17 @@ Feature: Diagram rendering
     And the "themed-flow" diagram was rebuilt with restyled markup
     And the re-render announced itself to the review SDK
 
+  Scenario: Transition labels that would land on each other are moved apart
+    Then the "themed-crowded" diagram rendered offline
+    And all 6 "themed-crowded" transition labels are readable
+    When the reviewer switches the page theme
+    Then the "themed-crowded" diagram reports the "dark" page theme
+    And all 6 "themed-crowded" transition labels are readable
+
+  Scenario: A diagram hidden at boot is separated when its panel opens
+    When the reviewer opens the panel holding the "themed-hidden" diagram
+    Then all 6 "themed-hidden" transition labels are readable
+
   Scenario: Rendered nodes keep a stable identity across a re-render
     Then the "themed-flow" diagram carries at least 4 node keys
     And the "themed-state" diagram carries at least 2 node keys

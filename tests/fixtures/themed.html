@@ -35,6 +35,32 @@
   Review --> [*]</pre>
   </div>
 
+  <!-- Mermaid drops four of these transition labels within a few pixels of
+       each other, so this block is the one that proves they get separated. -->
+  <div class="diagram-wrap">
+    <pre class="mermaid" id="themed-crowded">stateDiagram-v2
+  [*] --> Clean
+  Clean --> Working: reviewer edits
+  Working --> Working: autosave after 800ms
+  Working --> Conflict: source hash changed
+  Conflict --> Clean: re-convert
+  Conflict --> Working: keep saved scene
+  Working --> Submitted: send as feedback</pre>
+  </div>
+
+  <!-- The same diagram in a collapsed panel. A hidden element has no box to
+       measure, so this one only gets its labels separated once it is shown. -->
+  <div class="diagram-wrap" style="display: none">
+    <pre class="mermaid" id="themed-hidden">stateDiagram-v2
+  [*] --> Clean
+  Clean --> Working: reviewer edits
+  Working --> Working: autosave after 800ms
+  Working --> Conflict: source hash changed
+  Conflict --> Clean: re-convert
+  Conflict --> Working: keep saved scene
+  Working --> Submitted: send as feedback</pre>
+  </div>
+
   <div class="diagram-wrap">
     <pre class="mermaid" id="themed-links">flowchart LR
   Docs[Read docs] --> Site[Visit site]

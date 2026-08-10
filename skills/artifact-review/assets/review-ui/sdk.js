@@ -840,6 +840,131 @@
     host.appendChild(btn);
   }
 
+  /* ------------------------------------------------ edge label separation
+   * Mermaid drops every edge label on its edge's midpoint and never checks
+   * whether two of them land in the same place. Each label paints an opaque
+   * chip, so a crowded graph buries whole words under the label on top.
+   * Push overlapping chips apart before anything else reads the SVG. */
+
+  function safeBBox(el) {
+    try {
+      return el.getBBox();
+    } catch (err) {
+      return null;
+    }
+  }
+
+  // A diagram inside a display:none subtree measures as nothing at all.
+  function laidOut(svg) {
+    var box = safeBBox(svg);
+    return !!(box && box.width && box.height);
+  }
+
+  function labelBox(el) {
+    var consolidated = el.transform.baseVal.consolidate();
+    var m = consolidated
+      ? consolidated.matrix
+      : { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    // Only a pure translation can be rewritten as a new translation.
+    if (m.a !== 1 || m.b !== 0 || m.c !== 0 || m.d !== 1) return null;
+    var box = safeBBox(el);
+    if (!box || box.width < 1 || box.height < 1) return null;
+    return {
+      el: el,
+      // getBBox measures before the element's own translation, so the
+      // translation to write back is the moved corner minus this origin.
+      ox: box.x,
+      oy: box.y,
+      x: box.x + m.e,
+      y: box.y + m.f,
+      w: box.width,
+      h: box.height,
+    };
+  }
+
+  // Mermaid frames a drawing with an 8 unit margin. Keeping every push inside
+  // that frame leaves the diagram exactly the size the reviewer already sees.
+  function inFrame(value, size, low, span) {
+    if (size >= span) return value;
+    return Math.min(Math.max(value, low), low + span - size);
+  }
+
+  function spreadEdgeLabels(svg) {
+    // Counting labels is free. Measuring them forces a layout, so a diagram
+    // that cannot have a collision never pays for one.
+    var nodes = svg.querySelectorAll("g.edgeLabel");
+    if (nodes.length < 2) return;
+    var labels = [];
+    Array.prototype.forEach.call(nodes, function (el) {
+      var box = labelBox(el);
+      if (box) labels.push(box);
+    });
+    if (labels.length < 2) return;
+
+    var frame = svg.viewBox.baseVal;
+    var moved = false;
+    // One pass settles one overlapping pair, so a crowded diagram needs more
+    // rounds than it has labels. Squaring the count is only a runaway guard.
+    // The loop stops itself as soon as a pass changes nothing.
+    var limit = labels.length * labels.length;
+    for (var pass = 0; pass < limit; pass++) {
+      var shifted = false;
+      for (var i = 0; i < labels.length; i++) {
+        for (var j = i + 1; j < labels.length; j++) {
+          var a = labels[i];
+          var b = labels[j];
+          var ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          var oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          if (ox <= 0 || oy <= 0) continue;
+          // Escape along the axis that needs the shorter move, so a label
+          // stays as close to its own edge as separation allows.
+          var na, nb;
+          if (oy <= ox) {
+            var dy = oy / 2 + 1;
+            var up = a.y + a.h / 2 <= b.y + b.h / 2 ? -1 : 1;
+            na = inFrame(a.y + dy * up, a.h, frame.y, frame.height);
+            nb = inFrame(b.y - dy * up, b.h, frame.y, frame.height);
+            if (na !== a.y || nb !== b.y) shifted = true;
+            a.y = na;
+            b.y = nb;
+          } else {
+            var dx = ox / 2 + 1;
+            var left = a.x + a.w / 2 <= b.x + b.w / 2 ? -1 : 1;
+            na = inFrame(a.x + dx * left, a.w, frame.x, frame.width);
+            nb = inFrame(b.x - dx * left, b.w, frame.x, frame.width);
+            if (na !== a.x || nb !== b.x) shifted = true;
+            a.x = na;
+            b.x = nb;
+          }
+        }
+      }
+      if (!shifted) break;
+      moved = true;
+    }
+    if (!moved) return;
+
+    labels.forEach(function (label) {
+      label.el.setAttribute(
+        "transform",
+        "translate(" + (label.x - label.ox) + ", " + (label.y - label.oy) + ")",
+      );
+    });
+  }
+
+  // A diagram hidden when the page boots has no box to measure, and nothing
+  // visits it a second time. Watch it instead, and separate the labels the
+  // moment the browser lays it out.
+  function spreadWhenLaidOut(svg) {
+    if (laidOut(svg) || !window.ResizeObserver) return spreadEdgeLabels(svg);
+    var observer = new ResizeObserver(function () {
+      if (!svg.isConnected) return observer.disconnect();
+      if (!laidOut(svg)) return;
+      observer.disconnect();
+      spreadEdgeLabels(svg);
+    });
+    observer.observe(svg);
+  }
+
   /* ------------------------------------------------- diagram explore mode
    * Dependency-free viewBox pan/zoom on every rendered Mermaid SVG. Frozen
    * while annotate mode is on so element picks stay precise. Only the
@@ -995,6 +1120,7 @@
     allMermaidSvgs().forEach(function (svg) {
       // A marked SVG already has its node keys. Re-renders arrive unmarked.
       if (svg.hasAttribute("data-arev-explore")) return;
+      spreadWhenLaidOut(svg);
       mermaidNodeGroups(svg).forEach(function (group, index) {
         group.setAttribute(
           "data-arev-node-key",
