@@ -33,3 +33,4 @@ blob-report/
 .codex/skills/
 skills-lock.json
 .playwright-cli/
+docs/issue-*/

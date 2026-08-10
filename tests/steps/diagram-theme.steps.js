@@ -22,6 +22,11 @@ When(/^the reviewer (zooms|scrolls the wheel over|pinches) the "([^"]*)" diagram
     diagram.tookTheWheel = await diagram[GESTURES[gesture]]();
   });
 
+When(/^the reviewer opens the panel holding the "([^"]*)" diagram$/,
+  async ({ boards }, id) => {
+    await boards.rendered(id).reveal();
+  });
+
 When(/^the reviewer resets the "([^"]*)" view$/, async ({ boards }, id) => {
   await boards.rendered(id).reset();
 });
@@ -60,6 +65,13 @@ Then(/^the "([^"]*)" diagram carries at least (\d+) node keys$/,
 Then(/^no "([^"]*)" node key ends in a render counter$/, async ({ boards }, id) => {
   expect(boards.rendered(id).keys.filter(key => /-\d+$/.test(key))).toEqual([]);
 });
+
+Then(/^all (\d+) "([^"]*)" transition labels are readable$/,
+  async ({ boards }, expected, id) => {
+    const diagram = boards.rendered(id);
+    await expect.poll(() => diagram.labelOverlaps())
+      .toEqual({ count:Number(expected), pairs:[] });
+  });
 
 Then(/^the "([^"]*)" node keys are unchanged$/, async ({ boards }, id) => {
   const diagram = boards.rendered(id);
