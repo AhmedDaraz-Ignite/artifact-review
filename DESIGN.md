@@ -167,7 +167,10 @@ the top layer.
 ### Chips
 
 - **Style:** Small status treatment with text and a quiet tonal background.
-- **State:** Use for Draft, Sending, Sent, Received, Answered, and Failed only.
+- **State:** For delivery, use Draft, Sending, Sent, Received, Answered, and
+  Failed only. The composer chip also reads Nothing to send or Nothing to add
+  when the reviewer acts on an empty composer. No request leaves the browser
+  then, so Failed stays reserved for a delivery the server refused.
 
 ### Cards / Containers
 

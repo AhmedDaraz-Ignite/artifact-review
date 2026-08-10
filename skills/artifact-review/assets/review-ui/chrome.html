@@ -247,6 +247,7 @@
   .action-state.sending { color:var(--accent) }
   .action-state.sent { color:var(--success) }
   .action-state.failed { color:var(--danger) }
+  .action-state.nothing-to-send, .action-state.nothing-to-add { color:var(--warning) }
 
   .review-rail {
     width:var(--review-rail-expanded);
@@ -932,11 +933,21 @@ function showBanner(message) {
   if (message) announce(message);
 }
 
+function stateClass(value) {
+  return value.toLowerCase().replace(/\s+/g, "-");
+}
+
 function actionState(id, value, message) {
   const host = $(id);
   host.textContent = value;
-  host.className = "action-state " + value.toLowerCase();
+  host.className = "action-state " + stateClass(value);
   if (message) announce(message);
+}
+
+/* Back to Draft from a state the reviewer just answered. Each caller names the
+   states it owns, so a queued draft never wipes a real delivery failure. */
+function clearState(id, ...states) {
+  if (states.includes($(id).textContent)) actionState(id, "Draft");
 }
 
 function errorMessage(error) {
@@ -996,12 +1007,13 @@ function attachMenu(trigger, menu) {
       trigger.focus();
     }
   });
+  /* Capture runs before the item's own handler, so an item that sends focus
+     where the reviewer must act next writes last and keeps it. */
   menu.addEventListener("click", event => {
-    if (event.target.closest('[role="menuitem"]')) {
-      menu.hidePopover();
-      trigger.focus();
-    }
-  });
+    if (!event.target.closest('[role="menuitem"]')) return;
+    menu.hidePopover();
+    trigger.focus();
+  }, true);
 }
 
 attachMenu($("sessionMenuBtn"), $("sessionMenu"));
@@ -1272,9 +1284,7 @@ $("popText").addEventListener("keydown", event => {
     $("popAction").click();
   }
 });
-$("popText").addEventListener("input", () => {
-  if ($("popState").textContent === "Failed") actionState("popState", "Draft");
-});
+$("popText").addEventListener("input", () => clearState("popState", "Failed"));
 
 async function submitAnnotation(mode) {
   if (!popItem) return;
@@ -1427,7 +1437,7 @@ function renderFeed(feed, { preserveOffset = false } = {}) {
       if (entry.role !== "agent") {
         const delivery = deliveryLabel(entry);
         const status = document.createElement("span");
-        status.className = `state-chip ${delivery.toLowerCase()}`;
+        status.className = `state-chip ${stateClass(delivery)}`;
         status.textContent = delivery;
         meta.appendChild(status);
       }
@@ -1490,12 +1500,12 @@ async function submitChat(mode) {
   const text = $("chat").value.trim();
   const drafts = state?.queue?.length || 0;
   if (mode === "queue" && !text) {
-    actionState("composerState", "Failed", "Write a note before adding it to the review.");
+    actionState("composerState", "Nothing to add", "Write a note before adding it to the review.");
     $("chat").focus();
     return false;
   }
   if (mode === "send" && !text && !drafts) {
-    actionState("composerState", "Failed", "Write feedback or add a draft before sending.");
+    actionState("composerState", "Nothing to send", "Write feedback or add a draft before sending.");
     $("chat").focus();
     return false;
   }
@@ -1566,9 +1576,8 @@ $("chat").addEventListener("keydown", event => {
     $("chatAction").click();
   }
 });
-$("chat").addEventListener("input", () => {
-  if ($("composerState").textContent === "Failed") actionState("composerState", "Draft");
-});
+$("chat").addEventListener("input", () =>
+  clearState("composerState", "Failed", "Nothing to send", "Nothing to add"));
 
 function renderAgent(agent) {
   const chip = $("agentChip");
@@ -1633,6 +1642,9 @@ function applyState(next) {
     paintedQueue = queueKey;
     renderQueue(next.queue || []);
   }
+  /* A draft from any source, an annotation included, makes the empty send
+     warning untrue. */
+  if ((next.queue || []).length) clearState("composerState", "Nothing to send");
   if (feedKey !== paintedFeed) {
     paintedFeed = feedKey;
     renderFeed(next.feed || []);

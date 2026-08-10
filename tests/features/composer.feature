@@ -12,3 +12,23 @@ Feature: Composer controls
     Then the composer menu offers every delivery choice
     And there is no separate send button
     And ending the review lives only in the composer menu
+
+  Scenario: An empty composer asks the reviewer to write, it does not report a failure
+    When the reviewer chooses "Send now"
+    Then the composer shows "Nothing to send"
+    And the chat box has focus
+    When the reviewer chooses "Add to review"
+    Then the composer shows "Nothing to add"
+    And the chat box has focus
+    When the reviewer types "a" in chat
+    Then the composer shows "Draft"
+
+  Scenario: A draft from an annotation retires the empty send warning
+    Given the reviewer has turned annotation mode on
+    When the reviewer chooses "Send now"
+    Then the composer shows "Nothing to send"
+    When the reviewer selects "the first paragraph"
+    And the reviewer writes "tighten this paragraph" in the annotation
+    And the reviewer chooses "Add to review" in the annotation
+    Then the review holds 1 draft
+    And the composer shows "Draft"
