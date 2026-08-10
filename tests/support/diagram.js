@@ -104,6 +104,8 @@ class RenderedDiagram {
     this.svg = this.holder.locator('svg');
     this.before = null;
     this.beforeZoom = null;
+    this.beforeWidth = null;
+    this.tookTheWheel = null;
     this.keys = null;
   }
 
@@ -134,17 +136,46 @@ class RenderedDiagram {
     return this.svg.getAttribute('viewBox');
   }
 
-  zoom() {
-    return this.svg.evaluate(svg => {
+  // One notch is deltaY 120. A trackpad sends one gesture as many small
+  // deltas. Returns true when the diagram took the wheel away from the page.
+  wheel({ ctrlKey = false, deltaY = -120, times = 1 } = {}) {
+    return this.svg.evaluate((svg, options) => {
       const rect = svg.getBoundingClientRect();
-      svg.dispatchEvent(new WheelEvent('wheel', {
+      const init = {
         bubbles:true,
         cancelable:true,
-        deltaY:-120,
+        ctrlKey:options.ctrlKey,
+        deltaY:options.deltaY,
         clientX:rect.left + rect.width / 2,
         clientY:rect.top + rect.height / 2,
-      }));
-    });
+      };
+      let taken = false;
+      for (let i = 0; i < options.times; i += 1) {
+        taken = !svg.dispatchEvent(new WheelEvent('wheel', init));
+      }
+      return taken;
+    }, { ctrlKey, deltaY, times });
+  }
+
+  zoom() {
+    return this.wheel({ ctrlKey:true });
+  }
+
+  pinch() {
+    return this.wheel({ ctrlKey:true, deltaY:2, times:15 });
+  }
+
+  async viewWidth() {
+    return Number((await this.viewBox()).split(/[\s,]+/)[2]);
+  }
+
+  hint() {
+    return this.svg.evaluate(svg =>
+      svg.querySelector(':scope > title')?.textContent || '');
+  }
+
+  touchAction() {
+    return this.svg.evaluate(svg => getComputedStyle(svg).touchAction);
   }
 
   reset() {

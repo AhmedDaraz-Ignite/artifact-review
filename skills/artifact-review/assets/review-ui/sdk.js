@@ -871,6 +871,20 @@
     var view = { x: initial.x, y: initial.y, w: initial.w, h: initial.h };
     var panning = null;
 
+    // Explore mode has no chrome of its own, so a native SVG tooltip carries
+    // the hint. A diagram that already titles itself keeps its own title.
+    var hint = null;
+    if (!svg.querySelector(":scope > title")) {
+      hint = document.createElementNS("http://www.w3.org/2000/svg", "title");
+      hint.textContent =
+        "Hold Ctrl or Cmd and scroll to zoom, drag to pan, " +
+        "double-click to restore the original size.";
+      // A screen reader reads a <title> child as the diagram's name. Name the
+      // diagram first so the gesture hint lands on the description instead.
+      if (!svg.matches("[aria-label],[aria-labelledby]"))
+        svg.setAttribute("aria-label", "Diagram " + diagramIdFor(svg));
+    }
+
     function apply() {
       svg.setAttribute(
         "viewBox",
@@ -900,16 +914,21 @@
       apply();
     }
 
+    // A plain wheel belongs to the page. Taking it would stop a reader mid
+    // scroll and resize a diagram nobody asked to resize.
     svg.addEventListener(
       "wheel",
       function (event) {
-        if (annotating) return;
+        if (annotating || !(event.ctrlKey || event.metaKey)) return;
         event.preventDefault();
-        zoomAt(
-          event.clientX,
-          event.clientY,
-          event.deltaY > 0 ? 1.15 : 1 / 1.15,
+        // One mouse notch is deltaY 120. A trackpad sends one gesture as a
+        // burst of small deltas, so the step follows the delta, not its sign.
+        var steps = Math.max(
+          -1,
+          Math.min(1, event.deltaMode ? event.deltaY : event.deltaY / 120),
         );
+        if (!steps) return;
+        zoomAt(event.clientX, event.clientY, Math.pow(1.15, steps));
       },
       { passive: false },
     );
@@ -958,7 +977,13 @@
       setFrozen: function (frozen) {
         panning = null;
         svg.style.cursor = frozen ? "" : "grab";
-        svg.style.touchAction = frozen ? "" : "none";
+        // A vertical finger drag scrolls the page, the same way a plain wheel
+        // does. Horizontal drags still pan, which is the axis a wide diagram
+        // needs. A browser-owned scroll fires pointercancel, so endPan runs.
+        svg.style.touchAction = frozen ? "" : "pan-y";
+        if (!hint) return;
+        if (frozen) hint.remove();
+        else svg.insertBefore(hint, svg.firstChild);
       },
     };
   }

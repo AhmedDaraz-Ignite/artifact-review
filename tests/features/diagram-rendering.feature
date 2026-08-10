@@ -30,12 +30,25 @@ Feature: Diagram rendering
   Scenario: Explore mode zooms and resets the diagram view
     When the reviewer zooms the "themed-flow" diagram
     Then the "themed-flow" view has changed
+    And the "themed-flow" wheel was taken from the page
     When the reviewer resets the "themed-flow" view
     Then the "themed-flow" view is back where it started
+
+  Scenario: A plain wheel over a diagram stays with the page
+    When the reviewer scrolls the wheel over the "themed-flow" diagram
+    Then the "themed-flow" view has not changed
+    And the "themed-flow" wheel was left to the page
+    And the "themed-flow" diagram leaves vertical touch scrolling to the page
+    And the "themed-flow" diagram says how to zoom and how to restore it
+
+  Scenario: A trackpad gesture zooms one step, not straight to the limit
+    When the reviewer pinches the "themed-flow" diagram
+    Then the "themed-flow" gesture moved the view a step, not to the limit
 
   Scenario: Annotate mode freezes the view so picks stay precise
     Given the reviewer has turned annotation mode on
     And the "themed-flow" diagram stops offering to pan
+    And the "themed-flow" diagram says nothing about gestures
     When the reviewer zooms the "themed-flow" diagram
     Then the "themed-flow" view has not changed
 

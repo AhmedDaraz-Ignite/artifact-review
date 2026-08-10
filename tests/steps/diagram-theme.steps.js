@@ -7,12 +7,20 @@ When('the reviewer switches the page theme', async ({ boards }) => {
   await boards.themeToggle.click();
 });
 
-When(/^the reviewer zooms the "([^"]*)" diagram$/, async ({ boards }, id) => {
-  const diagram = boards.rendered(id);
-  diagram.beforeZoom = await diagram.viewBox();
-  expect(diagram.beforeZoom, 'the starting viewBox').toBeTruthy();
-  await diagram.zoom();
-});
+const GESTURES = {
+  'zooms':'zoom',
+  'scrolls the wheel over':'wheel',
+  'pinches':'pinch',
+};
+
+When(/^the reviewer (zooms|scrolls the wheel over|pinches) the "([^"]*)" diagram$/,
+  async ({ boards }, gesture, id) => {
+    const diagram = boards.rendered(id);
+    diagram.beforeZoom = await diagram.viewBox();
+    expect(diagram.beforeZoom, 'the starting viewBox').toBeTruthy();
+    diagram.beforeWidth = await diagram.viewWidth();
+    diagram.tookTheWheel = await diagram[GESTURES[gesture]]();
+  });
 
 When(/^the reviewer resets the "([^"]*)" view$/, async ({ boards }, id) => {
   await boards.rendered(id).reset();
@@ -72,6 +80,37 @@ Then(/^the "([^"]*)" view has not changed$/, async ({ boards }, id) => {
   const diagram = boards.rendered(id);
   expect(await diagram.viewBox()).toBe(diagram.beforeZoom);
 });
+
+Then(/^the "([^"]*)" wheel was (left to|taken from) the page$/,
+  async ({ boards }, id, fate) => {
+    expect(boards.rendered(id).tookTheWheel, 'the diagram cancelled the wheel')
+      .toBe(fate === 'taken from');
+  });
+
+Then(/^the "([^"]*)" diagram says how to zoom and how to restore it$/,
+  async ({ boards }, id) => {
+    const hint = await boards.rendered(id).hint();
+    expect(hint).toMatch(/ctrl/i);
+    expect(hint).toMatch(/double-click/i);
+  });
+
+Then(/^the "([^"]*)" gesture moved the view a step, not to the limit$/,
+  async ({ boards }, id) => {
+    const diagram = boards.rendered(id);
+    const width = await diagram.viewWidth();
+    expect(width, 'the zoomed viewBox width').toBeGreaterThan(diagram.beforeWidth);
+    expect(width, 'the zoomed viewBox width').toBeLessThan(diagram.beforeWidth * 1.5);
+  });
+
+Then(/^the "([^"]*)" diagram leaves vertical touch scrolling to the page$/,
+  async ({ boards }, id) => {
+    expect(await boards.rendered(id).touchAction()).toBe('pan-y');
+  });
+
+Then(/^the "([^"]*)" diagram says nothing about gestures$/,
+  async ({ boards }, id) => {
+    expect(await boards.rendered(id).hint()).toBe('');
+  });
 
 Then(/^the "([^"]*)" diagram stops offering to pan$/, async ({ boards }, id) => {
   await expect.poll(() => boards.rendered(id).cursor()).not.toBe('grab');
