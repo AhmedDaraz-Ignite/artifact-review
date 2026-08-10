@@ -56,6 +56,7 @@ MAX_FEED_ITEMS = 10000
 MAX_SNAPSHOT_BLOBS = 1000
 MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
 END_SHUTDOWN_DELAY = 300.0
+MAX_WATCHED_SHUTDOWN_DELAY = 3600.0
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
@@ -100,6 +101,10 @@ STATE = {
 REVISION_HISTORY = deque(maxlen=256)
 PUBLISHED_STATE = None
 SHUTDOWN_TIMER = None
+# Only the review page polls for state, so this dates the last open browser tab.
+# A request thread writes it without the lock: a float assignment is atomic and
+# the reader only needs it to the nearest poll.
+LAST_PAGE_POLL = 0.0
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
@@ -286,10 +291,13 @@ def _cancel_shutdown_locked():
         timer.cancel()
 
 
-def _schedule_shutdown_locked(server):
+def _schedule_shutdown_locked(server, deadline=None):
     global SHUTDOWN_TIMER
     _cancel_shutdown_locked()
     scheduled_instance = INSTANCE_ID
+    # A tab left open overnight must not hold the port until morning.
+    if deadline is None:
+        deadline = time.time() + MAX_WATCHED_SHUTDOWN_DELAY
     timer = None
 
     def shutdown_if_still_ended():
@@ -299,10 +307,17 @@ def _schedule_shutdown_locked(server):
                     or not STATE["ended"]
                     or INSTANCE_ID != scheduled_instance):
                 return
+            # A reviewer still has the page open. Taking the server away under
+            # an open tab loses every edit made from that moment on.
+            now = time.time()
+            if now - LAST_PAGE_POLL < END_SHUTDOWN_DELAY and now < deadline:
+                _schedule_shutdown_locked(server, deadline)
+                return
             SHUTDOWN_TIMER = None
         server.shutdown()
 
-    timer = threading.Timer(END_SHUTDOWN_DELAY, shutdown_if_still_ended)
+    delay = min(END_SHUTDOWN_DELAY, max(0.0, deadline - time.time()))
+    timer = threading.Timer(delay, shutdown_if_still_ended)
     timer.daemon = True
     SHUTDOWN_TIMER = timer
     timer.start()
@@ -825,6 +840,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- GET ---------------------------------------------------------------
     def do_GET(self):
+        global LAST_PAGE_POLL
         if not self._guard():
             return
         path = urlparse(self.path).path
@@ -843,6 +859,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/whiteboard/"):
             self._whiteboard_working_get(path[len("/whiteboard/"):])
         elif path == "/state":
+            LAST_PAGE_POLL = time.time()
             with STATE_LOCK:
                 state = _state_locked()
             self._json(state)
@@ -854,6 +871,7 @@ class Handler(BaseHTTPRequestHandler):
                 "event_schema": EVENT_SCHEMA,
             })
         elif path == "/state/next":
+            LAST_PAGE_POLL = time.time()
             self._state_next(parse_qs(urlparse(self.path).query))
         elif path == "/activity":
             self._activity(parse_qs(urlparse(self.path).query))

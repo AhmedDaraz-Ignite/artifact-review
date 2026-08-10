@@ -91,8 +91,10 @@ addressed and a new review is appropriate. Then use:
 
 Agent completion uses `"$AREV" end "$ARTIFACT"`. Process cleanup uses
 `"$AREV" stop "$ARTIFACT"`; use `stop --all` only when stopping every review
-server is intentionally in scope. An ended server shuts itself down after five
-minutes. Reopening within that window cancels the shutdown.
+server is intentionally in scope. An ended server shuts itself down five minutes
+after the last review tab stops polling, so a reviewer never loses the session
+mid-edit, and after an hour whatever the tab does. Reopening within that window
+cancels the shutdown.
 
 ## Durable history, reports, and retention
 

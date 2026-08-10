@@ -226,8 +226,11 @@ class DelayedShutdownTests(unittest.TestCase):
         self.previous_delay = getattr(SERVER, "END_SHUTDOWN_DELAY", None)
         self.previous_timer = getattr(SERVER, "SHUTDOWN_TIMER", None)
         self.previous_instance = SERVER.INSTANCE_ID
+        self.previous_poll = SERVER.LAST_PAGE_POLL
+        self.previous_watched = SERVER.MAX_WATCHED_SHUTDOWN_DELAY
         SERVER.END_SHUTDOWN_DELAY = 0.05
         SERVER.SHUTDOWN_TIMER = None
+        SERVER.LAST_PAGE_POLL = 0.0
         SERVER.STATE["ended"] = True
 
     def tearDown(self):
@@ -236,11 +239,14 @@ class DelayedShutdownTests(unittest.TestCase):
         SERVER.STATE.clear()
         SERVER.STATE.update(self.previous_state)
         SERVER.INSTANCE_ID = self.previous_instance
+        SERVER.LAST_PAGE_POLL = self.previous_poll
+        SERVER.MAX_WATCHED_SHUTDOWN_DELAY = self.previous_watched
         if self.previous_delay is not None:
             SERVER.END_SHUTDOWN_DELAY = self.previous_delay
         SERVER.SHUTDOWN_TIMER = self.previous_timer
 
-    def test_reopen_cancels_delayed_shutdown(self):
+    def _schedule(self):
+        """Arm the delayed shutdown and return the event its server sets."""
         called = threading.Event()
 
         class FakeServer:
@@ -248,26 +254,45 @@ class DelayedShutdownTests(unittest.TestCase):
 
         with SERVER.STATE_LOCK:
             SERVER._schedule_shutdown_locked(FakeServer())
+        return called
+
+    def test_reopen_cancels_delayed_shutdown(self):
+        called = self._schedule()
+        with SERVER.STATE_LOCK:
             SERVER.STATE["ended"] = False
             SERVER._cancel_shutdown_locked()
         self.assertFalse(called.wait(0.15))
 
     def test_timer_stops_only_the_same_ended_instance(self):
-        called = threading.Event()
+        self.assertTrue(self._schedule().wait(0.5))
 
-        class FakeServer:
-            shutdown = called.set
-
-        with SERVER.STATE_LOCK:
-            SERVER._schedule_shutdown_locked(FakeServer())
-        self.assertTrue(called.wait(0.5))
-
-        called.clear()
         SERVER.STATE["ended"] = True
+        called = self._schedule()
         with SERVER.STATE_LOCK:
-            SERVER._schedule_shutdown_locked(FakeServer())
             SERVER.INSTANCE_ID = "replacement-instance"
         self.assertFalse(called.wait(0.15))
+
+    def _poll_until(self, called, seconds):
+        deadline = time.time() + seconds
+        while time.time() < deadline and not called.is_set():
+            SERVER.LAST_PAGE_POLL = time.time()
+            time.sleep(0.05)
+
+    def test_a_polling_page_holds_an_ended_session_open(self):
+        # The refresh loop needs a wide margin over the delay on a loaded runner.
+        SERVER.END_SHUTDOWN_DELAY = 0.25
+        called = self._schedule()
+        self._poll_until(called, 1.0)
+        self.assertFalse(called.is_set())
+        SERVER.LAST_PAGE_POLL = 0.0
+        self.assertTrue(called.wait(1.0))
+
+    def test_a_forgotten_tab_cannot_hold_the_session_open_forever(self):
+        SERVER.END_SHUTDOWN_DELAY = 0.25
+        SERVER.MAX_WATCHED_SHUTDOWN_DELAY = 0.5
+        called = self._schedule()
+        self._poll_until(called, 2.0)
+        self.assertTrue(called.is_set())
 
 
 if __name__ == "__main__":
