@@ -29,6 +29,10 @@ Then(/^the review holds (\d+) drafts?$/, async ({ rail }, count) => {
   await expect(rail.queueCount).toHaveText(String(count));
 });
 
+Then('the composer button reads "Send or add"', async ({ rail }) => {
+  await expect(rail.chatAction).toHaveText('Send or add');
+});
+
 Then('the chat box is empty', async ({ rail }) => {
   await expect(rail.chat).toHaveValue('');
 });

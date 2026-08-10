@@ -32,3 +32,9 @@ Feature: Composer controls
     And the reviewer chooses "Add to review" in the annotation
     Then the review holds 1 draft
     And the composer shows "Draft"
+
+  Scenario: The composer action keeps its label after a delivery choice
+    When the reviewer types "tighten this paragraph" in chat
+    And the reviewer chooses "Send now"
+    Then the agent receives feedback saying "tighten this paragraph"
+    And the composer button reads "Send or add"
