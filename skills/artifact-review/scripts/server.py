@@ -22,6 +22,7 @@ import argparse
 import base64
 import binascii
 import copy
+import glob
 import gzip
 import hashlib
 import json
@@ -512,6 +513,24 @@ def _whiteboard_dir_locked():
 def _working_whiteboard_path(whiteboard_id):
     return os.path.join(
         SESSION_DIR, "whiteboards", whiteboard_id + ".working.json")
+
+
+def _discard_working_whiteboards_locked():
+    """Drop autosaved editor drafts that were never sent, once a review ends.
+
+    A draft only exists so a reload or a crash does not lose the scene being
+    edited, which is why a write is refused after the session ends. Keeping the
+    file past that point makes the next review open the editor on an edit the
+    agent never received, with nothing on screen to say so.
+    """
+    # ARTIFACT_REVIEW_HOME sets where the session directory lives, so its path
+    # can hold "[" or "?". Escape it before it becomes part of a glob pattern.
+    directory = glob.escape(os.path.join(SESSION_DIR, "whiteboards"))
+    for path in glob.glob(os.path.join(directory, "*.working.json")):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def _normalise_working_record(value):
@@ -1240,6 +1259,7 @@ class Handler(BaseHTTPRequestHandler):
                 sent_at=time.time(),
             )
             STATE["events"].append(event)
+            _discard_working_whiteboards_locked()
             _persist_locked()
             _changed_locked()
             _schedule_shutdown_locked(self.server)
