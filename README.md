@@ -230,7 +230,8 @@ report, and referenced blobs to a ZIP without copying the source artifact.
 `arev prune` is a dry run unless `--apply` is present. It only removes ended,
 stopped sessions older than the selected threshold, refuses symlinks or escaped
 paths, and cleans unreferenced content-addressed blobs. Ending a review schedules
-its local server to stop after five minutes; reopening cancels that timer.
+its local server to stop five minutes later. An open review tab holds it up for
+as long as it keeps polling, to an hour at most. Reopening cancels the timer.
 
 ## Runtime efficiency
 

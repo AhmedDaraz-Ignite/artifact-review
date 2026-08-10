@@ -918,6 +918,7 @@ let mermaidBlocks = [];
 let inlineGeneration = 0;
 const inlineDiagrams = new Map();
 let deadPolls = 0;
+let offline = false;
 let stopped = false;
 let scrollResolver = null;
 let loadedArtifactVersion = null;
@@ -927,11 +928,23 @@ let paintedQueue = "";
 let paintedFeed = "";
 
 async function api(method, path, body) {
-  const response = await fetch(path, {
-    method,
-    headers:H,
-    body:body === undefined ? undefined : JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch(path, {
+      method,
+      headers:H,
+      body:body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (error) {
+    /* fetch rejects only when the request never reached the server, so its
+       "Failed to fetch" names the browser call and hides the real cause. The
+       poll loop decides whether the server is gone; one dropped connection is
+       not enough. */
+    const failure = new Error("the review server has stopped");
+    failure.offline = true;
+    throw failure;
+  }
+  setOffline(false);
   let data = {};
   try { data = await response.json(); } catch (error) {}
   if (!response.ok) {
@@ -948,7 +961,14 @@ function announce(message) {
   requestAnimationFrame(() => { $("liveStatus").textContent = message; });
 }
 
+const OFFLINE_MESSAGE = "The review server has stopped. Nothing on this page "
+  + "can be saved or sent any more, including diagram edits. Copy any text you "
+  + "still need, then ask the agent to reopen the review.";
+
+/* A stopped server breaks every request, so each failing call would otherwise
+   replace this notice with its own smaller complaint. */
 function showBanner(message) {
+  if (offline) return;
   $("banner").textContent = message;
   $("banner").hidden = !message;
   if (message) announce(message);
@@ -956,6 +976,39 @@ function showBanner(message) {
 
 function stateClass(value) {
   return value.toLowerCase().replace(/\s+/g, "-");
+}
+
+/* The one answer to "can this control still reach the server". */
+function sendingLocked() {
+  return offline || !!state?.ended;
+}
+
+/* The draft box is locked only for an ended session. A stopped server leaves
+   it editable so the reviewer can copy unsent text out. */
+function lockSending() {
+  const locked = sendingLocked();
+  [$("annBtn"), $("chatAction"), $("chatSend"), $("chatQueue"), $("chatEnd"),
+    $("newFeedbackDockBtn"),
+    $("popAction"), $("popSend"), $("popQueue"),
+    $("boardAction"), $("boardSend"), $("boardQueue")]
+    .forEach(control => { control.disabled = locked; });
+  $("chat").disabled = !!state?.ended;
+  document.querySelectorAll(".remove, .diagram-row").forEach(control => {
+    control.disabled = locked;
+  });
+}
+
+function setOffline(value) {
+  if (offline === value) return;
+  // The banner writes before the flag blocks it, and clears after.
+  if (value) {
+    showBanner(OFFLINE_MESSAGE);
+    offline = true;
+  } else {
+    offline = false;
+    showBanner("");
+  }
+  lockSending();
 }
 
 function actionState(id, value, message) {
@@ -1326,6 +1379,7 @@ async function submitAnnotation(mode) {
   } finally {
     popSending = false;
     controls.forEach(control => { control.disabled = !!state?.ended; });
+    $("popAction").disabled = sendingLocked();
   }
 }
 
@@ -1383,7 +1437,7 @@ function renderQueue(queue) {
     remove.className = "remove";
     remove.setAttribute("aria-label", `Remove ${item.kind} draft`);
     remove.textContent = "×";
-    remove.disabled = !!state?.ended;
+    remove.disabled = sendingLocked();
     remove.addEventListener("click", async () => {
       try {
         await api("POST", "/unqueue", { qid:item.qid });
@@ -1506,9 +1560,8 @@ $("loadEarlierActivity").addEventListener("click", async () => {
 });
 
 function setComposerBusy(busy) {
-  [$("chat"), $("chatAction")].forEach(control => {
-    control.disabled = busy || !!state?.ended;
-  });
+  $("chat").disabled = busy || !!state?.ended;
+  $("chatAction").disabled = busy || sendingLocked();
 }
 
 async function submitChat(mode) {
@@ -1659,14 +1712,7 @@ function applyState(next) {
   }
   renderAgent(next.agent);
   const ended = !!next.ended;
-  [$("annBtn"), $("chat"), $("chatAction"), $("chatSend"), $("chatQueue"), $("chatEnd"),
-    $("newFeedbackDockBtn"),
-    $("popAction"), $("popSend"), $("popQueue"),
-    $("boardAction"), $("boardSend"), $("boardQueue")]
-    .forEach(control => { control.disabled = ended; });
-  document.querySelectorAll(".remove, .diagram-row").forEach(control => {
-    control.disabled = ended;
-  });
+  lockSending();
   if (ended) {
     setAnnotate(false);
     // An editor open at this moment belongs to the review that just ended. Its
@@ -1691,15 +1737,20 @@ async function stateLoop() {
       const response = await api("GET", path);
       const next = revision < 0 ? response : applyStateDelta(state, response);
       revision = next.revision;
+      if (!next.ended && deadPolls) showBanner("");
       deadPolls = 0;
-      if (!next.ended && $("banner").textContent.includes("server is not responding")) showBanner("");
       applyState(next);
     } catch (error) {
       deadPolls += 1;
       if (deadPolls >= 3) {
-        showBanner("The session server is not responding. Your unsent text is preserved in this tab.");
+        // Three failed polls in a row separate a stopped server from a
+        // dropped connection. An HTTP error keeps the milder wording.
+        if (error.offline) setOffline(true);
+        else showBanner("The session server is not responding. Your unsent text is preserved in this tab.");
       }
-      await new Promise(resolve => setTimeout(resolve, Math.min(4000, deadPolls * 750)));
+      // Backing off further once the server is gone. Nothing there will answer.
+      await new Promise(resolve =>
+        setTimeout(resolve, Math.min(offline ? 30000 : 4000, deadPolls * 750)));
     }
   }
 }
@@ -1914,7 +1965,7 @@ function renderDiagramList() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "diagram-row";
-    button.disabled = !!state?.ended || !inlineDiagrams.has(block.id);
+    button.disabled = sendingLocked() || !inlineDiagrams.has(block.id);
     button.innerHTML = '<span class="diagram-icon" aria-hidden="true">◇</span>';
     const name = diagramName(block);
     button.setAttribute("aria-label", `Focus diagram editor: ${name}`);
@@ -1928,7 +1979,7 @@ function renderDiagramList() {
 }
 
 async function focusInlineDiagram(id) {
-  if (state?.ended) return;
+  if (sendingLocked()) return;
   const record = inlineDiagrams.get(String(id || ""));
   if (!record) {
     showBanner("That diagram editor is not ready yet.");
@@ -2136,6 +2187,14 @@ window.addEventListener("pagehide", () => {
   inlineDiagrams.forEach(record =>
     relayToInline(record, { type:"flush", reason:"pagehide" })
   );
+});
+/* A page restored from the back-forward cache kept the stop flag its own
+   pagehide set, so nothing would ever poll again. */
+window.addEventListener("pageshow", event => {
+  if (!event.persisted || !stopped) return;
+  stopped = false;
+  deadPolls = 0;
+  stateLoop();
 });
 </script>
 </body>

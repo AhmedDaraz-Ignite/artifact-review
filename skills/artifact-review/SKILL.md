@@ -114,4 +114,5 @@ read [remote.md](references/remote.md). Do not expose the listener directly to
 the public internet.
 
 When the user approves or the review is complete, run `end`. The server stops
-after five minutes unless the review reopens; use `stop` for immediate cleanup.
+five minutes after the last review tab stops polling, and after an hour in any
+case. Reopening cancels it. Use `stop` for immediate cleanup.
