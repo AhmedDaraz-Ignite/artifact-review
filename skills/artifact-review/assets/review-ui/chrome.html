@@ -879,6 +879,7 @@ let state = null;
 let lastVersion = null;
 let annotating = false;
 let popItem = null;
+let popSending = false;
 let auditRun = 0;
 let mermaidBlocks = [];
 let inlineGeneration = 0;
@@ -1229,22 +1230,33 @@ document.addEventListener("keydown", event => {
 });
 
 function openAnnotation(item, rect, context) {
+  const host = $("pop");
+  const note = $("popText");
+  // Retargeting mid-delivery would hand the request in flight a different
+  // element, so the pick is dropped and the reviewer is told why.
+  if (popSending) {
+    announce("The previous note is still being delivered. Pick again once it lands.");
+    return;
+  }
+  // A note the reviewer typed and has not delivered moves to the new target
+  // instead of being thrown away. closeAnnotation is what empties the field.
+  const carried = !host.hidden && note.value.trim();
   popItem = item;
   $("popCtx").textContent = context || item.selector;
-  $("popText").value = "";
-  actionState("popState", "Draft");
+  actionState("popState", "Draft",
+    carried ? "Your note moved to the element you just picked." : "");
   const stageRect = art.getBoundingClientRect();
-  const host = $("pop");
   const left = Math.max(8, Math.min(stageRect.width - 348, rect?.left || 40));
   const top = Math.max(8, Math.min(stageRect.height - 190, (rect?.bottom || 32) + 8));
   host.style.left = left + "px";
   host.style.top = top + "px";
   host.hidden = false;
-  $("popText").focus();
+  note.focus();
 }
 
 function closeAnnotation() {
   $("pop").hidden = true;
+  $("popText").value = "";
   popItem = null;
   art.focus();
 }
@@ -1265,7 +1277,8 @@ $("popText").addEventListener("input", () => {
 });
 
 async function submitAnnotation(mode) {
-  if (!popItem) return;
+  if (!popItem || popSending) return;
+  popSending = true;
   const item = { ...popItem, comment:$("popText").value.trim() };
   const controls = [$("popAction"), $("popCancel"), $("popText")];
   controls.forEach(control => { control.disabled = true; });
@@ -1282,6 +1295,7 @@ async function submitAnnotation(mode) {
     actionState("popState", "Failed", `Annotation failed: ${errorMessage(error)}`);
     showBanner(`Annotation preserved. Try again: ${errorMessage(error)}`);
   } finally {
+    popSending = false;
     controls.forEach(control => { control.disabled = !!state?.ended; });
   }
 }
