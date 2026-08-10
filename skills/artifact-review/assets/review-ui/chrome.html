@@ -341,7 +341,12 @@
     opacity:1;
     transition:opacity 100ms ease-out;
   }
-  #draftSection { min-height:0; flex:0 1 auto; display:flex; flex-direction:column }
+  #draftSection, #diagramSection {
+    min-height:0;
+    flex:0 1 auto;
+    display:flex;
+    flex-direction:column;
+  }
   .activity-section { min-height:0; flex:1; display:flex; flex-direction:column }
   .rail-scrim { display:none }
   html[data-review-rail="collapsed"] .review-rail {
@@ -441,7 +446,7 @@
   }
   .remove:hover { background:var(--danger-soft); color:var(--danger) }
   .empty { padding:12px; color:var(--muted); font-size:12px }
-  .diagram-list { border-bottom:1px solid var(--line) }
+  .diagram-list { min-height:0; overflow:auto; border-bottom:1px solid var(--line) }
   .diagram-row {
     width:100%;
     display:flex;
@@ -459,6 +464,7 @@
   .diagram-row:last-child { border-bottom:0 }
   .diagram-row:hover { background:var(--surface-subtle) }
   .diagram-icon { color:var(--accent) }
+  .diagram-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
   .load-earlier {
     width:calc(100% - 24px);
     min-height:32px;
@@ -680,7 +686,13 @@
     <div class="drafts" id="queue">
       <div class="empty">Nothing drafted. Annotate the artifact or write a note below.</div>
     </div>
-    <div class="diagram-list" id="diagrams" hidden></div>
+    </section>
+    <section id="diagramSection" aria-labelledby="diagramSectionTitle" hidden>
+    <div class="section-head">
+      <h2 id="diagramSectionTitle">Diagrams</h2>
+      <span class="hint">Open the inline editor</span>
+    </div>
+    <div class="diagram-list" id="diagrams"></div>
     </section>
     <section class="activity-section" id="activitySection" aria-labelledby="activitySectionTitle">
     <div class="section-head">
@@ -1817,6 +1829,7 @@ async function prepareInlineDiagrams(blocks) {
   await Promise.all(mermaidBlocks.map(async rawBlock => {
     const block = {
       id:String(rawBlock?.id || ""),
+      title:String(rawBlock?.title || ""),
       selector:String(rawBlock?.selector || ""),
       source:normalizeMermaidSource(rawBlock?.source),
     };
@@ -1861,18 +1874,28 @@ async function prepareInlineDiagrams(blocks) {
   if (generation === inlineGeneration) renderDiagramList();
 }
 
+// The SDK names each diagram from the artifact's own markup. The id is the
+// last resort, for a block whose message carried no name.
+function diagramName(block) {
+  return String(block?.title || "").trim().slice(0, 80) ||
+    String(block?.id || "");
+}
+
 function renderDiagramList() {
   const host = $("diagrams");
   host.textContent = "";
-  host.hidden = !mermaidBlocks.length;
+  $("diagramSection").hidden = !mermaidBlocks.length;
   mermaidBlocks.forEach(block => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "diagram-row";
     button.disabled = !!state?.ended || !inlineDiagrams.has(block.id);
     button.innerHTML = '<span class="diagram-icon" aria-hidden="true">◇</span>';
+    const name = diagramName(block);
+    button.setAttribute("aria-label", `Focus diagram editor: ${name}`);
     const label = document.createElement("span");
-    label.textContent = `Focus diagram editor: ${block.id}`;
+    label.className = "diagram-name";
+    label.textContent = name;
     button.appendChild(label);
     button.addEventListener("click", () => focusInlineDiagram(block.id));
     host.appendChild(button);
@@ -1892,7 +1915,7 @@ async function focusInlineDiagram(id) {
     type:"focus-inline",
     id:record.block.id,
   }, "*");
-  announce(`Diagram editor ${record.block.id} focused.`);
+  announce(`Diagram editor ${diagramName(record.block)} focused.`);
 }
 
 function enqueueDiagram(record, task) {
