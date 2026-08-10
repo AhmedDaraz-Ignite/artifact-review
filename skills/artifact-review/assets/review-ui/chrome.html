@@ -39,6 +39,9 @@
     --shadow:0 4px 8px rgba(20,24,32,.14);
     --review-rail-expanded:360px;
     --review-dock-width:64px;
+    --rail-head:40px;
+    /* A rail section floor is its heading plus one list row. */
+    --rail-section-min:calc(var(--rail-head) + 44px);
     --rail-ease:cubic-bezier(.2,.8,.2,1);
   }
   @media (prefers-color-scheme: dark) {
@@ -339,17 +342,27 @@
     flex:1;
     display:flex;
     flex-direction:column;
+    /* On a rail too short for even the headings and the composer, the panel
+       scrolls so the composer stays reachable instead of being cut off. */
+    overflow:hidden auto;
     visibility:visible;
     opacity:1;
     transition:opacity 100ms ease-out;
   }
-  #draftSection, #diagramSection {
-    min-height:0;
-    flex:0 1 auto;
+  /* A rail section keeps its heading and one row of its list, and it clips its own
+     content instead of painting over the section below. Its lists scroll, and once
+     even these floors do not fit, the panel above scrolls. */
+  .rail-panel > section {
+    min-height:var(--rail-section-min);
     display:flex;
     flex-direction:column;
+    overflow:hidden;
   }
-  .activity-section { min-height:0; flex:1; display:flex; flex-direction:column }
+  /* display:flex above outranks the browser's own rule for a hidden element. */
+  .rail-panel > section[hidden] { display:none }
+  /* An auto basis, not the 0 of a plain flex:1. On a crowded rail a 0 basis leaves
+     this section its floor and nothing more, hiding every entry the agent sent. */
+  .activity-section { flex:1 1 auto }
   .rail-scrim { display:none }
   html[data-review-rail="collapsed"] .review-rail {
     width:var(--review-dock-width);
@@ -382,7 +395,7 @@
     translate:0 -50%;
   }
   .section-head {
-    min-height:40px;
+    min-height:var(--rail-head);
     display:flex;
     align-items:center;
     gap:8px;
@@ -401,7 +414,10 @@
     font-weight:650;
     text-align:center;
   }
-  .drafts { min-height:84px; max-height:34%; overflow:auto }
+  .drafts { max-height:34%; overflow:auto }
+  /* The cap only stops a long queue pushing the section open, so the short
+     empty-state sentence is exempt and always reads in full. */
+  .drafts:has(.empty) { max-height:none }
   .draft-row {
     display:grid;
     grid-template-columns:auto minmax(0,1fr) auto;
@@ -448,7 +464,9 @@
   }
   .remove:hover { background:var(--danger-soft); color:var(--danger) }
   .empty { padding:12px; color:var(--muted); font-size:12px }
-  .diagram-list { min-height:0; overflow:auto; border-bottom:1px solid var(--line) }
+  /* The list scrolls, so a long one shrinks with its section instead of pushing
+     past it. That overflow is also what lets the section shrink at all. */
+  .diagram-list { overflow:auto; border-bottom:1px solid var(--line) }
   .diagram-row {
     width:100%;
     display:flex;
@@ -465,6 +483,8 @@
   }
   .diagram-row:last-child { border-bottom:0 }
   .diagram-row:hover { background:var(--surface-subtle) }
+  /* A row fills the scrolling list edge to edge, so an outset ring would be clipped. */
+  .diagram-row:focus-visible { outline-offset:-2px }
   .diagram-icon { color:var(--accent) }
   .diagram-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
   .load-earlier {
@@ -481,7 +501,7 @@
   }
   .load-earlier:hover { background:var(--surface-subtle) }
   .load-earlier:disabled { cursor:progress; color:var(--muted) }
-  .activity { min-height:96px; flex:1; overflow:auto }
+  .activity { flex:1; overflow:auto }
   .feed-entry { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px }
   .feed-entry.agent { background:var(--accent-soft) }
   .feed-meta { display:flex; align-items:center; gap:7px; margin-bottom:5px }
@@ -576,8 +596,7 @@
       width:var(--review-dock-width);
       flex-basis:auto;
     }
-    .drafts { min-height:0; max-height:22% }
-    .activity { min-height:0 }
+    .drafts { max-height:22% }
     .composer textarea { min-height:56px; max-height:72px }
     dialog.board { width:100vw; height:100vh; border:0; border-radius:0 }
   }

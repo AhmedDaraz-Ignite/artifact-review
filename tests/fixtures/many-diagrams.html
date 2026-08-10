@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Many diagram fixture</title>
+<style>
+  body { max-width:1100px; margin:0 auto; padding:24px; font:15px/1.5 system-ui,sans-serif }
+  pre.mermaid { border:1px solid #b8becb; border-radius:10px; padding:16px; background:#f7f8fa }
+</style>
+</head>
+<body>
+<h1>Nine diagram artifact</h1>
+<p>Nine diagrams make the rail diagram list longer than the rail is tall.</p>
+<section>
+  <h2>asset-delivery</h2>
+  <pre class="mermaid">flowchart LR
+  A0[Request] --> B0[Cache]
+  B0 --> C0[Asset]</pre>
+</section>
+<section>
+  <h2>review-loop</h2>
+  <pre class="mermaid">flowchart LR
+  A1[Draft] --> B1[Send]
+  B1 --> C1[Reply]</pre>
+</section>
+<section>
+  <h2>session-store</h2>
+  <pre class="mermaid">flowchart LR
+  A2[Open] --> B2[Write]
+  B2 --> C2[Read]</pre>
+</section>
+<section>
+  <h2>render-path</h2>
+  <pre class="mermaid">flowchart LR
+  A3[Parse] --> B3[Layout]
+  B3 --> C3[Paint]</pre>
+</section>
+<section>
+  <h2>poll-cycle</h2>
+  <pre class="mermaid">flowchart LR
+  A4[Wait] --> B4[Event]
+  B4 --> C4[Ack]</pre>
+</section>
+<section>
+  <h2>gate-check</h2>
+  <pre class="mermaid">flowchart LR
+  A5[Audit] --> B5[Gate]
+  B5 --> C5[Pass]</pre>
+</section>
+<section>
+  <h2>export-flow</h2>
+  <pre class="mermaid">flowchart LR
+  A6[Select] --> B6[Bundle]
+  B6 --> C6[Save]</pre>
+</section>
+<section>
+  <h2>theme-swap</h2>
+  <pre class="mermaid">flowchart LR
+  A7[Detect] --> B7[Swap]
+  B7 --> C7[Redraw]</pre>
+</section>
+<section>
+  <h2>whiteboard-sync</h2>
+  <pre class="mermaid">flowchart LR
+  A8[Edit] --> B8[Diff]
+  B8 --> C8[Apply]</pre>
+</section>
+</body>
+</html>
