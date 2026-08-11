@@ -305,6 +305,138 @@ function frameApp() {
     if (text) banner.append(document.createTextNode(text));
   }
 
+  // Icons are inline so the frame keeps its offline, no-network guarantee.
+  // Their stroke and fill live in .wb-mode svg, beside the sizing.
+  function icon(paths) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    for (const d of paths) {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
+  const LOCK_ICON = ["M7 11V8a5 5 0 0 1 10 0v3", "M6 11h12v10H6z"];
+  const HAND_ICON = [
+    "M8 13V5a1.5 1.5 0 0 1 3 0v6",
+    "M11 11V4a1.5 1.5 0 0 1 3 0v7",
+    "M14 11V6a1.5 1.5 0 0 1 3 0v7",
+    "M17 10a1.5 1.5 0 0 1 3 0v4a7 7 0 0 1-7 7h-1a7 7 0 0 1-7-7v-1a1.5 1.5 0 0 1 3 0",
+  ];
+  // Brackets open inward, the mirror of the header's outward fullscreen glyph,
+  // so the two are told apart by direction rather than by memory.
+  const FIT_ICON = ["M9 4v5H4", "M15 20v-5h5", "M15 4v5h5", "M9 20v-5H4"];
+
+  // The tooltip carries the keyboard shortcut, which is the discovery path the
+  // hidden Excalidraw controls used to provide. The accessible name stays the
+  // plain label so it is not read twice.
+  function modeButton(id, label, key, paths, onClick) {
+    const button = element("button", {
+      id,
+      className:"wb-mode",
+      type:"button",
+      title:key ? `${label} (${key})` : label,
+      ariaLabel:label,
+      disabled:true,
+    });
+    button.append(icon(paths));
+    button.onclick = onClick;
+    return button;
+  }
+
+  // Lock and pan change how the pointer behaves rather than adding to the
+  // drawing, so they sit apart from the marks in a rail of their own.
+  function buildModeRail() {
+    const rail = element("div", {
+      className:"wb-mode-rail",
+      role:"group",
+      ariaLabel:"Canvas controls",
+    });
+    rail.append(
+      modeButton("wbLock", "Keep the current tool active", "Q", LOCK_ICON, () => {
+        if (!state.api) return;
+        const tool = state.api.getAppState().activeTool;
+        state.api.setActiveTool({ type:tool.type, locked:!tool.locked });
+      }),
+      modeButton("wbHand", "Pan the canvas", "H", HAND_ICON, () => {
+        if (!state.api) return;
+        const tool = state.api.getAppState().activeTool;
+        // Leaving pan returns to whatever was in hand before it, which is what
+        // Excalidraw's own H shortcut does.
+        state.api.setActiveTool({
+          type:tool.type === "hand"
+            ? (tool.lastActiveTool?.type || "selection")
+            : "hand",
+        });
+      }),
+    );
+    // Only the rail's buttons are toggles; fit is not, so it never carries this.
+    for (const button of rail.children) {
+      button.setAttribute("aria-pressed", "false");
+    }
+    return rail;
+  }
+
+  // Fit repaints the canvas and changes nothing a screen reader can observe,
+  // so it says what it did. The save status cannot carry this without
+  // overwriting itself.
+  function buildFitButton() {
+    const wrap = element("div", { className:"wb-mode-rail wb-mode-rail--fit" });
+    wrap.append(
+      modeButton("wbFit", "Fit the diagram to the canvas", "", FIT_ICON, () => {
+        if (!state.api) return;
+        fitScene();
+        announce("Diagram fitted to the canvas.");
+      }),
+    );
+    return wrap;
+  }
+
+  // A live region only speaks when its text changes, so the same message twice
+  // running has to clear first or every press after the first is silent.
+  function announce(message) {
+    const live = document.getElementById("wbLive");
+    if (!live) return;
+    live.textContent = "";
+    requestAnimationFrame(() => { live.textContent = message; });
+  }
+
+  // Excalidraw owns the active tool, so the rail reads it back rather than
+  // keeping a copy that could drift. Writing only on a change keeps this off
+  // the drawing hot path, where onChange fires every frame.
+  function setPressed(button, on) {
+    const value = String(on);
+    if (button.getAttribute("aria-pressed") === value) return;
+    button.setAttribute("aria-pressed", value);
+  }
+
+  function syncModeRail(appState) {
+    const tool = appState?.activeTool;
+    if (!tool) return;
+    setPressed(document.getElementById("wbLock"), Boolean(tool.locked));
+    setPressed(document.getElementById("wbHand"), tool.type === "hand");
+  }
+
+  // The controls stay disabled until there is an editor behind them, so a
+  // reviewer never presses one that silently does nothing.
+  function enableControls() {
+    for (const id of ["wbLock", "wbHand", "wbFit"]) {
+      document.getElementById(id).disabled = false;
+    }
+  }
+
+  // A pointer that goes down on the canvas keeps the drag even when it ends
+  // over a control. pointerup can be missed, so the document clears it too.
+  function setDrawing(on) {
+    document.getElementById("wbEditor")?.classList.toggle("wb-drawing", on);
+  }
+  for (const event of ["pointerup", "pointercancel"]) {
+    document.addEventListener(event, () => setDrawing(false), true);
+  }
+
   function buildShell() {
     const shell = element("main", { className:"wb-shell" });
     const header = element("header", { className:"wb-header" });
@@ -346,6 +478,14 @@ function frameApp() {
       className:"wb-editor",
       ariaLabel:"Editable diagram canvas",
     });
+    // React owns wbCanvas and replaces its children on every mount, so the
+    // frame's own controls live beside it rather than inside it.
+    editor.append(
+      element("div", { id:"wbCanvas", className:"wb-canvas" }),
+      buildModeRail(),
+      buildFitButton(),
+      element("div", { id:"wbLive", className:"wb-live", role:"status" }),
+    );
     const feedback = element("section", { className:"wb-feedback" });
     const label = element("label", {
       htmlFor:"wbSummary",
@@ -502,7 +642,7 @@ function frameApp() {
   }
 
   function mountEditor(elements, appState, files) {
-    const host = document.getElementById("wbEditor");
+    const host = document.getElementById("wbCanvas");
     if (state.root) state.root.unmount();
     host.replaceChildren();
     state.root = createRoot(host);
@@ -514,14 +654,30 @@ function frameApp() {
           files:files || undefined,
           scrollToContent:true,
         },
-        onChange:scheduleSave,
+        onChange:(_elements, next) => {
+          syncModeRail(next);
+          scheduleSave();
+        },
+        // Excalidraw turns its own floating chrome click-through while the
+        // pointer is down, through a variable set inside its container. The
+        // rail sits outside that container and cannot inherit it, so a drag
+        // toward the right edge would end on a rail button instead of the
+        // canvas. These mirror that behaviour for the frame's own controls.
+        onPointerDown:() => setDrawing(true),
+        onPointerUp:() => setDrawing(false),
         excalidrawAPI:api => {
           state.api = api;
+          enableControls();
+          syncModeRail(api.getAppState());
           queueFit();
         },
         UIOptions:{
+          // Only the actions that open a dialog of their own. The rest are
+          // menu entries, and the menu itself is hidden.
           canvasActions:{
+            export:false,
             loadScene:false,
+            saveAsImage:false,
             saveToActiveFile:false,
             toggleTheme:false,
           },
@@ -644,13 +800,15 @@ function frameApp() {
         await offerStaleChoice(init, saved);
       }
     } catch (error) {
-      const host = document.getElementById("wbEditor");
+      const host = document.getElementById("wbCanvas");
       const message = error instanceof Error ? error.message : String(error);
       setBadge(`${classifySource(init.source).label} · Conversion failed`, true);
       setBanner(
         `The editable conversion failed: ${message}. The authoritative Mermaid source is shown below.`,
         "error",
       );
+      // There is no canvas to pan or fit once the source is shown as text.
+      document.getElementById("wbEditor")?.setAttribute("data-fallback", "true");
       host.replaceChildren(
         element("pre", { className:"wb-source-fallback", textContent:init.source }),
       );

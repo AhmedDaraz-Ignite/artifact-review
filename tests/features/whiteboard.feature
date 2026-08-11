@@ -10,6 +10,22 @@ Feature: Inline diagram whiteboard
     And the reviewer has the review session open
     And the "clean-flow" diagram has mounted
 
+  Scenario: The editor carries review controls, not whiteboard-app controls
+    Given the reviewer opens the "clean-flow" diagram editor
+    Then the "clean-flow" editor hides the scene menu
+    And the "clean-flow" editor hides the shape library
+    And no control can open the "clean-flow" shape library
+    And the "clean-flow" editor hides the help panel
+    And the "clean-flow" tool strip carries no lock control
+    And the "clean-flow" tool strip carries no pan control
+    And the "clean-flow" editor offers lock and pan on a rail of their own
+    And the "clean-flow" editor offers a fit control
+    And the "clean-flow" dock puts undo before zoom
+    When the reviewer turns on pan for the "clean-flow" diagram
+    Then the "clean-flow" pan control reports itself on
+    When the reviewer turns on lock for the "clean-flow" diagram
+    Then the "clean-flow" lock control reports itself on
+
   Scenario: The editor and its assets stay unloaded until the reviewer asks
     Then no diagram has mounted an editor frame
     And no whiteboard asset has been fetched
