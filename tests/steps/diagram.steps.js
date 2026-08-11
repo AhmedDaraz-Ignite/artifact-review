@@ -119,13 +119,13 @@ When(/^the reviewer adds the "([^"]*)" diagram edit to the review$/,
   });
 
 Then(/^the "([^"]*)" diagram rendered offline$/, async ({ boards }, id) => {
-  await expect(boards.artifact.locator(`#${id} svg`)).toBeVisible({ timeout:20_000 });
+  await expect(boards.rendered(id).svg).toBeVisible({ timeout:20_000 });
 });
 
 Then(/^the "([^"]*)" diagram still shows its Mermaid source$/, async ({ boards }, id) => {
-  const block = boards.artifact.locator(`#${id}`);
-  await expect(block.locator('svg')).toHaveCount(0);
-  await expect(block).toContainText('unbalanced');
+  const diagram = boards.rendered(id);
+  await expect(diagram.svg).toHaveCount(0);
+  await expect(diagram.holder).toContainText('unbalanced');
 });
 
 Then(/^only the "([^"]*)" diagram is reported as unrendered$/, async ({ arev }, id) => {

@@ -137,10 +137,18 @@ let applied = null;
 let queued = false;
 let rendering = false;
 
+// The review tool draws its own SVG icons, and the resting edit control puts one
+// inside the very block a diagram is drawn into. Only an SVG outside that chrome
+// means the block already carries a picture.
+function drawnSvg(holder) {
+  return [...holder.querySelectorAll("svg")].find(
+    svg => !svg.closest("[data-arev-internal]"),
+  );
+}
+
 function collectPending() {
   const holders = [...document.querySelectorAll("pre.mermaid, div.mermaid")].filter(
-    holder =>
-      !holder.getAttribute("data-processed") && !holder.querySelector("svg"),
+    holder => !holder.getAttribute("data-processed") && !drawnSvg(holder),
   );
   for (const holder of holders) {
     const source = holderSource(holder);
