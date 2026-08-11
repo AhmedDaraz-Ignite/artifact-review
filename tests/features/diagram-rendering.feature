@@ -17,6 +17,13 @@ Feature: Diagram rendering
     And the "themed-flow" diagram was rebuilt with restyled markup
     And the re-render announced itself to the review SDK
 
+  Scenario: Node boxes are rounded and their names are bold in both themes
+    Then the "themed-flow" diagram draws 8px node corners
+    And the "themed-flow" diagram names its nodes in weight 600
+    When the reviewer switches the page theme
+    Then the "themed-flow" diagram draws 8px node corners
+    And the "themed-flow" diagram names its nodes in weight 600
+
   Scenario: Transition labels that would land on each other are moved apart
     Then the "themed-crowded" diagram rendered offline
     And all 6 "themed-crowded" transition labels are readable

@@ -200,6 +200,20 @@ class RenderedDiagram {
         .map(node => node.getAttribute('data-arev-node-key')));
   }
 
+  // The corner radius and label weight of the first node box. Mermaid keeps a
+  // sequence actor's name in a tspan, so that carries the weight, not the
+  // text element around it.
+  boxStyle() {
+    return this.holder.evaluate(element => {
+      const box = element.querySelector('rect.actor, g.node rect.basic');
+      const name = element.querySelector('text.actor tspan, g.node .nodeLabel');
+      return {
+        radius:box ? getComputedStyle(box).rx : '',
+        weight:name ? getComputedStyle(name).fontWeight : '',
+      };
+    });
+  }
+
   viewBox() {
     return this.svg.getAttribute('viewBox');
   }

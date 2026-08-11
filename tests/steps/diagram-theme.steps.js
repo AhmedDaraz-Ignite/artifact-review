@@ -49,6 +49,16 @@ Then(/^the "([^"]*)" diagram was rebuilt with restyled markup$/, async ({ boards
   expect(now.markup, 'restyled markup').not.toBe(diagram.before.markup);
 });
 
+Then(/^the "([^"]*)" diagram draws (\d+)px node corners$/,
+  async ({ boards }, id, radius) => {
+    expect((await boards.rendered(id).boxStyle()).radius).toBe(`${radius}px`);
+  });
+
+Then(/^the "([^"]*)" diagram names its nodes in weight (\d+)$/,
+  async ({ boards }, id, weight) => {
+    expect((await boards.rendered(id).boxStyle()).weight).toBe(`${weight}`);
+  });
+
 Then('the re-render announced itself to the review SDK', async ({ boards }) => {
   await expect
     .poll(async () => (await boards.rendered('themed-flow').snapshot()).renders)
