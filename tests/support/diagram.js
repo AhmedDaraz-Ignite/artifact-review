@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
 import { pollUntil } from './poll.js';
 
-const OPEN_EDITOR = /Open diagram editor|Click to edit diagram/i;
+const OPEN_EDITOR = /edit diagram/i;
 
 class Board {
   constructor(page, id) {
@@ -17,6 +17,30 @@ class Board {
     this.saved = null;
     this.drawn = null;
     this.diagramHeight = 0;
+    this.restingControl = null;
+  }
+
+  // Everything a scenario needs to judge the resting control: its shape,
+  // whether it shows words, and the outline that answers a pointer.
+  activationMetrics() {
+    return this.activation.evaluate(node => {
+      const style = getComputedStyle(node);
+      const box = node.getBoundingClientRect();
+      return {
+        width:Math.round(box.width),
+        height:Math.round(box.height),
+        bottom:box.bottom,
+        borderWidth:parseFloat(style.borderTopWidth),
+        borderColor:style.borderTopColor,
+        // What a reader actually sees. The mounted overlay's wording stays in
+        // the DOM while the icon shows, so textContent would always find it.
+        text:node.innerText.trim(),
+      };
+    });
+  }
+
+  diagramTop() {
+    return this.source.evaluate(node => node.getBoundingClientRect().top);
   }
 
   get canvas() {
