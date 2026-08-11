@@ -9,7 +9,7 @@ Two copies of the skill exist in this tree:
 
 - `skills/artifact-review` - the repo source. SKILL.md 7,809 bytes, server.py 767 lines.
 - `.claude/skills/artifact-review` - the installed copy, gitignored, resolved from
-  `skills-lock.json` (source `AhmedDaraz-Ignite/artifact-review`). SKILL.md 9,368 bytes,
+  `skills-lock.json` (source `arDaraz/artifact-review`). SKILL.md 9,368 bytes,
   server.py 997 lines.
 
 The installed copy is what actually runs, and local `main` is **3 commits behind

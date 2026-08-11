@@ -115,7 +115,7 @@ Artifact Review does not claim to:
 
 Please do not open a public issue for a vulnerability that has not been fixed.
 Use a [private GitHub security
-advisory](https://github.com/AhmedDaraz-Ignite/artifact-review/security/advisories/new).
+advisory](https://github.com/arDaraz/artifact-review/security/advisories/new).
 
 Include, when possible:
 

@@ -87,7 +87,7 @@ does not appear in the agent's available-skills list at all. The description fix
 has no effect until it is installed:
 
 ```bash
-npx skills add AhmedDaraz-Ignite/artifact-review \
+npx skills add arDaraz/artifact-review \
   --skill artifact-review \
   --agent codex claude-code \
   --global \

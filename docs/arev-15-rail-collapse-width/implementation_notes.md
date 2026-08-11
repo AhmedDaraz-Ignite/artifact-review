@@ -1,6 +1,6 @@
 # Collapsing the review rail gives the artifact no extra width
 
-Issue: https://github.com/AhmedDaraz-Ignite/artifact-review/issues/15
+Issue: https://github.com/arDaraz/artifact-review/issues/15
 
 ## Root cause
 

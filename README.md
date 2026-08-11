@@ -14,13 +14,13 @@ Artifact Review follows the open [Agent Skills](https://agentskills.io)
 directory format. Install it into the current project with the `skills` CLI:
 
 ```bash
-npx skills add AhmedDaraz-Ignite/artifact-review --skill artifact-review
+npx skills add arDaraz/artifact-review --skill artifact-review
 ```
 
 To install explicitly for both Codex and Claude Code:
 
 ```bash
-npx skills add AhmedDaraz-Ignite/artifact-review \
+npx skills add arDaraz/artifact-review \
   --skill artifact-review \
   --agent codex claude-code \
   --yes
@@ -29,7 +29,7 @@ npx skills add AhmedDaraz-Ignite/artifact-review \
 Use `--global` for a user-level installation:
 
 ```bash
-npx skills add AhmedDaraz-Ignite/artifact-review \
+npx skills add arDaraz/artifact-review \
   --skill artifact-review \
   --agent codex claude-code \
   --global \

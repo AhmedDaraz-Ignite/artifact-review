@@ -1,6 +1,6 @@
 # Card holding a code block scrolls the page sideways on a phone
 
-Issue: https://github.com/AhmedDaraz-Ignite/artifact-review/issues/16
+Issue: https://github.com/arDaraz/artifact-review/issues/16
 
 ## Root cause
 

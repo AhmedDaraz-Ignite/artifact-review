@@ -2,7 +2,7 @@
 
 Date: 2026-08-08. Branch: `arev-10-diagram-theme-fidelity` (worktree
 `artifact-review.fix-diagram-fidelity`). Tracked by
-https://github.com/AhmedDaraz-Ignite/artifact-review/issues/10.
+https://github.com/arDaraz/artifact-review/issues/10.
 
 ## What this task actually did
 
