@@ -23,6 +23,25 @@ class Board {
     return this.editor.locator('canvas.excalidraw__canvas.interactive');
   }
 
+  // The editor's reduced chrome. The frame owns the rail and fit; the rest are
+  // Excalidraw's own controls, kept here so a scenario never names a selector.
+  // Fit reuses the rail's box, so exclude it to name the rail proper.
+  get modeRail() { return this.editor.locator('.wb-mode-rail:not(.wb-mode-rail--fit)') }
+  get lockMode() { return this.editor.locator('#wbLock') }
+  get panMode() { return this.editor.locator('#wbHand') }
+  get fitControl() { return this.editor.locator('#wbFit') }
+  get sceneMenu() { return this.editor.locator('[data-testid="main-menu-trigger"]') }
+  // The label, not the inner trigger: hiding only the trigger leaves the
+  // checkbox inside it live and focusable.
+  get shapeLibrary() { return this.editor.locator('.sidebar-trigger__label-element') }
+  get libraryToggle() { return this.editor.getByRole('checkbox', { name:'Library' }) }
+  get helpControl() { return this.editor.locator('.help-icon') }
+  get toolStrip() { return this.editor.locator('.App-toolbar') }
+  get toolStripLock() { return this.toolStrip.locator('[data-testid="toolbar-lock"]') }
+  get toolStripPan() { return this.toolStrip.locator('[data-testid="toolbar-hand"]') }
+  get undoControl() { return this.editor.locator('[data-testid="button-undo"]') }
+  get zoomControls() { return this.editor.locator('.zoom-actions') }
+
   mount() {
     return this.host.waitFor({ state:'visible', timeout:30_000 });
   }

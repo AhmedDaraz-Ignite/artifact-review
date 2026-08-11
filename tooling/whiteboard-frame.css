@@ -6,6 +6,7 @@
   --wb-muted:#61687a;
   --wb-line:#d8dbe2;
   --wb-accent:#3557c0;
+  --wb-accent-soft:#e8edfb;
   --wb-success:#176548;
   --wb-warning:#92400e;
   --wb-danger:#a63d40;
@@ -56,7 +57,7 @@ button:focus-visible, input:focus-visible {
   flex:0 0 auto;
   border-radius:999px;
   padding:2px 7px;
-  background:#e8edfb;
+  background:var(--wb-accent-soft);
   color:var(--wb-accent);
   font-size:11px;
   font-weight:650;
@@ -119,7 +120,140 @@ button:focus-visible, input:focus-visible {
   position:relative;
   background:var(--wb-subtle);
 }
+.wb-canvas { position:absolute; inset:0 }
 .wb-editor .excalidraw { width:100%; height:100% }
+.wb-editor[data-fallback="true"] .wb-mode-rail { display:none }
+
+/* --- Excalidraw's own chrome, reduced to a review surface ---------------
+   A reviewer marks up a diagram the agent wrote; they do not manage scenes.
+   Selectors prefer Excalidraw's data-testid hooks, which survive its UI
+   refactors better than class names do. tests/runtime/test_whiteboard_chrome.py
+   fails when any of these stop matching the bundle. */
+
+/* No scene menu, no shape library, no help panel. Excalidraw moves these
+   between a wide and a compact layout, so match the control itself rather
+   than the region that happens to hold it at one size.
+
+   The library trigger is a label wrapping a transparent checkbox. Hiding the
+   inner .sidebar-trigger leaves that checkbox live: invisible, still in the
+   tab order, and still able to open a panel that links out to
+   libraries.excalidraw.com from a frame that promises no network. Hide the
+   label so the input goes with it. */
+.wb-editor [data-testid="main-menu-trigger"],
+.wb-editor .sidebar-trigger__label-element,
+.wb-editor .help-icon { display:none }
+
+/* The canvas hint is positioned over the drawing and lands on the first row of
+   a top-heavy Mermaid diagram. Panning is already discoverable from the rail. */
+.wb-editor .HintViewer { display:none }
+
+/* Undo and redo lead the dock; zoom follows. The flex container is the section
+   inside the footer, not the footer column itself, which is a block. */
+.wb-editor .layer-ui__wrapper__footer-left section > :has([data-testid="button-undo"]) {
+  order:-1;
+}
+
+/* Excalidraw's compact layout stretches the dock across the whole editor, which
+   walls the canvas off from the fit control at the other end. Let it hug its
+   own controls so both read as what they are: two small clusters on one edge. */
+.wb-editor .App-bottom-bar > .Island {
+  width:auto;
+  min-width:0;
+  margin-right:auto;
+}
+
+/* Excalidraw's compact toolbar puts a divider beside lock and pan; the wide
+   one puts an unrelated divider before the extra-tools dropdown. Both go, so
+   neither layout is left with a separator that divides nothing. */
+.wb-editor .App-toolbar__divider { display:none }
+
+/* Lock and pan are pointer modes, not marks, so they leave the tool strip for
+   the rail built in whiteboard-entry.mjs. That rail is only added when :has()
+   is available, so these two never disappear without a replacement. */
+.wb-editor label.ToolIcon:has([data-testid="toolbar-lock"]),
+.wb-editor label.ToolIcon:has([data-testid="toolbar-hand"]) { display:none }
+
+/* --- the rail and fit control this frame owns --------------------------
+   Both are flat, per the design system's rule that only menus and composers
+   float. The hairline border is what separates them from the canvas. */
+.wb-mode-rail {
+  position:absolute;
+  z-index:5;
+  top:50%;
+  right:12px;
+  /* Without :has() the rules above cannot hide Excalidraw's own lock and pan,
+     so showing this rail would offer both of them twice. */
+  display:none;
+  flex-direction:column;
+  /* One step of the spacing scale, which also keeps a focus ring clear of the
+     neighbouring button. */
+  gap:4px;
+  padding:4px;
+  border:1px solid var(--wb-line);
+  border-radius:10px;
+  background:var(--wb-surface);
+  transform:translateY(-50%);
+}
+@supports selector(:has(*)) {
+  .wb-mode-rail { display:flex }
+}
+/* Fit is not a mode, so it sits alone at the dock's free end rather than in
+   the rail. It carries no :has() dependency and always shows. */
+.wb-mode-rail--fit {
+  display:flex;
+  top:auto;
+  bottom:1rem;
+  transform:none;
+}
+/* A drag that started on the canvas keeps the canvas, even when the pointer
+   passes over these. Excalidraw does the same for its own floating chrome. */
+.wb-editor.wb-drawing .wb-mode-rail { pointer-events:none }
+.wb-mode {
+  display:grid;
+  place-items:center;
+  width:32px;
+  height:32px;
+  border:0;
+  border-radius:8px;
+  padding:0;
+  background:transparent;
+  color:var(--wb-ink);
+  cursor:pointer;
+}
+.wb-mode svg {
+  width:16px;
+  height:16px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.7;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+.wb-mode:disabled { cursor:default; opacity:.55 }
+.wb-mode:hover:not(:disabled) { background:var(--wb-accent-soft) }
+/* The fill inverts rather than tinting, so the pressed state survives
+   greyscale and clears the 3:1 asked of a state indicator. */
+.wb-mode[aria-pressed="true"] { background:var(--wb-accent); color:#ffffff }
+
+/* Touch pointers get the 44px target the product promises. */
+@media (pointer:coarse) {
+  .wb-mode { width:44px; height:44px }
+  .wb-mode svg { width:20px; height:20px }
+}
+
+/* Announcements for actions with no visible state of their own. Same recipe as
+   .sr-only in the review chrome, so the product has one way to hide text. */
+.wb-live {
+  position:absolute;
+  width:1px;
+  height:1px;
+  margin:-1px;
+  padding:0;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
 .wb-feedback {
   display:grid;
   grid-template-columns:auto minmax(180px,1fr) auto auto;

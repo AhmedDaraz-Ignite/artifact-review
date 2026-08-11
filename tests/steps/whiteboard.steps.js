@@ -181,3 +181,62 @@ Then('no whiteboard asset URL carries the session token', async ({ arev, network
 Then('nothing outside the review server was requested', async ({ network }) => {
   expect([...new Set(network.external)]).toEqual([]);
 });
+
+Then(/^the "([^"]*)" editor hides the (scene menu|shape library|help panel)$/,
+  async ({ boards }, id, control) => {
+    const board = boards.board(id);
+    const locator = {
+      'scene menu':board.sceneMenu,
+      'shape library':board.shapeLibrary,
+      'help panel':board.helpControl,
+    }[control];
+    // Hidden rather than merely out of view: a control left focusable would
+    // still reach a keyboard.
+    await expect(locator).toBeHidden();
+  });
+
+Then(/^the "([^"]*)" tool strip carries no (lock|pan) control$/,
+  async ({ boards }, id, control) => {
+    const board = boards.board(id);
+    await expect(control === 'lock' ? board.toolStripLock : board.toolStripPan)
+      .toBeHidden();
+  });
+
+Then(/^the "([^"]*)" editor offers lock and pan on a rail of their own$/,
+  async ({ boards }, id) => {
+    const board = boards.board(id);
+    await expect(board.modeRail).toBeVisible();
+    await expect(board.lockMode).toHaveAttribute('aria-pressed', 'false');
+    await expect(board.panMode).toHaveAttribute('aria-pressed', 'false');
+  });
+
+When(/^the reviewer turns on (lock|pan) for the "([^"]*)" diagram$/,
+  async ({ boards }, control, id) => {
+    await boards.board(id)[`${control}Mode`].click();
+  });
+
+Then(/^the "([^"]*)" (lock|pan) control reports itself on$/,
+  async ({ boards }, id, control) => {
+    await expect(boards.board(id)[`${control}Mode`])
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+// The reorder is CSS against Excalidraw's own dock, and only the wide layout
+// renders zoom at all, so position is the only honest way to assert it.
+Then(/^the "([^"]*)" dock puts undo before zoom$/, async ({ boards }, id) => {
+  const board = boards.board(id);
+  const undo = await board.undoControl.boundingBox();
+  const zoom = await board.zoomControls.boundingBox();
+  expect(undo.x).toBeLessThan(zoom.x);
+});
+
+Then(/^the "([^"]*)" editor offers a fit control$/, async ({ boards }, id) => {
+  await expect(boards.board(id).fitControl).toBeVisible();
+});
+
+// The library opens a panel that links out to libraries.excalidraw.com, which
+// the frame's offline guarantee forbids, so its control must be gone rather
+// than merely out of sight.
+Then(/^no control can open the "([^"]*)" shape library$/, async ({ boards }, id) => {
+  await expect(boards.board(id).libraryToggle).toBeHidden();
+});

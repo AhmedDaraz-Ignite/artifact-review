@@ -60,6 +60,15 @@ else
   tail -20 "$CHECKS_RAW"
 fi
 
+echo "== whiteboard-chrome"
+CHROME_RAW="$WORK/whiteboard-chrome.log"
+if python3 "$ROOT/tests/runtime/test_whiteboard_chrome.py" > "$CHROME_RAW" 2>&1; then
+  echo "PASS diagram editor chrome hooks still match the bundle" | tee -a "$OUT"
+else
+  echo "FAIL whiteboard chrome - see $CHROME_RAW" | tee -a "$OUT"
+  tail -20 "$CHROME_RAW"
+fi
+
 echo
 if grep -q "^FAIL" "$OUT"; then
   KEEP_LOGS=1
