@@ -108,7 +108,9 @@ function pagePalette() {
       fontFamily: bodyStyle.fontFamily || "sans-serif",
       primaryColor: cssRgb(mixRgb(canvas, text, 0.08)),
       primaryTextColor: cssRgb(text),
-      primaryBorderColor: cssRgb(mixRgb(canvas, text, 0.35)),
+      // 0.28 lands on the palette's own strong line tone. A higher mix drifts
+      // to a neutral grey that reads as a wire frame around every node.
+      primaryBorderColor: cssRgb(mixRgb(canvas, text, 0.28)),
       lineColor: cssRgb(mixRgb(canvas, text, 0.55)),
       // Mermaid does not derive edge-label chips from the primary colors, so
       // an unset value leaves black chips on a dark page.
@@ -116,6 +118,16 @@ function pagePalette() {
     },
   };
 }
+
+// Node boxes are rounded and their names are bold. `:not([rx])` leaves stadium
+// and rounded shapes alone, since those carry the radius their own shape chose.
+// Message and edge labels keep the normal weight so the node names stay the
+// emphasis.
+const NODE_SHAPE_CSS = [
+  "g.node rect.basic:not([rx]){rx:8px;ry:8px}",
+  "rect.actor{rx:8px;ry:8px}",
+  "g.node .nodeLabel,text.actor,text.actor tspan{font-weight:600}",
+].join("");
 
 /* ------------------------------------------------------- rendering */
 
@@ -149,6 +161,7 @@ async function renderOwned() {
     securityLevel: "strict",
     theme: "base",
     themeVariables: palette.themeVariables,
+    themeCSS: NODE_SHAPE_CSS,
   });
   generation += 1;
   let rendered = 0;
