@@ -26,6 +26,13 @@ Feature: Inline diagram whiteboard
     When the reviewer turns on lock for the "clean-flow" diagram
     Then the "clean-flow" lock control reports itself on
 
+  Scenario: The resting control is a square icon above its own diagram
+    Then the "clean-flow" diagram offers an activation control
+    And the "clean-flow" activation control sits above its diagram
+    And the "clean-flow" activation control is a square showing no words
+    When the reviewer points at the "clean-flow" activation control
+    Then the "clean-flow" activation control thickens and changes colour
+
   Scenario: The editor and its assets stay unloaded until the reviewer asks
     Then no diagram has mounted an editor frame
     And no whiteboard asset has been fetched

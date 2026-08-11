@@ -62,6 +62,40 @@ Then(/^the "([^"]*)" diagram offers an activation control$/, async ({ boards }, 
   await expect(boards.board(id).activation).toBeVisible();
 });
 
+Then(/^the "([^"]*)" activation control sits above its diagram$/,
+  async ({ boards }, id) => {
+    const board = boards.board(id);
+    const control = await board.activationMetrics();
+    expect(control.bottom).toBeLessThanOrEqual(await board.diagramTop());
+  });
+
+Then(/^the "([^"]*)" activation control is a square showing no words$/,
+  async ({ boards }, id) => {
+    const control = await boards.board(id).activationMetrics();
+    expect(control.width).toBe(control.height);
+    expect(control.text).toBe('');
+  });
+
+When(/^the reviewer points at the "([^"]*)" activation control$/,
+  async ({ boards }, id) => {
+    const board = boards.board(id);
+    board.restingControl = await board.activationMetrics();
+    await board.activation.hover();
+  });
+
+// Both halves matter. Colour alone fails anyone who cannot tell the two apart,
+// and thickness alone is easy to miss on a control this small.
+Then(/^the "([^"]*)" activation control thickens and changes colour$/,
+  async ({ boards }, id) => {
+    const board = boards.board(id);
+    const resting = board.restingControl;
+    await expect.poll(async () => {
+      const pointed = await board.activationMetrics();
+      return pointed.borderWidth > resting.borderWidth &&
+        pointed.borderColor !== resting.borderColor;
+    }, { timeout:5_000 }).toBe(true);
+  });
+
 Then(/^the "([^"]*)" editor frame is sandboxed away from the review chrome$/,
   async ({ boards }, id) => {
     const board = boards.board(id);

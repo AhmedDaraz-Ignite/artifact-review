@@ -110,6 +110,10 @@
     if (!el || !el.closest) return null;
     var svg = el.closest("svg");
     if (!svg) return null;
+    // The review tool draws its own SVG icons, and they sit inside the very
+    // containers a diagram is recognised by. Without this an icon would be
+    // enhanced as a diagram: node keys, pan and zoom, and a gesture tooltip.
+    if (svg.closest("[data-arev-internal]")) return null;
     var role = (svg.getAttribute("aria-roledescription") || "").toLowerCase();
     var id = (svg.id || "").toLowerCase();
     var inMermaid = svg.closest(
@@ -281,13 +285,37 @@
     ".arev-hover{outline:2px solid #5b8def!important;outline-offset:2px;cursor:crosshair!important}" +
     ".arev-flash{outline:3px solid #e8a13c!important;outline-offset:2px;transition:outline .2s}" +
     // max-width defends the board against artifact CSS that caps a column, so it always
-    // spans the same width as the diagram it stands in for.
-    ".arev-inline-board{position:relative;width:100%;max-width:none;height:52px;margin:8px 0;background:transparent;border:1px solid rgba(128,128,128,.4);border-radius:8px;overflow:hidden;box-sizing:border-box}" +
-    ".arev-inline-board.arev-inline-active{max-height:calc(100vh - 24px);margin:0;background:#fff}" +
+    // spans the same width as the diagram it stands in for. At rest the host is
+    // only the row its button stands in, so it draws no box of its own and never
+    // covers the diagram it sits above.
+    ".arev-inline-board{position:relative;width:100%;max-width:none;margin:0;padding:9px 10px 3px;display:flex;align-items:center;justify-content:flex-end;background:transparent;border:0;border-radius:8px;box-sizing:border-box}" +
+    ".arev-inline-board.arev-inline-active{display:block;padding:0;max-height:calc(100vh - 24px);margin:0;background:#fff;border:1px solid rgba(128,128,128,.4);overflow:hidden}" +
     ".arev-inline-board>iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;background:#fff}" +
-    ".arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;background:rgba(128,128,128,.08);color:inherit;font:600 13px/1.3 sans-serif;cursor:pointer}" +
+    // A square icon button at rest: outlined so it reads as a control before
+    // anyone points at it, then a thicker outline in a different colour on
+    // hover so the change never rests on colour alone.
+    ".arev-inline-unlock{box-sizing:border-box;width:32px;height:32px;flex:none;display:inline-flex;align-items:center;justify-content:center;padding:0;border:1.5px solid #4d7ce0;border-radius:6px;background:rgba(77,124,224,.12);color:#4d7ce0;cursor:pointer;transition:border-color 120ms ease-out,border-width 120ms ease-out,background-color 120ms ease-out,color 120ms ease-out}" +
+    ".arev-inline-unlock:hover:not(:disabled){border-width:2.5px;border-color:#1f9d6b;background:rgba(31,157,107,.18);color:#1f9d6b}" +
+    ".arev-inline-unlock:focus-visible{outline:2px solid #1f9d6b;outline-offset:2px}" +
+    ".arev-inline-unlock svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}" +
+    ".arev-inline-unlock span{display:none}" +
     ".arev-inline-unlock:disabled{cursor:wait;opacity:.6}" +
-    ".arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid rgba(128,128,128,.5);border-radius:999px;background:rgba(128,128,128,.14)}" +
+    // A display of any kind outranks the hidden attribute, and an unlocked
+    // editor hides this overlay rather than removing it. Without this the
+    // invisible button keeps swallowing every click meant for the canvas.
+    ".arev-inline-unlock[hidden]{display:none}" +
+    // Once the editor is mounted the same button becomes the overlay that
+    // covers the frame until the reviewer unlocks it.
+    ".arev-inline-active .arev-inline-unlock{position:absolute;inset:0;width:100%;height:100%;z-index:2;border:0;border-radius:0;background:rgba(128,128,128,.08);color:inherit;font:600 13px/1.3 sans-serif;transition:none}" +
+    ".arev-inline-active .arev-inline-unlock svg{display:none}" +
+    ".arev-inline-active .arev-inline-unlock span{display:inline-block;padding:8px 13px;border:1px solid rgba(128,128,128,.5);border-radius:999px;background:rgba(128,128,128,.14)}" +
+    // A dark artifact needs a lighter pair to stay legible against its own page.
+    "@media (prefers-color-scheme:dark){" +
+    ".arev-inline-unlock{border-color:#87a3f4;background:rgba(135,163,244,.12);color:#87a3f4}" +
+    ".arev-inline-unlock:hover:not(:disabled){border-color:#5dd3a0;background:rgba(93,211,160,.18);color:#5dd3a0}" +
+    ".arev-inline-unlock:focus-visible{outline-color:#5dd3a0}}" +
+    // A finger has no hover, so the square grows to the 44px touch minimum.
+    "@media (pointer:coarse){.arev-inline-board:not(.arev-inline-active) .arev-inline-unlock{width:44px;height:44px}}" +
     ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}";
   document.documentElement.appendChild(css);
 
@@ -516,6 +544,20 @@
     board.block.style.display = board.originalDisplay;
   }
 
+  /* Drawn rather than a glyph, so it keeps one stroke weight at any size and
+   * needs no font the artifact might not ship. */
+  function pencilIcon() {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    ["M4 20h4L19 9l-4-4L4 16z", "M14 6l4 4"].forEach(function (d) {
+      var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
   function markBoardReady(board) {
     if (!board || !board.block) return;
     board.ready = true;
@@ -524,6 +566,7 @@
     board.overlay.disabled = false;
     board.overlayLabel.textContent = "Click to edit diagram";
     board.overlay.setAttribute("aria-label", "Click to edit diagram");
+    board.overlay.title = "Click to edit diagram";
     if (board.wantsUnlock) unlockBoard(board, true);
   }
 
@@ -538,10 +581,10 @@
       if (!board) return;
       restoreBoardSource(board);
       board.host.classList.remove("arev-inline-active");
-      board.host.style.height = "52px";
+      board.host.style.height = "";
       board.overlay.disabled = false;
       board.overlay.hidden = false;
-      board.overlayLabel.textContent = "Open diagram editor";
+      setOverlayIdle(board);
       send({
         type: "inline-mount-failed",
         id: board.id,
@@ -561,12 +604,19 @@
     board.wantsUnlock = false;
     board.iframe = null;
     board.host.classList.remove("arev-inline-active");
-    board.host.style.height = "52px";
+    board.host.style.height = "";
     board.host.setAttribute("aria-label", "Diagram editor available");
     board.overlay.disabled = false;
     board.overlay.hidden = false;
-    board.overlayLabel.textContent = "Open diagram editor";
-    board.overlay.setAttribute("aria-label", "Open diagram editor");
+    setOverlayIdle(board);
+  }
+
+  /* The one place the resting control names itself. The label text stays for
+   * the mounted overlay, which shows words rather than the icon. */
+  function setOverlayIdle(board) {
+    board.overlayLabel.textContent = "Edit diagram";
+    board.overlay.setAttribute("aria-label", "Edit diagram");
+    board.overlay.title = "Edit diagram";
   }
 
   function activateInlineBoard(board, focus) {
@@ -604,6 +654,7 @@
     board.overlay.disabled = true;
     board.overlayLabel.textContent = "Loading diagram editor…";
     board.overlay.setAttribute("aria-label", "Loading diagram editor");
+    board.overlay.title = "Loading diagram editor";
     iframe.title = "Editable diagram " + board.id;
     iframe.style.pointerEvents = "none";
     board.host.insertBefore(iframe, board.overlay);
@@ -672,9 +723,8 @@
       overlay.type = "button";
       overlay.className = "arev-inline-unlock";
       overlay.setAttribute("data-arev-internal", "");
-      overlay.setAttribute("aria-label", "Open diagram editor");
+      overlay.appendChild(pencilIcon());
       var overlayLabel = document.createElement("span");
-      overlayLabel.textContent = "Open diagram editor";
       overlay.appendChild(overlayLabel);
 
       var board = {
@@ -693,6 +743,7 @@
         fullscreen: false,
         ready: false,
       };
+      setOverlayIdle(board);
       overlay.addEventListener("click", function (event) {
         event.preventDefault();
         event.stopPropagation();
@@ -700,10 +751,11 @@
       });
 
       host.appendChild(overlay);
-      if (!host.parentNode)
-        block.parentNode.insertBefore(host, block.nextSibling);
-      else if (host.previousElementSibling !== block)
-        block.parentNode.insertBefore(host, block.nextSibling);
+      // Above the block, not after it. The control gets its own line and the
+      // editor still opens in the diagram's place, because activating hides
+      // the block this host sits directly on top of.
+      if (!host.parentNode || host.nextElementSibling !== block)
+        block.parentNode.insertBefore(host, block);
       inlineBoards[id] = board;
     } catch (err) {
       block.style.display = originalDisplay;
