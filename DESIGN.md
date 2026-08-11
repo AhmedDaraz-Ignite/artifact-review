@@ -162,12 +162,15 @@ the top layer.
 - **Menu button:** One button opens a native top-layer popover. Its menu contains
   “Send now” and “Add to review”; it is not rendered as a segmented button group.
   The composer menu adds a separated, danger-toned “Send and end review” as the
-  last step of the review. It never becomes the remembered default action.
+  last step of the review.
 
 ### Chips
 
 - **Style:** Small status treatment with text and a quiet tonal background.
-- **State:** Use for Draft, Sending, Sent, Received, Answered, and Failed only.
+- **State:** For delivery, use Draft, Sending, Sent, Received, Answered, and
+  Failed only. The composer chip also reads Nothing to send or Nothing to add
+  when the reviewer acts on an empty composer. No request leaves the browser
+  then, so Failed stays reserved for a delivery the server refused.
 
 ### Cards / Containers
 
@@ -194,8 +197,8 @@ competing tab bars. At narrow widths, the rail becomes a full-width bottom sheet
 ### Feedback composer
 
 Annotation, chat, and whiteboard feedback share the same action language and
-menu behavior. The main action repeats the reviewer’s last explicit choice,
-while the menu makes the alternate action available and explains its effect.
+menu behavior. The main button only opens the menu, so it always reads
+“Send or add”. The menu carries every action and explains its effect.
 
 ## Do's and Don'ts
 

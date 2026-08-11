@@ -119,6 +119,17 @@ class AssetDeliveryTests(unittest.TestCase):
         self.assertNotIn("Content-Encoding", plain_headers)
         self.assertEqual(plain_body, source)
 
+    def test_favicon_is_served_without_a_token(self):
+        status, headers, body = self.request("/favicon.ico")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Content-Type"), "image/svg+xml")
+        self.assertEqual(body, (ASSETS / "favicon.svg").read_bytes())
+
+        controller_status, _, controller = self.request("/", authenticated=True)
+        self.assertEqual(controller_status, 200)
+        self.assertIn(b'<link rel="icon" type="image/svg+xml" '
+                      b'href="/favicon.ico">', controller)
+
     def test_internal_documents_reference_hashed_tokenless_assets(self):
         artifact_status, _, artifact = self.request("/artifact")
         self.assertEqual(artifact_status, 200)

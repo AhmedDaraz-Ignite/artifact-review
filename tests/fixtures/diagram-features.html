@@ -83,6 +83,19 @@
       }</pre>
   </section>
 
+  <section aria-labelledby="sequenceTitle">
+    <h2 id="sequenceTitle">Batch reply exchange</h2>
+    <pre class="mermaid" id="message-sequence">sequenceDiagram
+      participant R as Reviewer
+      participant S as Review server
+      participant A as Agent
+      R->>S: queue five items
+      R->>S: send now
+      S->>A: one feedback event
+      A->>S: one reply, whole batch
+      S->>R: batch marked answered</pre>
+  </section>
+
   <section aria-labelledby="nodeTitle">
     <h2 id="nodeTitle">Rendered Mermaid node annotation target</h2>
     <p>This representative Mermaid SVG proves exact node annotations independently of editing.</p>

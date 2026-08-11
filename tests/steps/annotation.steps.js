@@ -1,9 +1,10 @@
 import { Given, When, Then, expect } from '../support/bdd.js';
 
-const TARGET = '(the first paragraph|the table)';
+const TARGET = '(the first paragraph|the table|the heading)';
 const TARGETS = {
   'the first paragraph':frame => frame.locator('p').first(),
   'the table':frame => frame.locator('table').first(),
+  'the heading':frame => frame.locator('h1').first(),
 };
 
 Given('the reviewer has turned annotation mode on', async ({ rail }) => {
@@ -56,6 +57,14 @@ Then(/^the annotation menu focuses "(Send now|Add to review)"$/,
     await expect(popover.menuItem(label)).toBeFocused();
   });
 
+Then(/^the annotation holds "([^"]*)"$/, async ({ popover }, text) => {
+  await expect(popover.text).toHaveValue(text);
+});
+
+Then(/^the annotation targets "([^"]*)"$/, async ({ popover }, label) => {
+  await expect(popover.context).toHaveText(label);
+});
+
 Then('the annotation composer is closed', async ({ popover }) => {
   await expect(popover.root).toBeHidden();
 });
@@ -66,6 +75,10 @@ Then(/^the annotation shows "(Draft|Sending|Sent|Failed)"$/, async ({ popover },
 
 Then('the annotation text box is disabled', async ({ popover }) => {
   await expect(popover.text).toBeDisabled();
+});
+
+Then('the annotation button reads "Send or add"', async ({ popover }) => {
+  await expect(popover.action).toHaveText('Send or add');
 });
 
 Then('the text annotation carries a durable anchor', async ({ arev }) => {

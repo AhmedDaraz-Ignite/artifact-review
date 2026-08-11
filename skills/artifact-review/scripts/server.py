@@ -22,6 +22,7 @@ import argparse
 import base64
 import binascii
 import copy
+import glob
 import gzip
 import hashlib
 import json
@@ -55,10 +56,13 @@ MAX_FEED_ITEMS = 10000
 MAX_SNAPSHOT_BLOBS = 1000
 MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024
 END_SHUTDOWN_DELAY = 300.0
+MAX_WATCHED_SHUTDOWN_DELAY = 3600.0
 PUBLIC_REVIEW_PATHS = frozenset((
     "/artifact", "/sdk.js",
     "/whiteboard-frame", "/whiteboard.js", "/whiteboard.css",
     "/mermaid.js",
+    # The browser asks for the favicon on its own and never carries the token.
+    "/favicon.ico",
 ))
 WHITEBOARD_ID_RE = re.compile(
     rf"^[a-zA-Z0-9_-]{{1,{MAX_WHITEBOARD_ID_LENGTH}}}$")
@@ -97,6 +101,10 @@ STATE = {
 REVISION_HISTORY = deque(maxlen=256)
 PUBLISHED_STATE = None
 SHUTDOWN_TIMER = None
+# Only the review page polls for state, so this dates the last open browser tab.
+# A request thread writes it without the lock: a float assignment is atomic and
+# the reader only needs it to the nearest poll.
+LAST_PAGE_POLL = 0.0
 
 MIME = {".js": "application/javascript", ".mjs": "application/javascript",
         ".css": "text/css", ".html": "text/html", ".svg": "image/svg+xml",
@@ -107,6 +115,7 @@ MIME = {".js": "application/javascript", ".mjs": "application/javascript",
 REQUIRED_ASSETS = (
     "audit.js",
     "chrome.html",
+    "favicon.svg",
     "sdk.js",
     "whiteboard-frame.html",
     "whiteboard.js",
@@ -152,6 +161,7 @@ def _load_asset_cache(asset_dir):
         "whiteboard.css": _asset_entry(raw["whiteboard.css"], "text/css"),
         "mermaid.js": _asset_entry(
             raw["mermaid.js"], "application/javascript"),
+        "favicon.svg": _asset_entry(raw["favicon.svg"], "image/svg+xml"),
     }
     sdk = raw["audit.js"] + b"\n" + raw["sdk.js"]
     cache["sdk.js"] = _asset_entry(sdk, "application/javascript")
@@ -281,10 +291,13 @@ def _cancel_shutdown_locked():
         timer.cancel()
 
 
-def _schedule_shutdown_locked(server):
+def _schedule_shutdown_locked(server, deadline=None):
     global SHUTDOWN_TIMER
     _cancel_shutdown_locked()
     scheduled_instance = INSTANCE_ID
+    # A tab left open overnight must not hold the port until morning.
+    if deadline is None:
+        deadline = time.time() + MAX_WATCHED_SHUTDOWN_DELAY
     timer = None
 
     def shutdown_if_still_ended():
@@ -294,10 +307,17 @@ def _schedule_shutdown_locked(server):
                     or not STATE["ended"]
                     or INSTANCE_ID != scheduled_instance):
                 return
+            # A reviewer still has the page open. Taking the server away under
+            # an open tab loses every edit made from that moment on.
+            now = time.time()
+            if now - LAST_PAGE_POLL < END_SHUTDOWN_DELAY and now < deadline:
+                _schedule_shutdown_locked(server, deadline)
+                return
             SHUTDOWN_TIMER = None
         server.shutdown()
 
-    timer = threading.Timer(END_SHUTDOWN_DELAY, shutdown_if_still_ended)
+    delay = min(END_SHUTDOWN_DELAY, max(0.0, deadline - time.time()))
+    timer = threading.Timer(delay, shutdown_if_still_ended)
     timer.daemon = True
     SHUTDOWN_TIMER = timer
     timer.start()
@@ -508,6 +528,24 @@ def _whiteboard_dir_locked():
 def _working_whiteboard_path(whiteboard_id):
     return os.path.join(
         SESSION_DIR, "whiteboards", whiteboard_id + ".working.json")
+
+
+def _discard_working_whiteboards_locked():
+    """Drop autosaved editor drafts that were never sent, once a review ends.
+
+    A draft only exists so a reload or a crash does not lose the scene being
+    edited, which is why a write is refused after the session ends. Keeping the
+    file past that point makes the next review open the editor on an edit the
+    agent never received, with nothing on screen to say so.
+    """
+    # ARTIFACT_REVIEW_HOME sets where the session directory lives, so its path
+    # can hold "[" or "?". Escape it before it becomes part of a glob pattern.
+    directory = glob.escape(os.path.join(SESSION_DIR, "whiteboards"))
+    for path in glob.glob(os.path.join(directory, "*.working.json")):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 def _normalise_working_record(value):
@@ -802,6 +840,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- GET ---------------------------------------------------------------
     def do_GET(self):
+        global LAST_PAGE_POLL
         if not self._guard():
             return
         path = urlparse(self.path).path
@@ -815,9 +854,12 @@ class Handler(BaseHTTPRequestHandler):
             self._asset("whiteboard-frame", public_static=True)
         elif path in ("/whiteboard.js", "/whiteboard.css", "/mermaid.js"):
             self._asset(path.lstrip("/"), public_static=True)
+        elif path == "/favicon.ico":
+            self._asset("favicon.svg")
         elif path.startswith("/whiteboard/"):
             self._whiteboard_working_get(path[len("/whiteboard/"):])
         elif path == "/state":
+            LAST_PAGE_POLL = time.time()
             with STATE_LOCK:
                 state = _state_locked()
             self._json(state)
@@ -829,6 +871,7 @@ class Handler(BaseHTTPRequestHandler):
                 "event_schema": EVENT_SCHEMA,
             })
         elif path == "/state/next":
+            LAST_PAGE_POLL = time.time()
             self._state_next(parse_qs(urlparse(self.path).query))
         elif path == "/activity":
             self._activity(parse_qs(urlparse(self.path).query))
@@ -1234,6 +1277,7 @@ class Handler(BaseHTTPRequestHandler):
                 sent_at=time.time(),
             )
             STATE["events"].append(event)
+            _discard_working_whiteboards_locked()
             _persist_locked()
             _changed_locked()
             _schedule_shutdown_locked(self.server)

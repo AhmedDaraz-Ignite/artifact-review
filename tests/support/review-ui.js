@@ -93,6 +93,13 @@ export class ReviewRail {
     });
   }
 
+  // The artifact is a cross-origin frame, so its boxes are measured through the frame
+  // locator rather than the host document.
+  async artifactWidth(selector) {
+    await this.settle();
+    return (await this.artifact.locator(selector).first().boundingBox()).width;
+  }
+
   state() {
     return this.page.evaluate(key => ({
       expanded:document.getElementById('railToggle').getAttribute('aria-expanded'),

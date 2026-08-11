@@ -17,6 +17,17 @@ Feature: Diagram rendering
     And the "themed-flow" diagram was rebuilt with restyled markup
     And the re-render announced itself to the review SDK
 
+  Scenario: Transition labels that would land on each other are moved apart
+    Then the "themed-crowded" diagram rendered offline
+    And all 6 "themed-crowded" transition labels are readable
+    When the reviewer switches the page theme
+    Then the "themed-crowded" diagram reports the "dark" page theme
+    And all 6 "themed-crowded" transition labels are readable
+
+  Scenario: A diagram hidden at boot is separated when its panel opens
+    When the reviewer opens the panel holding the "themed-hidden" diagram
+    Then all 6 "themed-hidden" transition labels are readable
+
   Scenario: Rendered nodes keep a stable identity across a re-render
     Then the "themed-flow" diagram carries at least 4 node keys
     And the "themed-state" diagram carries at least 2 node keys
@@ -30,12 +41,25 @@ Feature: Diagram rendering
   Scenario: Explore mode zooms and resets the diagram view
     When the reviewer zooms the "themed-flow" diagram
     Then the "themed-flow" view has changed
+    And the "themed-flow" wheel was taken from the page
     When the reviewer resets the "themed-flow" view
     Then the "themed-flow" view is back where it started
+
+  Scenario: A plain wheel over a diagram stays with the page
+    When the reviewer scrolls the wheel over the "themed-flow" diagram
+    Then the "themed-flow" view has not changed
+    And the "themed-flow" wheel was left to the page
+    And the "themed-flow" diagram leaves vertical touch scrolling to the page
+    And the "themed-flow" diagram says how to zoom and how to restore it
+
+  Scenario: A trackpad gesture zooms one step, not straight to the limit
+    When the reviewer pinches the "themed-flow" diagram
+    Then the "themed-flow" gesture moved the view a step, not to the limit
 
   Scenario: Annotate mode freezes the view so picks stay precise
     Given the reviewer has turned annotation mode on
     And the "themed-flow" diagram stops offering to pan
+    And the "themed-flow" diagram says nothing about gestures
     When the reviewer zooms the "themed-flow" diagram
     Then the "themed-flow" view has not changed
 

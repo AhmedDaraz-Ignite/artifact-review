@@ -748,6 +748,7 @@ def _doctor_checks():
                                                "whiteboard.css")),
         "offline_mermaid": os.path.isfile(
             os.path.join(ASSET_DIR, "mermaid.js")),
+        "favicon": os.path.isfile(os.path.join(ASSET_DIR, "favicon.svg")),
     }
     checks["ok"] = all(value for key, value in checks.items()
                        if key not in ("python", "skill_dir", "state_dir",

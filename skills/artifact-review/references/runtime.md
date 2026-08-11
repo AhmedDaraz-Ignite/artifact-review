@@ -19,11 +19,15 @@ The review server renders every `<pre class="mermaid">` block in the page
 offline with its own pinned Mermaid; artifacts must not load a Mermaid CDN.
 Diagram colors, text, and font derive from the page's rendered palette, and
 diagrams re-render automatically when the viewer flips the page theme, so
-never hardcode a Mermaid theme. Rendered diagrams support wheel zoom and drag
-pan (double-click resets; both freeze in annotate mode), and every node gets
-a stable identity key that survives re-renders. Flowchart, sequence, class,
-ER, and state Mermaid diagrams become editable shapes. Other valid Mermaid
-types use a labeled image-annotation fallback.
+never hardcode a Mermaid theme. Rendered diagrams zoom on a Ctrl or Cmd wheel
+and pan on a drag. A plain wheel and a vertical finger drag stay with the page.
+A double click restores the original size, and all three gestures freeze in
+annotate mode. A diagram with no title of its own gets one naming the gestures,
+which the browser shows as a tooltip. Set `accTitle` to keep your own title
+instead. Every node gets a stable identity key that survives
+re-renders. Flowchart, sequence, class, ER, and state Mermaid diagrams become
+editable shapes. Other valid Mermaid types use a labeled image-annotation
+fallback.
 
 The boot layout audit runs at desktop width and again at phone (360px) and
 tablet (800px) widths behind the curtain. Findings carry a `viewportClass`
@@ -62,9 +66,11 @@ reasoning, tools, and edits happen after Received.
 
 Diagram hosts are cheap until the reviewer activates one. One shared sandboxed
 editor frame moves between diagrams; the active scene flushes before a switch
-or artifact reload. Working scenes autosave privately. If Mermaid source and a
-saved scene have different hashes, the browser asks the reviewer to re-convert
-or keep the older scene. Never make that choice for them.
+or artifact reload. Working scenes autosave privately and last only as long as
+the review: ending it drops every autosave that was never sent, so the next
+review opens each diagram from the artifact's own Mermaid source. If Mermaid
+source and a saved scene have different hashes, the browser asks the reviewer
+to re-convert or keep the older scene. Never make that choice for them.
 
 Whiteboard feedback contains a `summary`, an optional reviewer `note`,
 auto-generated `summary_lines` (one sentence per added, removed, moved,
@@ -85,8 +91,10 @@ addressed and a new review is appropriate. Then use:
 
 Agent completion uses `"$AREV" end "$ARTIFACT"`. Process cleanup uses
 `"$AREV" stop "$ARTIFACT"`; use `stop --all` only when stopping every review
-server is intentionally in scope. An ended server shuts itself down after five
-minutes. Reopening within that window cancels the shutdown.
+server is intentionally in scope. An ended server shuts itself down five minutes
+after the last review tab stops polling, so a reviewer never loses the session
+mid-edit, and after an hour whatever the tab does. Reopening within that window
+cancels the shutdown.
 
 ## Durable history, reports, and retention
 

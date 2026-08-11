@@ -18,6 +18,15 @@ const DIALECTS = {
   class:'classDiagram\n  class Job {\n    +id\n  }\n  Job <|-- Run',
 };
 
+// The fixture's sequence messages, in the order the Mermaid source lists them.
+const MESSAGES = [
+  'queue five items',
+  'send now',
+  'one feedback event',
+  'one reply, whole batch',
+  'batch marked answered',
+];
+
 const elements = saved => saved.scene?.elements || [];
 const live = saved => elements(saved).filter(element => !element.isDeleted);
 
@@ -164,6 +173,50 @@ Then(/^the saved "([^"]*)" scene holds more than (\d+) native shapes$/,
     expect(elements.length, `${id} element count`).toBeGreaterThan(least);
     expect(types, `${id} shape types`).toContain('text');
     expect(types, `${id} fell back to one image`).not.toEqual(['image']);
+  });
+
+// The topmost box is the first participant's header, and the messages below it
+// are the ones a wrong binding pulls up onto it.
+When(/^the reviewer moves the "([^"]*)" first participant box$/,
+  async ({ arev, boards }, id) => {
+    const board = boards.board(id);
+    const boxes = live(board.saved)
+      .filter(element => element.type === 'rectangle')
+      .sort((first, second) => first.y - second.y || first.x - second.x);
+    const moved = boxes[0];
+    await board.dragShape(moved, board.saved.scene.appState || {});
+    // A drag that missed would let every later assertion pass for free.
+    board.saved = await arev.savedScene(id, saved =>
+      live(saved).some(element => element.id === moved.id && element.x !== moved.x));
+  });
+
+// A message label is bound to its arrow and rides wherever that arrow goes, so
+// the arrow's position is where the reviewer reads the label.
+Then(/^the "([^"]*)" message labels run top to bottom in source order$/,
+  async ({ boards }, id) => {
+    const scene = live(boards.board(id).saved);
+    // A long label wraps, so compare the text with its line breaks flattened.
+    const labelOf = new Map(scene
+      .filter(element => element.type === 'text' && element.containerId)
+      .map(element =>
+        [element.containerId, String(element.text).replace(/\s+/g, ' ').trim()]));
+    const labels = scene
+      .filter(element => element.type === 'arrow')
+      .sort((first, second) => first.y - second.y)
+      .map(element => labelOf.get(element.id))
+      .filter(text => MESSAGES.includes(text));
+    expect(labels, `${id} message labels by vertical position`).toEqual(MESSAGES);
+  });
+
+// Excalidraw re-derives a bound endpoint instead of trusting the stored one, so
+// a message bound to a participant header is one participant move from landing
+// on it. A sequence message has no header to touch and must carry no binding.
+Then(/^no "([^"]*)" message arrow is bound to a participant box$/,
+  async ({ boards }, id) => {
+    const bound = live(boards.board(id).saved).filter(
+      element => element.type === 'arrow'
+        && (element.startBinding || element.endBinding));
+    expect(bound, `${id} arrows bound to a box`).toEqual([]);
   });
 
 Then(/^the "([^"]*)" diagram kept the Mermaid source it was rendered from$/,

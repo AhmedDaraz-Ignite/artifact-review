@@ -26,6 +26,35 @@ Feature: Annotating the artifact
     Then the review holds 1 draft
     And the annotation composer is closed
 
+  Scenario: Switching the annotation target keeps the note already typed
+    Given the reviewer has turned annotation mode on
+    When the reviewer clicks "the table"
+    And the reviewer writes "this needs a caption" in the annotation
+    And the reviewer clicks "the heading"
+    Then the annotation targets "<h1> Clean artifact fixture"
+    And the annotation holds "this needs a caption"
+
+  Scenario: A delivered annotation leaves the next one empty
+    Given the reviewer has turned annotation mode on
+    When the reviewer clicks "the table"
+    And the reviewer writes "this needs a caption" in the annotation
+    And the reviewer chooses "Add to review" in the annotation
+    And the reviewer clicks "the heading"
+    Then the annotation holds ""
+
+  Scenario: A pick that lands mid-delivery cannot steal the note in flight
+    Given the reviewer has turned annotation mode on
+    And delivery is held in flight
+    When the reviewer clicks "the table"
+    And the reviewer writes "this needs a caption" in the annotation
+    And the reviewer chooses "Send now" in the annotation
+    And the reviewer clicks "the heading"
+    Then the annotation shows "Sending"
+    And the annotation holds "this needs a caption"
+    When delivery is released
+    Then the annotation composer is closed
+    And the agent receives feedback saying "this needs a caption"
+
   Scenario: A text annotation carries an anchor the agent can resolve
     Given the reviewer has turned annotation mode on
     When the reviewer selects "the first paragraph"
@@ -33,3 +62,4 @@ Feature: Annotating the artifact
     And the reviewer chooses "Send now" in the annotation
     Then the agent receives feedback saying "tighten this paragraph"
     And the text annotation carries a durable anchor
+    And the annotation button reads "Send or add"

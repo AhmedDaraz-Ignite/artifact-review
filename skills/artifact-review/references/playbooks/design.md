@@ -4,6 +4,7 @@ use_when: writing any HTML artifact, before first line of code, general artifact
 
 - Run `arev new <path>` and fill the region between `<!-- arev:content -->` and `<!-- /arev:content -->`.
 - The shell already handles both color schemes, the reading column, the type scale, and horizontal overflow. Do not rewrite that CSS, and never hardcode a color that bypasses the `--fg` / `--bg` / `--border` / `--accent` / `--muted` variables.
+- The reading column tracks the window width. Text sits at a fixed measure inside it, and anything holding a `.scroll`, `pre`, `table`, `.cards`, `svg` or `img` widens to the whole column. So a wide block in a plain `<div>` of your own gets the measure, not the column. Put it in one of those, or wrap it in `<div class="scroll">`.
 - Wide content - tables, code blocks, diagrams - goes inside `<div class="scroll">`. The page itself must never scroll sideways. The review gate proves this at phone (360px) and tablet (800px) widths as well as desktop, so a fixed-width element with no scroll container blocks the review even when it looks fine on your screen.
 - Add new CSS only for something the shell has no class for.
 

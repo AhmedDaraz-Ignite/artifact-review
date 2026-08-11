@@ -90,6 +90,31 @@ class Board {
     return this.unlock();
   }
 
+  // Moving a shape is what makes Excalidraw re-derive every endpoint bound to
+  // it, so this is the action that shows a wrong binding. The scene's own
+  // scroll and zoom turn the saved coordinates into canvas ones.
+  async dragShape(element, appState) {
+    await this.host.scrollIntoViewIfNeeded();
+    const canvas = this.canvas;
+    if (!await canvas.boundingBox()) {
+      throw new Error('the Excalidraw canvas has no bounding box');
+    }
+    const box = await canvas.boundingBox();
+    const zoom = appState.zoom?.value || 1;
+    const x = box.x + (element.x + element.width / 2 + appState.scrollX) * zoom;
+    const y = box.y + (element.y + element.height / 2 + appState.scrollY) * zoom;
+    // Excalidraw re-derives bound endpoints as the pointer moves, so the drag
+    // has to arrive as many small steps rather than one jump.
+    await this.page.mouse.move(x, y);
+    await this.page.mouse.down();
+    for (let step = 1; step <= 12; step += 1) {
+      await this.page.mouse.move(x + step * 3, y + step, { steps:1 });
+      await this.page.waitForTimeout(16);
+    }
+    await this.page.mouse.up();
+    await this.page.waitForTimeout(200);
+  }
+
   // Drawn in the bottom right corner, where the Excalidraw panels are not.
   async drawRectangle() {
     await this.host.scrollIntoViewIfNeeded();
@@ -123,6 +148,8 @@ class RenderedDiagram {
     this.svg = this.holder.locator('svg');
     this.before = null;
     this.beforeZoom = null;
+    this.beforeWidth = null;
+    this.tookTheWheel = null;
     this.keys = null;
   }
 
@@ -153,17 +180,77 @@ class RenderedDiagram {
     return this.svg.getAttribute('viewBox');
   }
 
-  zoom() {
-    return this.svg.evaluate(svg => {
+  // Every pair of transition labels whose painted chips share a pixel, and the
+  // labels they were found among. A covered label cannot be read, so a
+  // readable diagram reports no pairs. The count keeps "no pairs" from also
+  // meaning "no labels".
+  labelOverlaps() {
+    return this.holder.evaluate(element => {
+      const labels = [...element.querySelectorAll('g.edgeLabel')]
+        .map(label => ({
+          text:label.textContent.trim(),
+          ...label.getBoundingClientRect().toJSON(),
+        }))
+        .filter(label => label.text && label.width > 0);
+      const pairs = [];
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = i + 1; j < labels.length; j++) {
+          const a = labels[i], b = labels[j];
+          const shared = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+          const stacked = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+          if (shared > 0 && stacked > 0) pairs.push(`"${a.text}" over "${b.text}"`);
+        }
+      }
+      return { count:labels.length, pairs };
+    });
+  }
+
+  reveal() {
+    return this.holder.evaluate(element => {
+      element.closest('.diagram-wrap').style.display = '';
+    });
+  }
+
+  // One notch is deltaY 120. A trackpad sends one gesture as many small
+  // deltas. Returns true when the diagram took the wheel away from the page.
+  wheel({ ctrlKey = false, deltaY = -120, times = 1 } = {}) {
+    return this.svg.evaluate((svg, options) => {
       const rect = svg.getBoundingClientRect();
-      svg.dispatchEvent(new WheelEvent('wheel', {
+      const init = {
         bubbles:true,
         cancelable:true,
-        deltaY:-120,
+        ctrlKey:options.ctrlKey,
+        deltaY:options.deltaY,
         clientX:rect.left + rect.width / 2,
         clientY:rect.top + rect.height / 2,
-      }));
-    });
+      };
+      let taken = false;
+      for (let i = 0; i < options.times; i += 1) {
+        taken = !svg.dispatchEvent(new WheelEvent('wheel', init));
+      }
+      return taken;
+    }, { ctrlKey, deltaY, times });
+  }
+
+  zoom() {
+    return this.wheel({ ctrlKey:true });
+  }
+
+  pinch() {
+    return this.wheel({ ctrlKey:true, deltaY:2, times:15 });
+  }
+
+  async viewWidth() {
+    return Number((await this.viewBox()).split(/[\s,]+/)[2]);
+  }
+
+  hint() {
+    return this.svg.evaluate(svg =>
+      svg.querySelector(':scope > title')?.textContent || '');
+  }
+
+  touchAction() {
+    return this.svg.evaluate(svg => getComputedStyle(svg).touchAction);
   }
 
   reset() {
