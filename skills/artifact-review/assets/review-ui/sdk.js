@@ -287,8 +287,10 @@
     // max-width defends the board against artifact CSS that caps a column, so it always
     // spans the same width as the diagram it stands in for. At rest the host is
     // only the row its button stands in, so it draws no box of its own and never
-    // covers the diagram it sits above.
-    ".arev-inline-board{position:relative;width:100%;max-width:none;margin:0;padding:9px 10px 3px;display:flex;align-items:center;justify-content:flex-end;background:transparent;border:0;border-radius:8px;box-sizing:border-box}" +
+    // covers the picture it sits above. It lives inside the diagram block, so the
+    // row shares that block's background and border rather than painting a band
+    // of its own on the surface behind it.
+    ".arev-inline-board{position:relative;width:100%;max-width:none;margin:0;padding:0 0 8px;display:flex;align-items:center;justify-content:flex-end;background:transparent;border:0;border-radius:8px;box-sizing:border-box}" +
     ".arev-inline-board.arev-inline-active{display:block;padding:0;max-height:calc(100vh - 24px);margin:0;background:#fff;border:1px solid rgba(128,128,128,.4);overflow:hidden}" +
     ".arev-inline-board>iframe{position:absolute;inset:0;display:block;width:100%;height:100%;border:0;background:#fff}" +
     // A square icon button at rest: outlined so it reads as a control before
@@ -544,6 +546,23 @@
     board.block.style.display = board.originalDisplay;
   }
 
+  /* The resting row belongs inside the diagram block, so it shares that block's
+   * background and border instead of drawing a band of its own on the surface
+   * behind it. Mermaid rewrites the block on every theme change, and activation
+   * hides the block the editor stands in for, so the row is placed again
+   * whenever it is dropped. */
+  function placeBoardHost(board) {
+    if (!board || !board.block) return;
+    if (board.block.firstChild === board.host) return;
+    board.block.insertBefore(board.host, board.block.firstChild);
+  }
+
+  function liftBoardHost(board) {
+    if (!board || !board.block || !board.block.parentNode) return;
+    if (board.host.nextElementSibling === board.block) return;
+    board.block.parentNode.insertBefore(board.host, board.block);
+  }
+
   /* Drawn rather than a glyph, so it keeps one stroke weight at any size and
    * needs no font the artifact might not ship. */
   function pencilIcon() {
@@ -585,6 +604,7 @@
       board.overlay.disabled = false;
       board.overlay.hidden = false;
       setOverlayIdle(board);
+      placeBoardHost(board);
       send({
         type: "inline-mount-failed",
         id: board.id,
@@ -609,6 +629,7 @@
     board.overlay.disabled = false;
     board.overlay.hidden = false;
     setOverlayIdle(board);
+    placeBoardHost(board);
   }
 
   /* The one place the resting control names itself. The label text stays for
@@ -640,6 +661,10 @@
 
     var previous = inlineBoards[activeInlineBoardId];
     if (previous) deactivateInlineBoard(previous);
+
+    // The height above was measured with the row still inside the block. The
+    // editor now takes the block's place, and a hidden block cannot hold it.
+    liftBoardHost(board);
 
     var iframe = createSharedInlineFrame();
     activeInlineBoardId = board.id;
@@ -751,11 +776,7 @@
       });
 
       host.appendChild(overlay);
-      // Above the block, not after it. The control gets its own line and the
-      // editor still opens in the diagram's place, because activating hides
-      // the block this host sits directly on top of.
-      if (!host.parentNode || host.nextElementSibling !== block)
-        block.parentNode.insertBefore(host, block);
+      placeBoardHost(board);
       inlineBoards[id] = board;
     } catch (err) {
       block.style.display = originalDisplay;
@@ -769,6 +790,14 @@
       });
     }
   }
+
+  // A theme flip makes the offline renderer redraw the block, which throws away
+  // everything inside it. Put every resting row back where it belongs.
+  document.addEventListener("arev:mermaid-rendered", function () {
+    Object.keys(inlineBoards).forEach(function (id) {
+      if (id !== activeInlineBoardId) placeBoardHost(inlineBoards[id]);
+    });
+  });
 
   function focusInline(id) {
     var board = inlineBoards[String(id || "")];
@@ -1273,12 +1302,23 @@
     return blocks;
   }
 
+  // The review tool draws its own SVG icons, and the resting edit control puts
+  // one inside the very block a diagram is recognised by. Only an SVG outside
+  // that chrome counts as a drawn diagram.
+  function drawnSvg(holder) {
+    var found = null;
+    Array.prototype.forEach.call(holder.querySelectorAll("svg"), function (svg) {
+      if (!found && !svg.closest("[data-arev-internal]")) found = svg;
+    });
+    return found;
+  }
+
   function renderMermaidLocally(blocks) {
     var pending = blocks.some(function (block) {
       var holder = document.getElementById(block.id);
       return (
         holder &&
-        !holder.querySelector("svg") &&
+        !drawnSvg(holder) &&
         !holder.getAttribute("data-processed")
       );
     });
@@ -1297,7 +1337,7 @@
     var findings = [];
     blocks.forEach(function (block) {
       var holder = document.getElementById(block.id);
-      if (!holder || holder.querySelector("svg")) return;
+      if (!holder || drawnSvg(holder)) return;
       findings.push({
         selector: block.selector,
         kind: "mermaid-render-failed",

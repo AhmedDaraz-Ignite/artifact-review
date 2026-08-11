@@ -29,7 +29,6 @@ class Board {
       return {
         width:Math.round(box.width),
         height:Math.round(box.height),
-        bottom:box.bottom,
         borderWidth:parseFloat(style.borderTopWidth),
         borderColor:style.borderTopColor,
         // What a reader actually sees. The mounted overlay's wording stays in
@@ -39,8 +38,24 @@ class Board {
     });
   }
 
-  diagramTop() {
-    return this.source.evaluate(node => node.getBoundingClientRect().top);
+  // Where the resting control sits against the block that paints the diagram
+  // card and against the picture inside it. The card is one surface only when
+  // the control is inside that block and the host around it paints nothing.
+  async restingPlacement() {
+    await this.source.locator(':scope > svg').waitFor({ state:'visible', timeout:30_000 });
+    return this.source.evaluate((node, id) => {
+      const host = document.getElementById(`arev-board-${id}`);
+      const style = getComputedStyle(host);
+      const box = element => element.getBoundingClientRect().toJSON();
+      return {
+        insideDiagramBlock:node.contains(host),
+        hostBackground:style.backgroundColor,
+        hostBorderWidth:parseFloat(style.borderTopWidth),
+        control:box(host.querySelector('.arev-inline-unlock')),
+        block:box(node),
+        picture:box(node.querySelector(':scope > svg')),
+      };
+    }, this.id);
   }
 
   get canvas() {
@@ -89,7 +104,7 @@ class Board {
   async unlock() {
     await this.host.scrollIntoViewIfNeeded();
     // Measure the SVG the SDK measures, not the source text Mermaid replaces.
-    await this.source.locator('svg').waitFor({ state:'visible', timeout:30_000 });
+    await this.source.locator(':scope > svg').waitFor({ state:'visible', timeout:30_000 });
     this.diagramHeight = await this.source.evaluate(
       node => node.getBoundingClientRect().height);
     await this.activation.click();
@@ -169,7 +184,9 @@ class RenderedDiagram {
   constructor(artifact, id) {
     this.id = id;
     this.holder = artifact.locator(`#${id}`);
-    this.svg = this.holder.locator('svg');
+    // The drawn diagram, not the icon the resting edit control puts in the
+    // same block. Mermaid always writes its SVG as the block's own child.
+    this.svg = this.holder.locator(':scope > svg');
     this.before = null;
     this.beforeZoom = null;
     this.beforeWidth = null;
@@ -180,7 +197,7 @@ class RenderedDiagram {
   snapshot() {
     return this.holder.evaluate(element => ({
       theme:element.getAttribute('data-arev-mermaid-theme'),
-      svgId:element.querySelector('svg')?.id || '',
+      svgId:element.querySelector(':scope > svg')?.id || '',
       markup:element.innerHTML,
       renders:window.__arevRenders || 0,
     }));
@@ -306,6 +323,7 @@ export class Whiteboards {
     this.page = page;
     this.artifact = page.frameLocator('#art');
     this.editorFrames = this.artifact.locator('[id^="arev-board-"] iframe');
+    this.drawnDiagrams = this.artifact.locator('pre.mermaid > svg');
     this.themeToggle = this.artifact.locator('#themeToggle');
     this.byId = new Map();
     this.renderedById = new Map();

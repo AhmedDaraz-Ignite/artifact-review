@@ -33,6 +33,11 @@ Feature: Inline diagram whiteboard
     When the reviewer points at the "clean-flow" activation control
     Then the "clean-flow" activation control thickens and changes colour
 
+  Scenario: The diagram card shows one surface, not a band above a panel
+    Then the "clean-flow" diagram offers an activation control
+    And the "clean-flow" activation control sits inside the diagram surface
+    And the "clean-flow" diagram card carries no second surface
+
   Scenario: The editor and its assets stay unloaded until the reviewer asks
     Then no diagram has mounted an editor frame
     And no whiteboard asset has been fetched

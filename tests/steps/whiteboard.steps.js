@@ -62,11 +62,30 @@ Then(/^the "([^"]*)" diagram offers an activation control$/, async ({ boards }, 
   await expect(boards.board(id).activation).toBeVisible();
 });
 
+// Against the picture, not the block around it. The control sits inside that
+// block now, so only the drawing says whether anything is covered.
 Then(/^the "([^"]*)" activation control sits above its diagram$/,
   async ({ boards }, id) => {
-    const board = boards.board(id);
-    const control = await board.activationMetrics();
-    expect(control.bottom).toBeLessThanOrEqual(await board.diagramTop());
+    const placement = await boards.board(id).restingPlacement();
+    expect(placement.control.bottom).toBeLessThanOrEqual(placement.picture.top);
+  });
+
+// One surface means the control shares the diagram's own box. A control placed
+// outside it paints a band on whatever surface sits behind that box, and the
+// diagram then reads as a separate panel under a header.
+Then(/^the "([^"]*)" activation control sits inside the diagram surface$/,
+  async ({ boards }, id) => {
+    const placement = await boards.board(id).restingPlacement();
+    expect(placement.insideDiagramBlock, 'inside the diagram block').toBe(true);
+    expect(placement.control.top).toBeGreaterThanOrEqual(placement.block.top);
+    expect(placement.control.bottom).toBeLessThanOrEqual(placement.block.bottom);
+  });
+
+Then(/^the "([^"]*)" diagram card carries no second surface$/,
+  async ({ boards }, id) => {
+    const placement = await boards.board(id).restingPlacement();
+    expect(placement.hostBackground).toBe('rgba(0, 0, 0, 0)');
+    expect(placement.hostBorderWidth).toBe(0);
   });
 
 Then(/^the "([^"]*)" activation control is a square showing no words$/,
@@ -184,8 +203,7 @@ Then('the artifact source is unchanged', async ({ artifact }) => {
 });
 
 Then('the artifact renders its Mermaid to SVG offline', async ({ boards }) => {
-  await expect(boards.artifact.locator('pre.mermaid svg').first())
-    .toBeVisible({ timeout:20_000 });
+  await expect(boards.drawnDiagrams.first()).toBeVisible({ timeout:20_000 });
 });
 
 Then(/^the agent receives the diagram note "([^"]*)" with no draft left$/,
