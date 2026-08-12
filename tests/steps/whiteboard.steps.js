@@ -282,6 +282,40 @@ Then(/^the "([^"]*)" dock puts undo before zoom$/, async ({ boards }, id) => {
   expect(undo.x).toBeLessThan(zoom.x);
 });
 
+// Excalidraw's upgrades can restore either group's ring. The ring paints the
+// white seam that made one dock read as two broken pills, and it comes back
+// silently. Asserting the rings, the shared silhouette and the divider makes
+// that loud instead.
+Then(/^the "([^"]*)" dock reads as one bar divided once$/, async ({ boards }, id) => {
+  const board = boards.board(id);
+  const dock = await board.zoomControls.evaluate(zoom => {
+    const undo = zoom.parentElement.querySelector('.undo-redo-buttons');
+    const seam = window.getComputedStyle(zoom, '::before');
+    const corner = selector => {
+      const style = getComputedStyle(zoom.parentElement.querySelector(selector));
+      return [style.borderTopRightRadius, style.borderBottomRightRadius,
+        style.borderTopLeftRadius, style.borderBottomLeftRadius];
+    };
+    return {
+      gap:Math.round(zoom.getBoundingClientRect().left - undo.getBoundingClientRect().right),
+      rings:[getComputedStyle(zoom).boxShadow, getComputedStyle(undo).boxShadow],
+      redoCorners:corner('.redo-button-container button').slice(0, 2),
+      zoomOutCorners:corner('.zoom-out-button').slice(2),
+      seamWidth:seam.width,
+      seamHeight:seam.height,
+      seamColor:seam.backgroundColor,
+    };
+  });
+  expect(dock.gap).toBe(0);
+  expect(dock.rings).toEqual(['none', 'none']);
+  // The two facing corners are square, so the five buttons share one outline.
+  expect(dock.redoCorners).toEqual(['0px', '0px']);
+  expect(dock.zoomOutCorners).toEqual(['0px', '0px']);
+  expect(dock.seamWidth).toBe('1px');
+  expect(dock.seamHeight).toBe('24px');
+  expect(dock.seamColor).not.toBe('rgba(0, 0, 0, 0)');
+});
+
 Then(/^the "([^"]*)" editor offers a fit control$/, async ({ boards }, id) => {
   await expect(boards.board(id).fitControl).toBeVisible();
 });
