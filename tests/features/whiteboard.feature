@@ -21,6 +21,7 @@ Feature: Inline diagram whiteboard
     And the "clean-flow" editor offers lock and pan on a rail of their own
     And the "clean-flow" editor offers a fit control
     And the "clean-flow" dock puts undo before zoom
+    And the "clean-flow" dock reads as one bar divided once
     When the reviewer turns on pan for the "clean-flow" diagram
     Then the "clean-flow" pan control reports itself on
     When the reviewer turns on lock for the "clean-flow" diagram

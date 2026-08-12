@@ -5,6 +5,10 @@
   --wb-ink:#171a20;
   --wb-muted:#61687a;
   --wb-line:#d8dbe2;
+  /* A hairline drawn on a control fill rather than on white. --wb-line is tuned
+     for the surface and reaches only 1.18:1 on Excalidraw's #ececf4 buttons.
+     The darker step below reaches 1.99:1. */
+  --wb-line-strong:#a4a9bb;
   --wb-accent:#3557c0;
   --wb-accent-soft:#e8edfb;
   --wb-success:#176548;
@@ -151,6 +155,39 @@ button:focus-visible, input:focus-visible {
    inside the footer, not the footer column itself, which is a block. */
 .wb-editor .layer-ui__wrapper__footer-left section > :has([data-testid="button-undo"]) {
   order:-1;
+}
+
+/* The dock is one dock, so it reads as one bar. Excalidraw rings each group in
+   the canvas colour. The ring shows nothing against the canvas. Over the group
+   it touches it paints a white seam, and that seam is the whole gap. */
+.wb-editor .undo-redo-buttons,
+.wb-editor .zoom-actions { box-shadow:none }
+
+/* Only the run's outer ends stay round, so the five buttons share one
+   silhouette. Excalidraw sets these corners with !important. */
+.wb-editor .undo-redo-buttons .redo-button-container button {
+  border-top-right-radius:0 !important;
+  border-bottom-right-radius:0 !important;
+}
+.wb-editor .zoom-out-button {
+  border-top-left-radius:0 !important;
+  border-bottom-left-radius:0 !important;
+}
+
+/* The hairline is the only thing that still says "two groups". Its 24px height
+   is the one Excalidraw gives its own divider. The buttons are positioned, so
+   the line needs a z-index or their fill covers it. */
+.wb-editor .zoom-actions { position:relative }
+.wb-editor .zoom-actions::before {
+  content:"";
+  position:absolute;
+  top:50%;
+  left:0;
+  z-index:1;
+  width:1px;
+  height:24px;
+  background:var(--wb-line-strong);
+  transform:translateY(-50%);
 }
 
 /* Excalidraw's compact layout stretches the dock across the whole editor, which
