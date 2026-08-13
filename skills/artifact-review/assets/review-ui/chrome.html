@@ -464,29 +464,6 @@
   }
   .remove:hover { background:var(--danger-soft); color:var(--danger) }
   .empty { padding:12px; color:var(--muted); font-size:12px }
-  /* The list scrolls, so a long one shrinks with its section instead of pushing
-     past it. That overflow is also what lets the section shrink at all. */
-  .diagram-list { overflow:auto; border-bottom:1px solid var(--line) }
-  .diagram-row {
-    width:100%;
-    display:flex;
-    align-items:center;
-    gap:8px;
-    border:0;
-    border-bottom:1px solid var(--line);
-    padding:8px 12px;
-    background:var(--surface);
-    color:var(--ink);
-    cursor:pointer;
-    font-size:12px;
-    text-align:left;
-  }
-  .diagram-row:last-child { border-bottom:0 }
-  .diagram-row:hover { background:var(--surface-subtle) }
-  /* A row fills the scrolling list edge to edge, so an outset ring would be clipped. */
-  .diagram-row:focus-visible { outline-offset:-2px }
-  .diagram-icon { color:var(--accent) }
-  .diagram-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
   .load-earlier {
     width:calc(100% - 24px);
     min-height:32px;
@@ -707,13 +684,6 @@
     <div class="drafts" id="queue">
       <div class="empty">Nothing drafted. Annotate the artifact or write a note below.</div>
     </div>
-    </section>
-    <section id="diagramSection" aria-labelledby="diagramSectionTitle" hidden>
-    <div class="section-head">
-      <h2 id="diagramSectionTitle">Diagrams</h2>
-      <span class="hint">Open the inline editor</span>
-    </div>
-    <div class="diagram-list" id="diagrams"></div>
     </section>
     <section class="activity-section" id="activitySection" aria-labelledby="activitySectionTitle">
     <div class="section-head">
@@ -993,7 +963,7 @@ function lockSending() {
     $("boardAction"), $("boardSend"), $("boardQueue")]
     .forEach(control => { control.disabled = locked; });
   $("chat").disabled = !!state?.ended;
-  document.querySelectorAll(".remove, .diagram-row").forEach(control => {
+  document.querySelectorAll(".remove").forEach(control => {
     control.disabled = locked;
   });
 }
@@ -1807,7 +1777,6 @@ async function reloadArtifactOnce(version) {
   mermaidBlocks = [];
   inlineGeneration += 1;
   inlineDiagrams.clear();
-  renderDiagramList();
   await new Promise((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timer);
@@ -1899,7 +1868,6 @@ async function prepareInlineDiagrams(blocks) {
   const generation = ++inlineGeneration;
   mermaidBlocks = Array.isArray(blocks) ? blocks : [];
   inlineDiagrams.clear();
-  renderDiagramList();
 
   await Promise.all(mermaidBlocks.map(async rawBlock => {
     const block = {
@@ -1946,8 +1914,6 @@ async function prepareInlineDiagrams(blocks) {
       frameVersion:String(B.assets?.["whiteboard-frame"] || ""),
     }, "*");
   }));
-
-  if (generation === inlineGeneration) renderDiagramList();
 }
 
 // The SDK names each diagram from the artifact's own markup. The id is the
@@ -1955,27 +1921,6 @@ async function prepareInlineDiagrams(blocks) {
 function diagramName(block) {
   return String(block?.title || "").trim().slice(0, 80) ||
     String(block?.id || "");
-}
-
-function renderDiagramList() {
-  const host = $("diagrams");
-  host.textContent = "";
-  $("diagramSection").hidden = !mermaidBlocks.length;
-  mermaidBlocks.forEach(block => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "diagram-row";
-    button.disabled = sendingLocked() || !inlineDiagrams.has(block.id);
-    button.innerHTML = '<span class="diagram-icon" aria-hidden="true">◇</span>';
-    const name = diagramName(block);
-    button.setAttribute("aria-label", `Focus diagram editor: ${name}`);
-    const label = document.createElement("span");
-    label.className = "diagram-name";
-    label.textContent = name;
-    button.appendChild(label);
-    button.addEventListener("click", () => focusInlineDiagram(block.id));
-    host.appendChild(button);
-  });
 }
 
 async function focusInlineDiagram(id) {
