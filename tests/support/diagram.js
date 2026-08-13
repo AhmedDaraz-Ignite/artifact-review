@@ -69,6 +69,8 @@ class Board {
   get lockMode() { return this.editor.locator('#wbLock') }
   get panMode() { return this.editor.locator('#wbHand') }
   get fitControl() { return this.editor.locator('#wbFit') }
+  get closeControl() { return this.editor.locator('#wbClose') }
+  get fullscreenControl() { return this.editor.locator('#wbFullscreen') }
   get sceneMenu() { return this.editor.locator('[data-testid="main-menu-trigger"]') }
   // The label, not the inner trigger: hiding only the trigger leaves the
   // checkbox inside it live and focusable.

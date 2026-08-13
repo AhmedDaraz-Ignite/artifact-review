@@ -41,11 +41,12 @@ Then(/^the artifact has reloaded (\d+) times? so far$/,
     expect(network.artifactReloads).toBe(count);
   });
 
-Then('the artifact exposes a diagram edit entry', async ({ page }) => {
-  await expect(
-    page.getByRole('button', { name:/Focus diagram editor:/ }).first(),
-  ).toBeVisible();
-});
+// A reload remounts every diagram host. The control that opens the editor lives
+// on the diagram itself, so seeing that control again proves the remount worked.
+Then(/^the "([^"]*)" diagram still offers its edit control$/,
+  async ({ boards }, id) => {
+    await expect(boards.board(id).activation).toBeVisible();
+  });
 
 Then('the review tooling never rewrote the artifact source', async ({ artifact }) => {
   const now = await artifact.read();

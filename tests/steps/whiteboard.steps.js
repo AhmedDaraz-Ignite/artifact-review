@@ -40,7 +40,29 @@ Given(/^the converted "([^"]*)" scene is saved$/, async ({ arev, network }, id) 
 });
 
 When(/^the reviewer expands the "([^"]*)" editor to fullscreen$/, async ({ boards }, id) => {
-  await boards.board(id).editor.locator('#wbFullscreen').click();
+  await boards.board(id).fullscreenControl.click();
+});
+
+When(/^the reviewer leaves fullscreen on the "([^"]*)" editor$/, async ({ boards }, id) => {
+  await boards.board(id).fullscreenControl.click();
+});
+
+When(/^the reviewer closes the "([^"]*)" diagram editor$/, async ({ boards }, id) => {
+  await boards.board(id).closeControl.click();
+});
+
+Then(/^the "([^"]*)" editor still offers a way out$/, async ({ boards }, id) => {
+  await expect(boards.board(id).closeControl).toBeVisible();
+});
+
+Then(/^the "([^"]*)" rendered diagram is readable again$/, async ({ boards }, id) => {
+  await expect(boards.board(id).source).toBeVisible();
+});
+
+// The editor frame is shared by every diagram, so a closed board that keeps it
+// would starve the next one and leave a dead frame on the page.
+Then(/^the "([^"]*)" diagram holds no editor frame$/, async ({ boards }, id) => {
+  await expect(boards.board(id).sharedFrame).toHaveCount(0);
 });
 
 When(/^the reviewer summarizes the "([^"]*)" edit as "([^"]*)"$/,

@@ -465,7 +465,29 @@ function frameApp() {
       fullscreen.title = state.fullscreen ? "Return to inline editor" : "Expand this editor";
       post({ type:"fullscreen", enabled:state.fullscreen });
     };
-    header.append(titleWrap, status, fullscreen);
+    // No icon, because the Fullscreen button beside it carries none. The label
+    // avoids "Done" and "Save": the scene autosaves and closing delivers nothing.
+    const close = element("button", {
+      id:"wbClose",
+      className:"wb-button",
+      type:"button",
+      textContent:"Close editor",
+      title:"Return to the rendered diagram (Esc)",
+    });
+    close.onclick = () => post({ type:"close" });
+    header.append(titleWrap, status, fullscreen, close);
+
+    // Escape unwinds one step at a time, so a single key never undoes two
+    // decisions. A selection belongs to the canvas, which clears it itself.
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      const selected = state.api
+        ? Object.keys(state.api.getAppState().selectedElementIds || {}).length
+        : 0;
+      if (selected) return;
+      event.preventDefault();
+      (state.fullscreen ? fullscreen : close).click();
+    }, true);
 
     const banner = element("section", {
       id:"wbBanner",

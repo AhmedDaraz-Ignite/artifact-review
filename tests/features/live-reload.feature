@@ -13,7 +13,7 @@ Feature: Live reload
     And the agent appends "fresh-edit" to the artifact
     Then the artifact shows "fresh-edit"
     And the artifact keeps its scroll position
-    And the artifact exposes a diagram edit entry
+    And the "clean-flow" diagram still offers its edit control
 
   Scenario: Rapid saves coalesce instead of overlapping
     Given the reviewer has turned annotation mode on

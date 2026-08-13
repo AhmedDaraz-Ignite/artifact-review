@@ -57,6 +57,23 @@ Feature: Inline diagram whiteboard
     And the saved "clean-flow" scene holds the drawn rectangle and its source identity
     And the "clean-flow" editor reports the autosave
 
+  Scenario: Closing the editor hands the diagram back
+    Given the reviewer has opened the "clean-flow" diagram editor
+    When the reviewer closes the "clean-flow" diagram editor
+    Then the "clean-flow" rendered diagram is readable again
+    And the "clean-flow" diagram offers an activation control
+    And the "clean-flow" diagram holds no editor frame
+
+  Scenario: Leaving fullscreen lands in the editor, and closing lands on the diagram
+    Given the reviewer has opened the "clean-flow" diagram editor
+    When the reviewer expands the "clean-flow" editor to fullscreen
+    Then the "clean-flow" diagram fills the window with one editor frame
+    When the reviewer leaves fullscreen on the "clean-flow" editor
+    Then the "clean-flow" editor still offers a way out
+    When the reviewer closes the "clean-flow" diagram editor
+    Then the "clean-flow" rendered diagram is readable again
+    And the "clean-flow" diagram holds no editor frame
+
   Scenario: Fullscreen survives the review panel opening and closing
     Given the reviewer has opened the "clean-flow" diagram editor
     When the reviewer expands the "clean-flow" editor to fullscreen

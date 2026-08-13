@@ -630,6 +630,16 @@
     board.overlay.hidden = false;
     setOverlayIdle(board);
     placeBoardHost(board);
+    // The single editor frame outlives every board, so a host that just went
+    // back to rest must not keep it. Activation re-parents and reloads it.
+    if (sharedInlineFrame && sharedInlineFrame.parentNode === board.host)
+      sharedInlineFrame.remove();
+  }
+
+  function closeInlineBoard(board) {
+    if (!board) return;
+    deactivateInlineBoard(board);
+    if (activeInlineBoardId === board.id) activeInlineBoardId = null;
   }
 
   /* The one place the resting control names itself. The label text stays for
@@ -826,6 +836,10 @@
       setBoardFullscreen(board, requested);
       return;
     }
+    if (event.data.type === "close") {
+      closeInlineBoard(board);
+      return;
+    }
     send({
       type: "whiteboard-frame",
       id: board.id,
@@ -837,8 +851,13 @@
   document.addEventListener(
     "keydown",
     function (event) {
-      if (event.key === "Escape" && fullscreenBoardId)
+      // Escape reaching the artifact means focus sits outside the editor frame,
+      // which handles its own Escape. Both use one order: fullscreen, then close.
+      if (event.key !== "Escape") return;
+      if (fullscreenBoardId)
         setBoardFullscreen(inlineBoards[fullscreenBoardId], false);
+      else if (activeInlineBoardId)
+        closeInlineBoard(inlineBoards[activeInlineBoardId]);
     },
     true,
   );

@@ -60,14 +60,6 @@ Then('the review rail overlays the artifact from the right', async ({ page }) =>
   expect(Object.entries(layout).filter(([, ok]) => !ok)).toEqual([]);
 });
 
-// The rail renders one row per Mermaid block, so the artifact itself is the count
-// to wait for. Nothing here has to agree with how many the fixture happens to hold.
-When('the rail has listed every diagram in the artifact', async ({ page, rail }) => {
-  const inArtifact = await rail.artifact.locator('pre.mermaid').count();
-  expect(inArtifact).toBeGreaterThan(0);
-  await expect(page.locator('.diagram-row')).toHaveCount(inArtifact);
-});
-
 // A section sized only by leftover space collapses to its floor on a crowded rail,
 // which leaves the feed a sliver. Counting whole entries states what that costs.
 Then(/^the review feed shows at least (\d+) entries at once$/, async ({ page }, count) => {
@@ -103,8 +95,8 @@ Then('every rail section keeps its own space', async ({ page, rail }) => {
           found.push(`"${heading.textContent.trim()}" paints outside ${name(section)}`);
         }
       }
-      for (const body of section.querySelectorAll('.drafts, .diagram-list, .activity')) {
-        const rows = body.querySelectorAll('.draft-row, .diagram-row, .feed-entry');
+      for (const body of section.querySelectorAll('.drafts, .activity')) {
+        const rows = body.querySelectorAll('.draft-row, .feed-entry');
         if (!rows.length) continue;
         // Scroll the list to its end too, then measure against the section, because
         // the section is what clips. A list squeezed to nothing and a list that never
