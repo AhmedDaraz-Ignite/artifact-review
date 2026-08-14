@@ -11,7 +11,7 @@ public pull request with exploit details.
 
 Install:
 
-- Node.js 22 or newer;
+- Node.js 22.20 or newer;
 - Python 3.9 or newer; and
 - a modern browser.
 
@@ -48,6 +48,20 @@ When changing the skill:
 The large whiteboard JavaScript and CSS files are generated artifacts. Change
 their build inputs rather than editing bundles by hand. Run `npm run build` and
 commit the regenerated browser assets and third-party notices.
+
+## Repository layout
+
+```text
+skills/artifact-review/   the complete installable skill payload
+tooling/                  asset and notice generation
+tests/                    integration and browser tests
+docs/                     user guides, architecture notes, and implementation records
+PRODUCT.md                product behavior and constraints
+DESIGN.md                 interaction and visual design direction
+```
+
+User-facing setup and operation belong in `README.md` and the curated guides
+under `docs/`. Keep implementation rules and pull request requirements here.
 
 ## Tests
 
@@ -106,7 +120,7 @@ over a skill you rely on.
 Changes to review delivery should test the relevant observable transition:
 Draft, Sending, Sent, Received, Answered, or Failed. Performance claims should
 distinguish server transport and poll pickup from model reasoning and edit
-turnaround.
+turnaround. Applied is a direct-edit outcome rather than a delivery transition.
 
 ## Pull requests
 
