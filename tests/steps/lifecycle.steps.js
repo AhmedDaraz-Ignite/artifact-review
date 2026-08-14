@@ -11,7 +11,9 @@ Then(/^the end action reads "(End review|Send and end review)"$/, async ({ rail 
 Then('the composer menu offers every delivery choice', async ({ page, rail }) => {
   const menu = page.locator('#chatMenu');
   await expect(page.locator('#chatAction[aria-haspopup="menu"]')).toHaveCount(1);
-  await expect(menu.locator('[role="menuitem"]')).toHaveCount(3);
+  // Only what the reviewer can actually choose. Saving into the artifact joins
+  // the menu when the review holds a text edit, and is hidden otherwise.
+  await expect(menu.locator('[role="menuitem"]:not([hidden])')).toHaveCount(3);
   await expect(menu).toContainText('Send now');
   await expect(menu).toContainText('Add to review');
   // The end label reads "End review" or "Send and end review", so match either.

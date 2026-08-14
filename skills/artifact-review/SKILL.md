@@ -12,8 +12,10 @@ can stay in conversation.
 
 ## Core contract
 
-- Keep the artifact in the user's workspace. The review runtime observes it but
-  never edits it; the source HTML or Mermaid remains authoritative.
+- Keep the artifact in the user's workspace. The review runtime observes it and
+  writes nothing of its own. The one exception is a text edit the reviewer chose
+  to save, which arrives as a feedback event marked `applied`. The source HTML
+  or Mermaid stays authoritative and stays yours to maintain.
 - Resolve `SKILL_ROOT` to this file's directory. On POSIX use
   `AREV="$SKILL_ROOT/scripts/arev"`; on Windows use `scripts\arev.cmd`. Never
   assume `arev` is on `PATH` or hardcode an agent-specific install directory.

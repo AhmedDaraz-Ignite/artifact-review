@@ -60,6 +60,15 @@ else
   tail -20 "$CHECKS_RAW"
 fi
 
+echo "== text-edits"
+EDITS_RAW="$WORK/text-edits.log"
+if python3 "$ROOT/tests/runtime/test_text_edits.py" > "$EDITS_RAW" 2>&1; then
+  echo "PASS reviewer text edits written into the artifact" | tee -a "$OUT"
+else
+  echo "FAIL text edits - see $EDITS_RAW" | tee -a "$OUT"
+  tail -20 "$EDITS_RAW"
+fi
+
 echo "== whiteboard-chrome"
 CHROME_RAW="$WORK/whiteboard-chrome.log"
 if python3 "$ROOT/tests/runtime/test_whiteboard_chrome.py" > "$CHROME_RAW" 2>&1; then

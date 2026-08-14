@@ -131,8 +131,34 @@ The normal loop is:
 6. The browser live-reloads the updated file and the loop continues.
 
 Review items may be text selections, element annotations, native form choices,
-chat messages, or diagram whiteboard edits. Multiple queued items are sent as
-one feedback event so related comments reach the agent together.
+chat messages, diagram whiteboard edits, or text edits. Multiple queued items
+are sent as one feedback event so related comments reach the agent together.
+
+### Editing the text yourself
+
+**Edit text** mode (`⌘E`) is for the changes that are faster to make than to
+describe. Point at any line and two handles appear beside it: a pencil that
+opens that line for editing, and a bin that marks it for deletion. Clicking the
+highlighted line opens the same editor. Selecting words, even across several
+lines, offers **Edit text**, **Delete**, and **Comment** for that range.
+
+Editing happens where the words stand. The text you picked becomes an editor
+that already holds it, so you rewrite it instead of retyping it. `⌘Enter` saves
+the change as a draft and `Escape` puts the original back.
+
+Every change lands in the review rail beside your other drafts, and the
+composer's menu then offers one extra choice:
+
+| Choice | What happens |
+| --- | --- |
+| Save edits to the artifact | The file is rewritten now, and the agent is told what changed |
+| Send now | The agent makes the changes, and the file is untouched until it does |
+| Add to review | Everything stays drafted for the next send |
+
+The agent owns the artifact, so a save is careful with its file. An edit is
+refused, and stays drafted for the agent instead, when the file changed after
+that edit was drawn on it, or when the line's original text is not in the file
+as one plain run of characters that appears exactly once.
 
 ### Diagram review
 
@@ -260,6 +286,7 @@ The review rail exposes the complete lifecycle of a feedback batch:
 | Sent | The local server durably persisted the event |
 | Received | The agent's foreground poll claimed and acknowledged the event |
 | Answered | The agent posted a reply after handling the event |
+| Applied | Text edits the reviewer saved into the artifact themselves |
 | Failed | Sending failed; the draft remains available to retry |
 
 Those states separate local transport from agent turnaround:

@@ -14,9 +14,10 @@ visual observations into long prose.
 ## Product Purpose
 
 Artifact Review creates a fast, private loop between an HTML artifact and the
-agent editing it. Success means a reviewer can point, select, choose, draw, or
-write once; immediately see whether that feedback is drafted, sent, or received;
-and watch the same portable HTML update until the review is complete.
+agent editing it. Success means a reviewer can point, select, choose, draw,
+write, or rewrite the words themselves once; immediately see whether that
+feedback is drafted, saved, sent, or received; and watch the same portable HTML
+update until the review is complete.
 
 ## Brand Personality
 

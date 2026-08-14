@@ -12,9 +12,22 @@ together, then save the authoritative artifact before replying.
 5. Run `"$AREV" reply "$ARTIFACT" "Applied the requested changes."`.
 6. Resume the foreground poll.
 
-Item kinds include `chat`, `text`, `element`, `control`, and `whiteboard`.
-Text items carry selected text plus prefix/suffix and selector anchors. Element
-items carry a durable selector and may carry a normalized `target`.
+Item kinds include `chat`, `text`, `element`, `control`, `whiteboard`, and
+`text-edit`. Text items carry selected text plus prefix/suffix and selector
+anchors. Element items carry a durable selector and may carry a normalized
+`target`.
+
+A `text-edit` item is the reviewer rewriting or cutting the artifact's own
+words. `action` is `edit` or `cut`, `label` names the line, and `before` and
+`after` are the short pair the reviewer saw. `blocks` is the authoritative
+payload: one `before`/`after` pair per block, holding that block's whole text.
+An `after` of `""` means the line goes.
+
+An event whose `applied` field is `true` reports edits the reviewer already
+saved into the artifact. The file on disk already carries them, so confirm and
+carry on rather than making the same change twice. Everything else in the event
+still needs doing. Without `applied`, nothing was written and every `text-edit`
+is a change to make.
 
 A `mermaid-node` target identifies the exact node through `diagramId`,
 `nodeId`, `label`, and `selector`; change that node in Mermaid source rather

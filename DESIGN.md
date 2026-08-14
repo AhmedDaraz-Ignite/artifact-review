@@ -167,10 +167,13 @@ the top layer.
 ### Chips
 
 - **Style:** Small status treatment with text and a quiet tonal background.
-- **State:** For delivery, use Draft, Sending, Sent, Received, Answered, and
-  Failed only. The composer chip also reads Nothing to send or Nothing to add
-  when the reviewer acts on an empty composer. No request leaves the browser
-  then, so Failed stays reserved for a delivery the server refused.
+- **State:** For delivery, use Draft, Sending, Sent, Received, Answered, Applied,
+  and Failed only. Applied belongs to text edits the reviewer saved into the
+  artifact themselves. The composer chip also reads Nothing to send or Nothing
+  to add when the reviewer acts on an empty composer. No request leaves the
+  browser then, so Failed stays reserved for a delivery the server refused.
+- **Kind:** A drafted text edit names what it is instead of reading Draft, since
+  its place in the Draft list already says that: Edited, Cut text, or Cut line.
 
 ### Cards / Containers
 
@@ -190,15 +193,35 @@ the top layer.
 
 ### Navigation
 
-The top bar identifies the artifact and contains annotation mode, agent status,
-and one session menu. The review rail uses Draft and Activity sections without
-competing tab bars. At narrow widths, the rail becomes a full-width bottom sheet.
+The top bar identifies the artifact and contains the two review modes,
+annotation and edit text, plus agent status and one session menu. Only one mode
+is ever on, because a click cannot both pick an element and place a text caret.
+The review rail uses Draft and Activity sections without competing tab bars. At
+narrow widths, the rail becomes a full-width bottom sheet.
 
 ### Feedback composer
 
-Annotation, chat, and whiteboard feedback share the same action language and
-menu behavior. The main button only opens the menu, so it always reads
-“Send or add”. The menu carries every action and explains its effect.
+Annotation, chat, whiteboard, and text-edit feedback share the same action
+language and menu behavior. The main button only opens the menu. It reads
+“Send or add”, and “Save or send” once the review holds a text edit the
+reviewer could write into the artifact themselves. Two labels, each true of
+what the menu then offers. The menu carries every action and explains its
+effect.
+
+### Editing the artifact's text
+
+Edit text mode changes the artifact's own words in place, so its marks live in
+the artifact rather than in the rail:
+
+- **Line handles:** A pencil and a bin, beside the line the pointer rests on,
+  or above it when the page leaves no margin beside the text.
+- **The editor is the text:** The picked words become the editor, already
+  holding them, with the caret after them and never over them.
+- **A rewritten range** keeps the accent tint and a thick underline. A rewritten
+  block drops the underline for an “Edited” tag, because underlining whole
+  paragraphs says the same thing far too loudly.
+- **A cut** is struck through, and a cut line carries a “Marked for deletion”
+  tag. No mark ever rests on colour alone.
 
 ## Do's and Don'ts
 

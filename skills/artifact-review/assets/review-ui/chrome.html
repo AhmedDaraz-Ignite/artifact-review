@@ -248,10 +248,11 @@
   textarea::placeholder { color:var(--muted) }
   .feedback-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:9px }
   .action-state { margin-right:auto; color:var(--muted); font-size:11px; font-weight:600 }
-  .action-state.sending { color:var(--accent) }
-  .action-state.sent { color:var(--success) }
+  .action-state.sending, .action-state.saving { color:var(--accent) }
+  .action-state.sent, .action-state.applied { color:var(--success) }
   .action-state.failed { color:var(--danger) }
-  .action-state.nothing-to-send, .action-state.nothing-to-add { color:var(--warning) }
+  .action-state.nothing-to-send, .action-state.nothing-to-add,
+  .action-state.partly-saved { color:var(--warning) }
 
   .review-rail {
     width:var(--review-rail-expanded);
@@ -414,7 +415,11 @@
     font-weight:650;
     text-align:center;
   }
-  .drafts { max-height:34%; overflow:auto }
+  /* A percentage cap resolves against a height the browser measured from the
+     uncapped list, so the section kept holding space the shortened list no
+     longer filled. A viewport cap is a real length and the section ends where
+     the list ends. */
+  .drafts { max-height:34vh; overflow:auto }
   /* The cap only stops a long queue pushing the section open, so the short
      empty-state sentence is exempt and always reads in full. */
   .drafts:has(.empty) { max-height:none }
@@ -438,9 +443,13 @@
     font-weight:650;
     white-space:nowrap;
   }
-  .state-chip.sent, .state-chip.received, .state-chip.answered { color:var(--success); background:var(--success-soft) }
-  .state-chip.sending { color:var(--accent); background:var(--accent-soft) }
-  .state-chip.failed { color:var(--danger); background:var(--danger-soft) }
+  .state-chip.sent, .state-chip.received, .state-chip.answered,
+  .state-chip.applied { color:var(--success); background:var(--success-soft) }
+  .state-chip.sending, .state-chip.edited { color:var(--accent); background:var(--accent-soft) }
+  .state-chip.failed, .state-chip.cut-text, .state-chip.cut-line {
+    color:var(--danger);
+    background:var(--danger-soft);
+  }
   .draft-jump {
     min-width:0;
     border:0;
@@ -450,6 +459,8 @@
     text-align:left;
   }
   .draft-main { overflow:hidden; color:var(--ink); font-size:12px; text-overflow:ellipsis; white-space:nowrap }
+  .draft-main del { color:var(--danger) }
+  .draft-main ins { color:var(--success); text-decoration:underline; text-underline-offset:2px }
   .draft-context { overflow:hidden; margin-top:2px; color:var(--muted); font-size:11px; text-overflow:ellipsis; white-space:nowrap }
   .remove {
     width:28px;
@@ -573,7 +584,7 @@
       width:var(--review-dock-width);
       flex-basis:auto;
     }
-    .drafts { max-height:22% }
+    .drafts { max-height:22vh }
     .composer textarea { min-height:56px; max-height:72px }
     dialog.board { width:100vw; height:100vh; border:0; border-radius:0 }
   }
@@ -610,6 +621,12 @@
       <span aria-hidden="true">⌖</span>
       <span class="button-label">Annotate</span>
       <kbd class="shortcut">⌘I</kbd>
+    </button>
+    <button class="button" id="editBtn" type="button" aria-pressed="false"
+            aria-label="Toggle edit text mode">
+      <span aria-hidden="true">✎</span>
+      <span class="button-label">Edit text</span>
+      <kbd class="shortcut">⌘E</kbd>
     </button>
     <button class="button icon" id="sessionMenuBtn" type="button"
             aria-label="Review options" aria-haspopup="menu" aria-controls="sessionMenu">⋯</button>
@@ -700,12 +717,12 @@
     <form class="composer" id="composer">
       <label class="field-label" for="chat">Feedback for the agent</label>
       <textarea id="chat" placeholder="Write a review note"></textarea>
-      <div class="composer-help">Send now includes every draft. Shift+Enter adds a new line.</div>
+      <div class="composer-help" id="composerHelp">Send now includes every draft. Shift+Enter adds a new line.</div>
       <div class="feedback-actions">
         <span class="action-state" id="composerState">Draft</span>
         <button class="button primary" id="chatAction" type="button"
                 aria-haspopup="menu" aria-controls="chatMenu">
-          <span>Send or add</span>
+          <span id="chatActionLabel">Send or add</span>
           <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
         </button>
       </div>
@@ -724,9 +741,13 @@
 </div>
 
 <div class="menu" id="chatMenu" popover role="menu" aria-label="Feedback action">
+  <button class="menu-item" id="chatApply" type="button" role="menuitem" hidden>
+    <strong>Save edits to the artifact</strong>
+    <small>Write the text changes into the file now and tell the agent what changed.</small>
+  </button>
   <button class="menu-item" id="chatSend" type="button" role="menuitem">
     <strong>Send now</strong>
-    <small>Deliver this note and every draft to the agent.</small>
+    <small id="chatSendHint">Deliver this note and every draft to the agent.</small>
   </button>
   <button class="menu-item" id="chatQueue" type="button" role="menuitem">
     <strong>Add to review</strong>
@@ -881,6 +902,7 @@ setRailCollapsed(
 let state = null;
 let lastVersion = null;
 let annotating = false;
+let editingText = false;
 let popItem = null;
 let popSending = false;
 let auditRun = 0;
@@ -957,7 +979,8 @@ function sendingLocked() {
    it editable so the reviewer can copy unsent text out. */
 function lockSending() {
   const locked = sendingLocked();
-  [$("annBtn"), $("chatAction"), $("chatSend"), $("chatQueue"), $("chatEnd"),
+  [$("annBtn"), $("editBtn"), $("chatAction"), $("chatSend"), $("chatQueue"),
+    $("chatApply"), $("chatEnd"),
     $("newFeedbackDockBtn"),
     $("popAction"), $("popSend"), $("popQueue"),
     $("boardAction"), $("boardSend"), $("boardQueue")]
@@ -1226,6 +1249,9 @@ window.addEventListener("message", async event => {
     scrollResolver = null;
   }
   if (message.type === "toggle-annotate") setAnnotate(!annotating);
+  if (message.type === "toggle-edit-text") setEditText(!editingText);
+  if (message.type === "text-edit") await queueTextEdit(message.item);
+  if (message.type === "text-edit-dropped") await removeTextEdit(message);
   if (message.type === "pick-element") {
     openAnnotation(
       {
@@ -1264,22 +1290,46 @@ window.addEventListener("message", async event => {
   }
 });
 
+function toArtifact(message) {
+  try {
+    art.contentWindow.postMessage({ arev:true, ...message }, "*");
+  } catch (error) {}
+}
+
 function setAnnotate(on) {
   if (state?.ended) return;
   annotating = on;
   $("annBtn").classList.toggle("active", on);
   $("annBtn").setAttribute("aria-pressed", String(on));
-  try {
-    art.contentWindow.postMessage({ arev:true, type:"set-annotate", on }, "*");
-  } catch (error) {}
+  toArtifact({ type:"set-annotate", on });
+  // A click cannot both pick an element and place a text caret, so one mode
+  // always turns the other off.
+  if (on && editingText) setEditText(false);
   announce(on ? "Annotation mode on." : "Annotation mode off.");
 }
 
+function setEditText(on) {
+  if (state?.ended) return;
+  editingText = on;
+  $("editBtn").classList.toggle("active", on);
+  $("editBtn").setAttribute("aria-pressed", String(on));
+  toArtifact({ type:"set-edit-text", on });
+  if (on && annotating) setAnnotate(false);
+  announce(on ? "Edit text mode on." : "Edit text mode off.");
+}
+
 $("annBtn").addEventListener("click", () => setAnnotate(!annotating));
+$("editBtn").addEventListener("click", () => setEditText(!editingText));
 document.addEventListener("keydown", event => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "i") {
+  if (!(event.metaKey || event.ctrlKey)) return;
+  const key = event.key.toLowerCase();
+  if (key === "i") {
     event.preventDefault();
     setAnnotate(!annotating);
+  }
+  if (key === "e") {
+    event.preventDefault();
+    setEditText(!editingText);
   }
 });
 
@@ -1356,6 +1406,62 @@ async function submitAnnotation(mode) {
 $("popSend").addEventListener("click", () => submitAnnotation("send"));
 $("popQueue").addEventListener("click", () => submitAnnotation("queue"));
 
+/* An edit only exists on screen until the server holds it. A queue that refuses
+   it puts the artifact's own text straight back, so the page never shows a
+   change no one is keeping. */
+async function queueTextEdit(item) {
+  try {
+    // The version of the bytes on screen, not of the file right now. A save
+    // has to know which artifact the reviewer was actually looking at.
+    const result = await api("POST", "/queue", {
+      item:{ ...item, baseVersion:loadedArtifactVersion ?? state?.version },
+    });
+    toArtifact({ type:"text-edit-queued", editId:item.editId, qid:result.qid });
+    announce(TEXT_EDIT_ANNOUNCEMENTS[item.action] || "Edit added to the review.");
+  } catch (error) {
+    toArtifact({ type:"revert-text-edit", editId:item.editId });
+    showBanner(`The edit was not saved as a draft: ${errorMessage(error)}`);
+  }
+}
+
+async function removeTextEdit({ qid }) {
+  if (!qid) return;
+  try {
+    await api("POST", "/unqueue", { qid });
+    announce("Edit removed.");
+  } catch (error) {
+    showBanner(`Draft was not removed: ${errorMessage(error)}`);
+  }
+}
+
+const TEXT_EDIT_ANNOUNCEMENTS = {
+  edit:"Edit saved as a draft.",
+  cut:"Text marked for deletion.",
+};
+
+const TEXT_EDIT_CHIPS = {
+  "edit:line":"Edited",
+  "edit:range":"Edited",
+  "edit:lines":"Edited",
+  "cut:range":"Cut text",
+  "cut:line":"Cut line",
+};
+
+function textEditChip(item) {
+  return TEXT_EDIT_CHIPS[`${item.action}:${item.scope}`] || "Edited";
+}
+
+/* Old text struck, new text underlined: the same before-and-after the reviewer
+   is looking at in the artifact. */
+function textEditPreview(item) {
+  const removed = document.createElement("del");
+  removed.textContent = item.before || "";
+  if (!item.after) return [removed];
+  const added = document.createElement("ins");
+  added.textContent = item.after;
+  return [removed, document.createTextNode(" "), added];
+}
+
 function describeItem(item) {
   if (item.kind === "chat") return item.text || "(empty note)";
   if (item.kind === "control") return `${item.label || item.selector} → ${item.value}`;
@@ -1364,6 +1470,7 @@ function describeItem(item) {
 }
 
 function itemContext(item) {
+  if (item.kind === "text-edit") return item.label || item.selector || "";
   if (item.snippet) return `“${item.snippet}”`;
   return item.selector || "";
 }
@@ -1378,18 +1485,21 @@ function renderQueue(queue) {
     host.appendChild(empty);
   }
   queue.forEach(item => {
+    const edit = item.kind === "text-edit";
     const row = document.createElement("div");
     row.className = "draft-row";
     const status = document.createElement("span");
-    status.className = "state-chip";
-    status.textContent = "Draft";
+    const chip = edit ? textEditChip(item) : "Draft";
+    status.className = "state-chip " + stateClass(chip);
+    status.textContent = chip;
     const body = document.createElement("button");
     body.type = "button";
     body.className = "draft-jump";
     body.disabled = !item.selector;
     const main = document.createElement("div");
     main.className = "draft-main";
-    main.textContent = describeItem(item);
+    if (edit) main.append(...textEditPreview(item));
+    else main.textContent = describeItem(item);
     const context = document.createElement("div");
     context.className = "draft-context";
     context.textContent = itemContext(item) || item.kind;
@@ -1411,6 +1521,8 @@ function renderQueue(queue) {
     remove.addEventListener("click", async () => {
       try {
         await api("POST", "/unqueue", { qid:item.qid });
+        // Removing the row is what puts the artifact's own text back.
+        if (edit) toArtifact({ type:"revert-text-edit", editId:item.editId });
         announce("Draft removed.");
       } catch (error) {
         showBanner(`Draft was not removed: ${errorMessage(error)}`);
@@ -1429,6 +1541,21 @@ function renderQueue(queue) {
   $("draftDockTooltip").textContent = draftLabel;
   $("draftDockBadge").hidden = queue.length === 0;
   $("draftDockBadge").textContent = queue.length > 99 ? "99+" : String(queue.length);
+  syncComposerAction(queue);
+}
+
+/* Two labels, each true. "Save or send" only appears when the review holds a
+   text change the reviewer could write into the artifact themselves. */
+function syncComposerAction(queue) {
+  const edits = queue.filter(item => item.kind === "text-edit").length;
+  $("chatActionLabel").textContent = edits ? "Save or send" : "Send or add";
+  $("chatApply").hidden = !edits;
+  $("chatSendHint").textContent = edits
+    ? "Deliver the edits, this note, and every draft. The agent makes the changes."
+    : "Deliver this note and every draft to the agent.";
+  $("composerHelp").textContent = edits
+    ? "Saving writes the edits into the artifact. Sending leaves that to the agent."
+    : "Send now includes every draft. Shift+Enter adds a new line.";
 }
 
 function formatTime(timestamp) {
@@ -1439,6 +1566,7 @@ function formatTime(timestamp) {
 function deliveryLabel(entry) {
   if (entry.status === "answered") return "Answered";
   if (entry.status === "delivered") return "Received";
+  if (entry.applied) return "Applied";
   return "Sent";
 }
 
@@ -1448,6 +1576,11 @@ function feedText(entry) {
     if (item.kind === "chat") return item.text;
     if (item.kind === "control") return `${item.label || item.selector} → ${item.value}`;
     if (item.kind === "whiteboard") return `Diagram ${item.id}: ${item.summary || "edited"}`;
+    if (item.kind === "text-edit") {
+      return item.action === "cut"
+        ? `Cut from ${item.label}: “${item.before}”`
+        : `Rewrote ${item.label} to: “${item.after}”`;
+    }
     return `${item.kind} on ${item.selector || "artifact"}${item.comment ? `: ${item.comment}` : ""}`;
   }).join("\n");
 }
@@ -1570,6 +1703,35 @@ async function submitChat(mode) {
 
 $("chatSend").addEventListener("click", () => submitChat("send"));
 $("chatQueue").addEventListener("click", () => submitChat("queue"));
+
+/* Saving writes the reviewer's own text into the artifact the agent owns, so
+   the server refuses any edit whose original text it cannot find exactly once,
+   and any edit drawn on an artifact that has since changed. Whatever it
+   refuses stays drafted for the agent to do instead. */
+$("chatApply").addEventListener("click", async () => {
+  setComposerBusy(true);
+  actionState("composerState", "Saving", "Saving the edits into the artifact.");
+  try {
+    const result = await api("POST", "/apply-edits", {});
+    toArtifact({ type:"clear-text-edits" });
+    const refused = result.refused || [];
+    actionState("composerState", refused.length ? "Partly saved" : "Applied",
+      refused.length
+        ? `${result.applied} of ${result.applied + refused.length} edits were written. `
+          + `The rest stayed drafted: ${refused[0].reason}`
+        : `${result.applied} ${result.applied === 1 ? "edit was" : "edits were"} `
+          + "written into the artifact and reported to the agent.");
+    showBanner(refused.length
+      ? `${refused.length} ${refused.length === 1 ? "edit" : "edits"} could not be `
+        + "written into the file and stayed drafted. Send them to the agent instead."
+      : "");
+  } catch (error) {
+    actionState("composerState", "Failed", `Saving failed: ${errorMessage(error)}`);
+    showBanner(`Nothing was written. Your edits are preserved: ${errorMessage(error)}`);
+  } finally {
+    setComposerBusy(false);
+  }
+});
 
 function pendingFeedback() {
   return !!$("chat").value.trim() || !!state?.queue?.length;
@@ -1802,8 +1964,13 @@ async function reloadArtifactOnce(version) {
   await new Promise(resolve => setTimeout(resolve, 120));
   try {
     art.contentWindow.postMessage({ arev:true, type:"set-scroll", y:scrollY }, "*");
+    // A fresh artifact document starts in neither mode, so whichever one the
+    // top bar still shows has to be turned on again inside it.
     if (annotating) {
       art.contentWindow.postMessage({ arev:true, type:"set-annotate", on:true }, "*");
+    }
+    if (editingText) {
+      art.contentWindow.postMessage({ arev:true, type:"set-edit-text", on:true }, "*");
     }
   } catch (error) {}
 }
