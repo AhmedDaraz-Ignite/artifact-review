@@ -6,7 +6,7 @@ import { test as base, createBdd } from 'playwright-bdd';
 import { Arev, ROOT } from './arev.js';
 import { Whiteboards } from './diagram.js';
 import { Network } from './network.js';
-import { AnnotationPopover, ReviewRail } from './review-ui.js';
+import { AnnotationPopover, ReviewRail, TextEditor } from './review-ui.js';
 
 // Chromium logs these while loading bundled fonts, so they are not review bugs.
 const BENIGN_PAGE_ERRORS = /subset-worker|Failed to use workers/;
@@ -57,6 +57,10 @@ export const test = base.extend({
 
   popover:async ({ page }, use) => {
     await use(new AnnotationPopover(page));
+  },
+
+  editor:async ({ page }, use) => {
+    await use(new TextEditor(page));
   },
 
   boards:async ({ page }, use) => {

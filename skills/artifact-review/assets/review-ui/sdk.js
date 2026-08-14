@@ -318,7 +318,49 @@
     ".arev-inline-unlock:focus-visible{outline-color:#5dd3a0}}" +
     // A finger has no hover, so the square grows to the 44px touch minimum.
     "@media (pointer:coarse){.arev-inline-board:not(.arev-inline-active) .arev-inline-unlock{width:44px;height:44px}}" +
-    ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}";
+    ".arev-inline-board.arev-inline-fullscreen{position:fixed!important;inset:12px!important;width:auto!important;height:auto!important;max-height:none!important;z-index:2147483645!important;border-radius:10px!important;box-shadow:0 12px 48px rgba(0,0,0,.35)}" +
+    /* Edit text mode. The artifact owns the page, so anything the reviewer has
+       to see through the artifact's own stylesheet is forced. */
+    ".arev-editing{--arev-surface:#fff;--arev-ink:#171a20;--arev-muted:#61687a;--arev-line:#dcdde3;--arev-accent:#3557c0;--arev-accent-soft:#e8edfb;--arev-ok:#186a4b;--arev-ok-soft:#e7f4ee;--arev-cut:#a63d40;--arev-cut-soft:#f8e9ea;--arev-shadow:0 4px 8px rgba(20,24,32,.14)}" +
+    "@media (prefers-color-scheme:dark){.arev-editing{--arev-surface:#181c23;--arev-ink:#e8ebf1;--arev-muted:#a0a7b6;--arev-line:#303744;--arev-accent:#87a3f4;--arev-accent-soft:#242d45;--arev-ok:#5dd3a0;--arev-ok-soft:#17362a;--arev-cut:#e38d91;--arev-cut-soft:#3d2629;--arev-shadow:0 4px 8px rgba(0,0,0,.38)}}" +
+    ".arev-editing body{cursor:text}" +
+    ".arev-editing :is(p,li,h1,h2,h3,h4,h5,h6,blockquote,dd,dt,figcaption,td,th,caption,summary):hover{background:var(--arev-accent-soft);border-radius:5px}" +
+    ".arev-mark{border-radius:3px;padding:0 1px}" +
+    ".arev-mark-del{background:var(--arev-cut-soft)!important;color:var(--arev-cut)!important;text-decoration:line-through!important}" +
+    ".arev-mark-edited{background:var(--arev-ok-soft)!important;color:var(--arev-ok)!important;text-decoration:underline!important;text-underline-offset:3px;text-decoration-thickness:2px}" +
+    // A rewritten block carries a tag instead of an underline. Underlining
+    // several whole paragraphs says the same thing far too loudly.
+    ".arev-mark-edited.arev-mark-block{position:relative;display:block;padding:6px 10px;margin:0 -10px;border-radius:5px;text-decoration:none!important}" +
+    '.arev-mark-edited.arev-mark-block::after{content:"Edited";position:absolute;top:-9px;right:0;border-radius:999px;padding:1px 7px;background:var(--arev-ok);color:var(--arev-surface);font:650 10px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;text-decoration:none}' +
+    ".arev-mark-edited.arev-mark-block>:first-child{margin-top:0}" +
+    ".arev-mark-edited.arev-mark-block>:last-child{margin-bottom:0}" +
+    ".arev-editing .arev-mark:hover{outline:2px solid var(--arev-accent);outline-offset:1px;cursor:pointer}" +
+    "[data-arev-cut]{position:relative;background:var(--arev-cut-soft)!important;border-radius:5px;color:var(--arev-cut)!important;text-decoration:line-through!important}" +
+    '[data-arev-cut]::after{content:"Marked for deletion";position:absolute;top:-9px;right:0;border-radius:999px;padding:1px 7px;background:var(--arev-cut);color:#fff;font:650 10px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;text-decoration:none}' +
+    ".arev-gutter-group{position:absolute;z-index:2147483643;display:flex;gap:4px;margin:0;padding:0}" +
+    // A display of any kind outranks the hidden attribute, so both floating
+    // groups have to say it again for themselves.
+    ".arev-gutter-group[hidden],.arev-bar[hidden]{display:none}" +
+    ".arev-gutter{box-sizing:border-box;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--arev-line);border-radius:7px;padding:0;background:var(--arev-surface);color:var(--arev-muted);cursor:pointer;box-shadow:var(--arev-shadow)}" +
+    ".arev-gutter:hover:not(:disabled){border-color:var(--arev-accent);background:var(--arev-accent-soft);color:var(--arev-accent)}" +
+    ".arev-gutter-cut:hover:not(:disabled){border-color:var(--arev-cut);background:var(--arev-cut-soft);color:var(--arev-cut)}" +
+    ".arev-gutter:disabled{cursor:not-allowed;opacity:.52}" +
+    ".arev-gutter svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}" +
+    ".arev-bar{position:absolute;z-index:2147483644;display:flex;align-items:center;gap:4px;margin:0;border:1px solid var(--arev-line);border-radius:10px;padding:4px;background:var(--arev-surface);color:var(--arev-ink);box-shadow:var(--arev-shadow);font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}" +
+    ".arev-bar-sep{width:1px;height:20px;margin:0 2px;background:var(--arev-line)}" +
+    ".arev-bar-hint{padding:0 6px;color:var(--arev-muted);font-size:11px;white-space:nowrap}" +
+    ".arev-btn{box-sizing:border-box;min-height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--arev-line);border-radius:8px;padding:6px 9px;background:var(--arev-surface);color:var(--arev-ink);cursor:pointer;font:600 11px/1 inherit}" +
+    ".arev-btn:hover{border-color:var(--arev-accent);background:var(--arev-accent-soft)}" +
+    ".arev-btn-primary,.arev-btn-primary:hover{border-color:var(--arev-accent);background:var(--arev-accent);color:#fff}" +
+    ".arev-btn:focus-visible,.arev-gutter:focus-visible{outline:2px solid var(--arev-accent);outline-offset:2px}" +
+    // The selected text itself becomes the editor, so the original words are
+    // already there and the reviewer types over them where they stand.
+    ".arev-live-edit{border-radius:4px;padding:0 2px;background:var(--arev-accent-soft)!important;box-shadow:inset 0 0 0 2px var(--arev-accent);caret-color:var(--arev-accent)}" +
+    ".arev-live-edit:focus{outline:none}" +
+    ".arev-live-block{display:block;padding:6px 10px;margin:0 -10px}" +
+    ".arev-live-block>:first-child{margin-top:0}" +
+    ".arev-live-block>:last-child{margin-bottom:0}" +
+    "@media (pointer:coarse){.arev-gutter{width:44px;height:44px}.arev-btn{min-height:44px}}";
   document.documentElement.appendChild(css);
 
   function setAnnotate(on) {
@@ -335,7 +377,7 @@
   document.addEventListener(
     "mouseover",
     function (e) {
-      if (!annotating) return;
+      if (!annotating || editing) return;
       if (e.target.closest && e.target.closest("[data-arev-internal]")) {
         if (hoverEl) hoverEl.classList.remove("arev-hover");
         hoverEl = null;
@@ -351,7 +393,7 @@
   document.addEventListener(
     "mouseup",
     function () {
-      if (!annotating) return;
+      if (!annotating || editing) return;
       var sel = window.getSelection();
       if (sel && !sel.isCollapsed && sel.toString().trim()) {
         var anchor = textAnchor(sel);
@@ -373,7 +415,7 @@
   document.addEventListener(
     "click",
     function (e) {
-      if (!annotating) return;
+      if (!annotating || editing) return;
       if (e.target.closest && e.target.closest("[data-arev-internal]"))
         return;
       e.preventDefault();
@@ -409,6 +451,631 @@
     true,
   );
 
+  /* --------------------------------------------------------- edit text mode
+   * Annotation says where a change belongs. Edit text mode says what the words
+   * become: the reviewer rewrites a line or a picked range where it stands, or
+   * marks it for deletion. Nothing here writes to the file. The chrome queues
+   * each change as a draft and the reviewer chooses save or send. */
+
+  var BLOCK_SELECTOR =
+    "p,li,h1,h2,h3,h4,h5,h6,blockquote,dd,dt,figcaption,td,th,caption,summary";
+  var editing = false;
+  var editSeq = 0;
+  var textEdits = Object.create(null);
+  var hoverBlock = null;
+  var pendingRange = null;
+  var liveEdit = null;
+  var activeMark = null;
+  var editUi = null;
+
+  function editBlockFor(node) {
+    var el = node && node.nodeType === 1 ? node : node && node.parentElement;
+    if (!el || !el.closest) return null;
+    if (el.closest("[data-arev-internal]")) return null;
+    var block = el.closest(BLOCK_SELECTOR);
+    if (!block || block.closest("svg") || block.closest("[data-arev-internal]"))
+      return null;
+    return block.textContent.trim() ? block : null;
+  }
+
+  function editBlocksIn(node) {
+    if (node.nodeType !== 1) return [];
+    var found = Array.prototype.filter.call(
+      node.querySelectorAll(BLOCK_SELECTOR),
+      function (block) {
+        return !block.querySelector(BLOCK_SELECTOR);
+      },
+    );
+    if (found.length) return found;
+    var own = editBlockFor(node);
+    return own ? [own] : [];
+  }
+
+  /* The text this block would carry once every draft on it is applied. Cut
+   * words are already wrapped, so dropping those wrappers reads the result
+   * without touching what the reviewer sees. Each one leaves a marker, so a cut
+   * closes the gap instead of leaving the two spaces that surrounded it. */
+  var CUT_SEAM = "\u0000";
+
+  function resolvedText(block) {
+    if (!block) return "";
+    if (block.hasAttribute("data-arev-cut")) return "";
+    var clone = block.cloneNode(true);
+    Array.prototype.forEach.call(
+      clone.querySelectorAll(".arev-mark-del,[data-arev-internal]"),
+      function (el) {
+        el.parentNode.replaceChild(document.createTextNode(CUT_SEAM), el);
+      },
+    );
+    return clone.textContent
+      .replace(new RegExp(" " + CUT_SEAM + " ", "g"), " ")
+      .replace(new RegExp(CUT_SEAM, "g"), "");
+  }
+
+  function editLabel(block) {
+    var tag = block.tagName.toLowerCase();
+    var kind =
+      tag === "li"
+        ? "list item"
+        : tag.charAt(0) === "h" && tag.length === 2
+          ? "heading"
+          : tag === "td" || tag === "th"
+            ? "table cell"
+            : "paragraph";
+    var text = normalizedText(block);
+    return (
+      kind + ' "' + (text.length > 34 ? text.slice(0, 34) + "…" : text) + '"'
+    );
+  }
+
+  function shortText(value) {
+    var text = value.replace(/\s+/g, " ").trim();
+    return text.length > 60 ? text.slice(0, 60) + "…" : text;
+  }
+
+  /* Drawn rather than a glyph, so an icon keeps one stroke weight at any size
+   * and needs no font the artifact might not ship. */
+  function drawnIcon(paths) {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    paths.forEach(function (d) {
+      var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  function editButton(className, label, contents) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.setAttribute("data-arev-internal", "");
+    if (contents) button.appendChild(contents);
+    else button.textContent = label;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    return button;
+  }
+
+  function buildEditUi() {
+    if (editUi) return editUi;
+    var group = document.createElement("div");
+    group.className = "arev-gutter-group";
+    group.setAttribute("data-arev-internal", "");
+    group.hidden = true;
+    var pencil = editButton(
+      "arev-gutter",
+      "Edit this line",
+      drawnIcon(["M4 20h4L19 9l-4-4L4 16z", "M14.5 5.5l4 4"]),
+    );
+    var bin = editButton(
+      "arev-gutter arev-gutter-cut",
+      "Mark this line for deletion",
+      drawnIcon(["M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"]),
+    );
+    group.append(pencil, bin);
+
+    var selBar = document.createElement("div");
+    selBar.className = "arev-bar";
+    selBar.setAttribute("data-arev-internal", "");
+    selBar.setAttribute("role", "toolbar");
+    selBar.setAttribute("aria-label", "Change the selected text");
+    selBar.hidden = true;
+    var selEdit = editButton("arev-btn", "Edit text");
+    var selDelete = editButton("arev-btn", "Delete");
+    var separator = document.createElement("span");
+    separator.className = "arev-bar-sep";
+    separator.setAttribute("aria-hidden", "true");
+    var selComment = editButton("arev-btn", "Comment");
+    selBar.append(selEdit, selDelete, separator, selComment);
+
+    var editBar = document.createElement("div");
+    editBar.className = "arev-bar";
+    editBar.setAttribute("data-arev-internal", "");
+    editBar.setAttribute("role", "toolbar");
+    editBar.setAttribute("aria-label", "Finish this edit");
+    editBar.hidden = true;
+    var hint = document.createElement("span");
+    hint.className = "arev-bar-hint";
+    hint.textContent = "Editing in place. ⌘Enter saves, Escape cancels.";
+    var cancel = editButton("arev-btn", "Cancel");
+    var save = editButton("arev-btn arev-btn-primary", "Save edit");
+    editBar.append(hint, cancel, save);
+
+    var undoBar = document.createElement("div");
+    undoBar.className = "arev-bar";
+    undoBar.setAttribute("data-arev-internal", "");
+    undoBar.setAttribute("role", "toolbar");
+    undoBar.setAttribute("aria-label", "Change on this text");
+    undoBar.hidden = true;
+    var undo = editButton("arev-btn", "Undo this edit");
+    undoBar.appendChild(undo);
+
+    document.body.append(group, selBar, editBar, undoBar);
+    editUi = {
+      group: group,
+      pencil: pencil,
+      bin: bin,
+      selBar: selBar,
+      editBar: editBar,
+      undoBar: undoBar,
+    };
+
+    pencil.addEventListener("click", function () {
+      if (hoverBlock) openBlockEditor(hoverBlock);
+    });
+    bin.addEventListener("click", function () {
+      cutLine(hoverBlock);
+    });
+    selEdit.addEventListener("click", openRangeEditor);
+    selDelete.addEventListener("click", cutRange);
+    selComment.addEventListener("click", commentOnRange);
+    cancel.addEventListener("click", cancelEdit);
+    save.addEventListener("click", commitEdit);
+    undo.addEventListener("click", function () {
+      if (activeMark) dropEdit(activeMark.getAttribute("data-arev-edit"));
+      activeMark = null;
+      hideEditBars();
+    });
+    return editUi;
+  }
+
+  function placeBar(bar, rect, below) {
+    bar.hidden = false;
+    var top = below
+      ? rect.bottom + window.scrollY + 8
+      : rect.top + window.scrollY - bar.offsetHeight - 8;
+    var maxLeft = Math.max(
+      8,
+      document.documentElement.clientWidth - bar.offsetWidth - 12,
+    );
+    bar.style.top = Math.max(4, top) + "px";
+    bar.style.left =
+      Math.max(8, Math.min(rect.left + window.scrollX, maxLeft)) + "px";
+  }
+
+  function hideEditBars() {
+    if (!editUi) return;
+    editUi.selBar.hidden = true;
+    editUi.undoBar.hidden = true;
+  }
+
+  function setEditText(on) {
+    editing = !!on;
+    document.documentElement.classList.toggle("arev-editing", editing);
+    if (!editing) {
+      cancelEdit();
+      hideEditBars();
+      if (editUi) editUi.group.hidden = true;
+      hoverBlock = null;
+      pendingRange = null;
+    } else {
+      buildEditUi();
+    }
+  }
+
+  /* --------------------------------------------------------- drafting edits */
+
+  function recordEdit(record) {
+    textEdits[record.id] = record;
+    send({ type: "text-edit", item: editItem(record) });
+  }
+
+  function editItem(record) {
+    return {
+      kind: "text-edit",
+      editId: record.id,
+      action: record.action,
+      scope: record.scope,
+      selector: record.selector,
+      label: record.label,
+      before: record.before,
+      after: record.after,
+      blocks: record.blocks,
+    };
+  }
+
+  function dropEdit(id) {
+    var record = textEdits[String(id)];
+    if (!record) return;
+    delete textEdits[record.id];
+    record.restore();
+    send({ type: "text-edit-dropped", editId: record.id, qid: record.qid });
+  }
+
+  function revertEdit(id) {
+    var record = textEdits[String(id)];
+    if (!record) return;
+    delete textEdits[record.id];
+    record.restore();
+  }
+
+  function cutLine(block) {
+    if (!block) return;
+    var existing = block.getAttribute("data-arev-cut");
+    if (existing) {
+      dropEdit(existing);
+      return;
+    }
+    var id = "te" + ++editSeq;
+    var before = resolvedText(block);
+    block.setAttribute("data-arev-cut", id);
+    recordEdit({
+      id: id,
+      action: "cut",
+      scope: "line",
+      selector: selectorFor(block),
+      label: editLabel(block),
+      before: shortText(before),
+      after: "",
+      blocks: [{ selector: selectorFor(block), before: before, after: "" }],
+      restore: function () {
+        block.removeAttribute("data-arev-cut");
+      },
+    });
+    if (editUi) editUi.pencil.disabled = true;
+  }
+
+  function cutRange() {
+    if (!pendingRange) return;
+    var block = editBlockFor(pendingRange.startContainer);
+    if (!block) return;
+    var id = "te" + ++editSeq;
+    var original = pendingRange.toString();
+    var before = resolvedText(block);
+    var span = document.createElement("span");
+    span.className = "arev-mark arev-mark-del";
+    span.setAttribute("data-arev-edit", id);
+    span.appendChild(pendingRange.extractContents());
+    pendingRange.insertNode(span);
+    recordEdit({
+      id: id,
+      action: "cut",
+      scope: "range",
+      selector: selectorFor(block),
+      label: editLabel(block),
+      before: shortText(original),
+      after: "",
+      blocks: [
+        { selector: selectorFor(block), before: before, after: resolvedText(block) },
+      ],
+      restore: function () {
+        var parent = span.parentNode;
+        if (!parent) return;
+        while (span.firstChild) parent.insertBefore(span.firstChild, span);
+        parent.removeChild(span);
+        parent.normalize();
+      },
+    });
+    finishSelection();
+  }
+
+  function commentOnRange() {
+    if (!pendingRange) return;
+    var selection = window.getSelection();
+    var anchor = textAnchor(selection);
+    var rect = pendingRange.getBoundingClientRect();
+    send({
+      type: "pick-text",
+      anchor: anchor,
+      selector: anchor.selector,
+      snippet: anchor.exact.slice(0, 120),
+      rect: { top: rect.top, left: rect.left, bottom: rect.bottom },
+    });
+    finishSelection();
+  }
+
+  function finishSelection() {
+    hideEditBars();
+    pendingRange = null;
+    var selection = window.getSelection();
+    if (selection) selection.removeAllRanges();
+  }
+
+  /* ------------------------------------------------------- the live editor */
+
+  function fragmentOf(host) {
+    var fragment = document.createDocumentFragment();
+    Array.prototype.forEach.call(host.childNodes, function (node) {
+      fragment.appendChild(node.cloneNode(true));
+    });
+    return fragment;
+  }
+
+  /* A selection crossing two blocks grows to whole blocks, so the reviewer gets
+   * every line of the range instead of two half sentences. */
+  function wholeBlocksIfMultiple(range) {
+    var first = editBlockFor(range.startContainer);
+    var last = editBlockFor(range.endContainer);
+    if (!first || !last || first === last) return range;
+    var wide = document.createRange();
+    wide.setStartBefore(first);
+    wide.setEndAfter(last);
+    return wide;
+  }
+
+  function openRangeEditor() {
+    if (!pendingRange) return;
+    var block = editBlockFor(pendingRange.startContainer);
+    if (!block) return;
+    var range = wholeBlocksIfMultiple(pendingRange);
+    var spansBlocks = range !== pendingRange;
+    var host = document.createElement(spansBlocks ? "div" : "span");
+    host.className = "arev-live-edit" + (spansBlocks ? " arev-live-block" : "");
+    host.appendChild(range.extractContents());
+    range.insertNode(host);
+    var fragment = fragmentOf(host);
+    startEditing({
+      host: host,
+      block: spansBlocks,
+      label: editLabel(block),
+      scope: spansBlocks ? "lines" : "range",
+      // Words picked inside one line still belong to that line. Only a range
+      // that grew to whole blocks carries the blocks inside the editor itself.
+      blocks: spansBlocks ? editBlocksIn(host) : [block],
+      afterBlocks: spansBlocks
+        ? function () {
+            return editBlocksIn(host);
+          }
+        : function () {
+            return [block];
+          },
+      restore: function () {
+        if (host.parentNode) host.parentNode.replaceChild(fragment, host);
+      },
+    });
+  }
+
+  /* A whole line opens as itself, so the paragraph keeps its own tag and its
+   * own look while it is edited. */
+  function openBlockEditor(block) {
+    if (!block || block.hasAttribute("data-arev-cut")) return;
+    var done = block.getAttribute("data-arev-edit");
+    if (done) dropEdit(done);
+    var fragment = fragmentOf(block);
+    block.classList.add("arev-live-edit", "arev-live-block");
+    startEditing({
+      host: block,
+      block: true,
+      label: editLabel(block),
+      scope: "line",
+      blocks: [block],
+      afterBlocks: function () {
+        return [block];
+      },
+      restore: function () {
+        block.classList.remove("arev-mark", "arev-mark-edited", "arev-mark-block");
+        block.removeAttribute("data-arev-edit");
+        block.textContent = "";
+        block.appendChild(fragment);
+      },
+    });
+  }
+
+  function startEditing(plan) {
+    buildEditUi();
+    // Nothing else floats over the artifact while an editor is open. The line
+    // handles would act on a line the reviewer is no longer only pointing at.
+    editUi.group.hidden = true;
+    editUi.selBar.hidden = true;
+    editUi.undoBar.hidden = true;
+    plan.original = plan.host.textContent;
+    plan.before = plan.blocks.map(resolvedText);
+    plan.selector = selectorFor(plan.blocks[0] || plan.host);
+    plan.host.contentEditable = "true";
+    plan.host.spellcheck = false;
+    liveEdit = plan;
+    placeBar(editUi.editBar, plan.host.getBoundingClientRect(), true);
+    plan.host.focus();
+    // The caret lands after the text, never over it. Opening on a full
+    // selection would let the first keystroke wipe the words the reviewer came
+    // to keep.
+    var caret = document.createRange();
+    caret.selectNodeContents(plan.host);
+    caret.collapse(false);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(caret);
+  }
+
+  function closeEditor(plan) {
+    liveEdit = null;
+    if (editUi) editUi.editBar.hidden = true;
+    plan.host.contentEditable = "false";
+    plan.host.removeAttribute("contenteditable");
+    plan.host.classList.remove("arev-live-edit", "arev-live-block");
+    var selection = window.getSelection();
+    if (selection) selection.removeAllRanges();
+  }
+
+  function commitEdit() {
+    if (!liveEdit) return;
+    var plan = liveEdit;
+    var changed = plan.host.textContent;
+    closeEditor(plan);
+    if (!changed.trim() || changed === plan.original) {
+      plan.restore();
+      return;
+    }
+    var id = "te" + ++editSeq;
+    plan.host.classList.add("arev-mark", "arev-mark-edited");
+    if (plan.block) plan.host.classList.add("arev-mark-block");
+    plan.host.removeAttribute("data-arev-internal");
+    plan.host.setAttribute("data-arev-edit", id);
+    var after = plan.afterBlocks();
+    recordEdit({
+      id: id,
+      action: "edit",
+      scope: plan.scope,
+      selector: plan.selector,
+      label: plan.label,
+      before: shortText(plan.original),
+      after: shortText(changed),
+      blocks: plan.blocks.map(function (block, index) {
+        return {
+          selector: selectorFor(block),
+          before: plan.before[index],
+          after: after[index] ? resolvedText(after[index]) : "",
+        };
+      }),
+      restore: plan.restore,
+    });
+  }
+
+  function cancelEdit() {
+    if (!liveEdit) return;
+    var plan = liveEdit;
+    closeEditor(plan);
+    plan.restore();
+  }
+
+  /* ------------------------------------------------------- edit mode events */
+
+  document.addEventListener(
+    "mouseover",
+    function (event) {
+      if (!editing || liveEdit) return;
+      if (event.target.closest && event.target.closest("[data-arev-internal]"))
+        return;
+      var block = editBlockFor(event.target);
+      if (!block) return;
+      hoverBlock = block;
+      var ui = buildEditUi();
+      var rect = block.getBoundingClientRect();
+      ui.group.hidden = false;
+      // Beside the line where the page leaves a margin for them. An artifact
+      // whose text runs to the left edge gets them above the line instead,
+      // because handles that cover the first words are worse than none.
+      var beside = rect.left + window.scrollX - ui.group.offsetWidth - 8;
+      var above = beside < 4;
+      ui.group.style.top =
+        rect.top +
+        window.scrollY -
+        (above ? ui.group.offsetHeight + 4 : 0) +
+        "px";
+      ui.group.style.left =
+        (above ? rect.left + window.scrollX : beside) + "px";
+      var cut = block.hasAttribute("data-arev-cut");
+      ui.bin.setAttribute(
+        "aria-label",
+        cut ? "Restore this line" : "Mark this line for deletion",
+      );
+      ui.bin.title = cut ? "Restore this line" : "Mark this line for deletion";
+      ui.pencil.disabled = cut;
+    },
+    true,
+  );
+
+  document.addEventListener("mouseleave", function () {
+    if (editUi && !liveEdit) editUi.group.hidden = true;
+  });
+
+  document.addEventListener(
+    "mouseup",
+    function (event) {
+      if (!editing || liveEdit) return;
+      if (event.target.closest && event.target.closest("[data-arev-internal]"))
+        return;
+      var selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim())
+        return;
+      if (!editBlockFor(selection.anchorNode)) return;
+      var ui = buildEditUi();
+      hideEditBars();
+      pendingRange = selection.getRangeAt(0).cloneRange();
+      placeBar(ui.selBar, pendingRange.getBoundingClientRect());
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "mousedown",
+    function (event) {
+      if (!editing || liveEdit) return;
+      if (event.target.closest && event.target.closest("[data-arev-internal]"))
+        return;
+      var mark = event.target.closest
+        ? event.target.closest("[data-arev-edit]")
+        : null;
+      hideEditBars();
+      if (!mark) return;
+      activeMark = mark;
+      placeBar(buildEditUi().undoBar, mark.getBoundingClientRect());
+    },
+    true,
+  );
+
+  /* Clicking the line the pointer is already highlighting opens the same
+   * editor, so the pencil is a shortcut rather than the only way in. */
+  document.addEventListener(
+    "click",
+    function (event) {
+      if (!editing) return;
+      if (event.target.closest && event.target.closest("[data-arev-internal]"))
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (liveEdit) return;
+      if (event.target.closest && event.target.closest("[data-arev-edit]"))
+        return;
+      var selection = window.getSelection();
+      if (selection && !selection.isCollapsed && selection.toString().trim())
+        return;
+      var block = editBlockFor(event.target);
+      if (block) openBlockEditor(block);
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keydown",
+    function (event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") {
+        event.preventDefault();
+        send({ type: "toggle-edit-text" });
+        return;
+      }
+      if (!liveEdit) return;
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        commitEdit();
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelEdit();
+      }
+    },
+    true,
+  );
+
+  document.addEventListener("input", function () {
+    if (liveEdit && editUi)
+      placeBar(editUi.editBar, liveEdit.host.getBoundingClientRect(), true);
+  });
+
   /* --------------------------------------------------- native control capture
    * Interacting with the artifact's own controls IS feedback: a ticked
    * checkbox or a chosen radio answers a question without any typing. */
@@ -435,7 +1102,7 @@
   document.addEventListener(
     "change",
     function (e) {
-      if (annotating) return;
+      if (annotating || editing) return;
       var el = e.target;
       if (el.closest("[data-arev-internal]")) return; // arev's own UI is not feedback
       if (!el.matches("input,select,textarea")) return;
@@ -457,7 +1124,7 @@
   document.addEventListener(
     "click",
     function (e) {
-      if (annotating) return;
+      if (annotating || editing) return;
       if (e.target.closest("[data-arev-internal]")) return; // arev's own UI is not feedback
       var el = e.target.closest(
         "button,[data-arev-action],[data-lavish-action]",
@@ -563,18 +1230,8 @@
     board.block.parentNode.insertBefore(board.host, board.block);
   }
 
-  /* Drawn rather than a glyph, so it keeps one stroke weight at any size and
-   * needs no font the artifact might not ship. */
   function pencilIcon() {
-    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("aria-hidden", "true");
-    ["M4 20h4L19 9l-4-4L4 16z", "M14 6l4 4"].forEach(function (d) {
-      var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-      path.setAttribute("d", d);
-      svg.appendChild(path);
-    });
-    return svg;
+    return drawnIcon(["M4 20h4L19 9l-4-4L4 16z", "M14 6l4 4"]);
   }
 
   function markBoardReady(board) {
@@ -867,6 +1524,17 @@
   window.addEventListener("message", function (e) {
     if (e.source !== window.parent || !e.data || !e.data.arev) return;
     if (e.data.type === "set-annotate") setAnnotate(!!e.data.on);
+    if (e.data.type === "set-edit-text") setEditText(!!e.data.on);
+    if (e.data.type === "text-edit-queued") {
+      var queued = textEdits[String(e.data.editId || "")];
+      if (queued) queued.qid = e.data.qid;
+    }
+    if (e.data.type === "revert-text-edit") revertEdit(e.data.editId);
+    if (e.data.type === "clear-text-edits") {
+      Object.keys(textEdits).forEach(function (id) {
+        delete textEdits[id];
+      });
+    }
     if (e.data.type === "flash") {
       var el = document.querySelector(e.data.selector);
       if (el) {

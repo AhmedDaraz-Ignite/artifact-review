@@ -2,8 +2,10 @@ import { When, Then, expect } from '../support/bdd.js';
 
 // Naming the allowed values in the pattern turns a typo into an undefined step.
 const DELIVERY_STATE =
-  '(Draft|Sending|Sent|Received|Answered|Failed|Nothing to send|Nothing to add)';
-const COMPOSER_ACTION = '(Send now|Add to review|Send and end review)';
+  '(Draft|Sending|Sent|Received|Answered|Failed|Applied|Saving|Partly saved'
+  + '|Nothing to send|Nothing to add)';
+const COMPOSER_ACTION =
+  '(Send now|Add to review|Send and end review|Save edits to the artifact)';
 
 When(/^the reviewer types "([^"]*)" in chat$/, async ({ rail }, text) => {
   await rail.chat.fill(text);
@@ -27,10 +29,6 @@ Then('the chat box has focus', async ({ rail }) => {
 
 Then(/^the review holds (\d+) drafts?$/, async ({ rail }, count) => {
   await expect(rail.queueCount).toHaveText(String(count));
-});
-
-Then('the composer button reads "Send or add"', async ({ rail }) => {
-  await expect(rail.chatAction).toHaveText('Send or add');
 });
 
 Then('the chat box is empty', async ({ rail }) => {

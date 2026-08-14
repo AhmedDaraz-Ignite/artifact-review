@@ -25,6 +25,7 @@ import copy
 import glob
 import gzip
 import hashlib
+import html
 import json
 import os
 import re
@@ -73,6 +74,10 @@ MERMAID_NODE_TARGET_LIMITS = {
     "label": 512,
     "selector": 2048,
 }
+FEEDBACK_ITEM_KINDS = (
+    "text", "element", "control", "chat", "whiteboard", "text-edit")
+MAX_TEXT_EDIT_BLOCKS = 200
+MAX_TEXT_EDIT_CHARS = 100_000
 
 STATE_LOCK = threading.Lock()
 EVENTS_COND = threading.Condition(STATE_LOCK)
@@ -402,6 +407,36 @@ def _undelivered_warnings_locked():
     return fresh
 
 
+def _applied_event_locked(items):
+    """Tell the agent which of its own words the reviewer already rewrote.
+
+    This is a feedback event like any other, so the agent's existing loop
+    reads it. ``applied`` says the artifact already carries these changes, so
+    the agent confirms and moves on instead of making them a second time.
+    """
+    _require_quota(
+        "pending_events", len(STATE["events"]) + 1, MAX_PENDING_EVENTS)
+    sent_at = time.time()
+    event = event_envelope(
+        "feedback",
+        id=secrets.token_hex(8),
+        items=items,
+        applied=True,
+        layout_warnings=_undelivered_warnings_locked(),
+        sent_at=sent_at,
+    )
+    _append_feed_locked({
+        "id": event["id"],
+        "role": "human",
+        "ts": sent_at,
+        "items": items,
+        "status": "sent",
+        "applied": True,
+    })
+    STATE["events"].append(event)
+    return event
+
+
 def _feedback_event_locked():
     if not STATE["queue"]:
         return None
@@ -426,6 +461,117 @@ def _feedback_event_locked():
     })
     STATE["events"].append(event)
     return event
+
+
+def _drop_emptied_block(source, index):
+    """Remove the tag pair a cut just emptied, at ``index`` in ``source``.
+
+    A reviewer who cuts a whole line means the line goes, not that an empty
+    paragraph stays behind. Only the tag the cut text sat directly inside is
+    considered, and only when nothing but whitespace is left in it.
+    """
+    opening = None
+    for match in re.finditer(r"<([a-zA-Z][\w-]*)\b[^>]*>", source[:index]):
+        opening = match
+    if not opening:
+        return source
+    closing = re.compile(
+        rf"</{re.escape(opening.group(1))}\s*>", re.I).search(source, index)
+    if not closing:
+        return source
+    if source[opening.end():closing.start()].strip():
+        return source
+    head = source[:opening.start()]
+    tail = source[closing.end():]
+    # The line the tag stood on goes with it rather than staying as blank space.
+    if tail[:1] in ("\n", "\r"):
+        head = head.rstrip(" \t")
+        if head.endswith(("\n", "\r")):
+            tail = tail[2:] if tail[:2] == "\r\n" else tail[1:]
+    return head + tail
+
+
+def _apply_block_edit(source, before, after):
+    """Replace ``before`` with ``after`` once, or say why it cannot be done.
+
+    Returns ``(source, None)`` on success and ``(source, reason)`` otherwise.
+    A block whose text the file does not carry exactly once is left alone: the
+    reviewer sends that edit to the agent instead of guessing at the source.
+    """
+    attempts = (
+        (before, after),
+        (html.escape(before, quote=False), html.escape(after, quote=False)),
+    )
+    for needle, replacement in attempts:
+        count = source.count(needle)
+        if count == 1:
+            index = source.index(needle)
+            rewritten = source[:index] + replacement + source[index + len(needle):]
+            if not replacement.strip():
+                rewritten = _drop_emptied_block(rewritten, index)
+            return rewritten, None
+        if count > 1:
+            return source, "the same text appears more than once in the file"
+    return source, "the file does not carry this text as one plain run"
+
+
+def _stale_edit(item, version):
+    """Say whether the artifact moved after this edit was drawn on it.
+
+    The version is a nanosecond mtime, which is wider than the integers
+    JavaScript holds exactly, so the browser stamps a rounded copy on the edit.
+    Rounding both sides the same way compares what the browser actually saw.
+    """
+    base = item.get("baseVersion")
+    return base is not None and float(base) != float(version)
+
+
+def _apply_text_edits(items, version):
+    """Write queued text edits into the artifact, in the order they were made.
+
+    Returns ``(applied_items, refusals)``. Applying stops at nothing: an edit
+    the source cannot carry is refused on its own and the rest still land.
+    """
+    with open(ARTIFACT, encoding="utf-8") as handle:
+        source = handle.read()
+    applied = []
+    refusals = []
+    for item in items:
+        if _stale_edit(item, version):
+            refusals.append({
+                "qid": item.get("qid"),
+                "reason": "the artifact changed after this edit was drawn on it",
+            })
+            continue
+        working = source
+        reason = None
+        for block in item.get("blocks") or []:
+            working, reason = _apply_block_edit(
+                working, block["before"], block.get("after", ""))
+            if reason:
+                break
+        if reason:
+            refusals.append({"qid": item.get("qid"), "reason": reason})
+            continue
+        source = working
+        applied.append(item)
+    if applied:
+        _write_artifact(source)
+    return applied, refusals
+
+
+def _write_artifact(source):
+    """Replace the artifact atomically, keeping the file's own permissions."""
+    tmp = ARTIFACT + ".arev-tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(source)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        os.chmod(tmp, os.stat(ARTIFACT).st_mode & 0o777)
+    except OSError:
+        pass
+    os.replace(tmp, ARTIFACT)
 
 
 def _watch_file():
@@ -497,7 +643,41 @@ def _validated_source_hash(value):
     return None
 
 
+def _normalise_text_edit(item):
+    """Check a text edit carries block text the artifact file can be searched for.
+
+    ``blocks`` is what a save writes: one before-and-after pair per block the
+    reviewer changed. ``before``/``after`` are the shorter pair the review rail
+    shows, so they are read but never used to rewrite the file.
+    """
+    blocks = item.get("blocks")
+    if not isinstance(blocks, list) or not blocks:
+        raise ValueError("text-edit needs at least one block")
+    if len(blocks) > MAX_TEXT_EDIT_BLOCKS:
+        raise ValueError(
+            f"text-edit carries more than {MAX_TEXT_EDIT_BLOCKS} blocks")
+    if item.get("action") not in ("edit", "cut"):
+        raise ValueError("text-edit action must be edit or cut")
+    total = 0
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise ValueError("text-edit block is not an object")
+        before = block.get("before")
+        after = block.get("after", "")
+        if not isinstance(before, str) or not before.strip():
+            raise ValueError("text-edit block needs the text it replaces")
+        if not isinstance(after, str):
+            raise ValueError("text-edit block replacement must be a string")
+        total += len(before) + len(after)
+    if total > MAX_TEXT_EDIT_CHARS:
+        raise ValueError(
+            f"text-edit carries more than {MAX_TEXT_EDIT_CHARS} characters")
+    return item
+
+
 def _normalise_feedback_item(item):
+    if item.get("kind") == "text-edit":
+        return _normalise_text_edit(item)
     target = item.get("target")
     if (item.get("kind") != "element"
             or not isinstance(target, dict)
@@ -1078,6 +1258,7 @@ class Handler(BaseHTTPRequestHandler):
             "/reopen": self._reopen, "/shutdown": self._shutdown,
             "/audit": self._audit, "/audit/override": self._audit_override,
             "/whiteboard": self._whiteboard,
+            "/apply-edits": self._apply_edits,
         }.get(path)
         if handler:
             handler(body)
@@ -1089,7 +1270,7 @@ class Handler(BaseHTTPRequestHandler):
         if not isinstance(item, dict):
             self._json({"error": "item must be an object"}, 400)
             return
-        if item.get("kind") not in ("text", "element", "control", "chat", "whiteboard"):
+        if item.get("kind") not in FEEDBACK_ITEM_KINDS:
             self._json({"error": "bad item kind"}, 400)
             return
         try:
@@ -1109,6 +1290,45 @@ class Handler(BaseHTTPRequestHandler):
             _persist_locked()
             _changed_locked()
         self._json({"ok": True, "qid": item["qid"], "queued": len(STATE["queue"])})
+
+    def _apply_edits(self, body):
+        """Write the queued text edits into the artifact the agent owns.
+
+        The agent is the file's author, so a save is refused outright when the
+        file changed after the reviewer drew the edits. What is written is then
+        delivered as a feedback event marked ``applied``, because the agent has
+        to know its own file moved and who moved it.
+        """
+        with EVENTS_COND:
+            if STATE["ended"]:
+                self._json({"error": "session ended"}, 409)
+                return
+            edits = [item for item in STATE["queue"]
+                     if item.get("kind") == "text-edit"]
+            if not edits:
+                self._json({"error": "no text edits drafted"}, 400)
+                return
+            try:
+                applied, refused = _apply_text_edits(edits, STATE["version"])
+            except OSError as error:
+                self._json({"error": f"the artifact could not be written: {error}"},
+                           500)
+                return
+            if not applied:
+                self._json({"error": refused[0]["reason"], "refused": refused}, 409)
+                return
+            kept = {id(item) for item in applied}
+            STATE["queue"] = [item for item in STATE["queue"]
+                              if id(item) not in kept]
+            try:
+                event = _applied_event_locked(applied)
+            except QuotaExceeded as error:
+                self._quota(error)
+                return
+            _persist_locked()
+            _changed_locked()
+        self._json({"ok": True, "applied": len(applied), "refused": refused,
+                    "id": event["id"]})
 
     def _unqueue(self, body):
         with EVENTS_COND:
@@ -1146,8 +1366,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(item, dict):
                 self._json({"error": "item must be an object"}, 400)
                 return
-            if item.get("kind") not in (
-                    "text", "element", "control", "chat", "whiteboard"):
+            if item.get("kind") not in FEEDBACK_ITEM_KINDS:
                 self._json({"error": "bad item kind"}, 400)
                 return
             try:

@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inline text editing - mockup</title>
+<style>
+  :root {
+    color-scheme: light;
+    --canvas:#f2f3f5;
+    --surface:#fff;
+    --surface-subtle:#f7f8fa;
+    --ink:#171a20;
+    --muted:#61687a;
+    --line:#dcdde3;
+    --accent:#3557c0;
+    --accent-hover:#2947a5;
+    --accent-soft:#e8edfb;
+    --success:#186a4b;
+    --success-soft:#e7f4ee;
+    --warning:#a1420f;
+    --warning-soft:#faede6;
+    --danger:#a63d40;
+    --danger-soft:#f8e9ea;
+    --shadow:0 4px 8px rgba(20,24,32,.14);
+    --review-rail-expanded:360px;
+    --rail-head:40px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --canvas:#101318;
+      --surface:#181c23;
+      --surface-subtle:#20252e;
+      --ink:#e8ebf1;
+      --muted:#a0a7b6;
+      --line:#303744;
+      --accent:#87a3f4;
+      --accent-hover:#9bb3f7;
+      --accent-soft:#242d45;
+      --success:#5dd3a0;
+      --success-soft:#17362a;
+      --warning:#f0ae62;
+      --warning-soft:#3c2b1e;
+      --danger:#e38d91;
+      --danger-soft:#3d2629;
+      --shadow:0 4px 8px rgba(0,0,0,.38);
+    }
+  }
+  * { box-sizing:border-box }
+  [hidden] { display:none !important }
+  html, body { width:100%; height:100%; overflow:hidden }
+  body {
+    margin:0;
+    display:flex;
+    flex-direction:column;
+    background:var(--canvas);
+    color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  button, textarea, input { font:inherit }
+  button { color:inherit }
+  button:focus-visible, textarea:focus-visible, input:focus-visible {
+    outline:2px solid var(--accent);
+    outline-offset:2px;
+  }
+  button:disabled { cursor:not-allowed; opacity:.52 }
+  .sr-only {
+    position:absolute !important; width:1px !important; height:1px !important;
+    padding:0 !important; margin:-1px !important; overflow:hidden !important;
+    clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important;
+  }
+
+  /* ---------------------------------------------------------------- top bar */
+  .topbar {
+    min-height:52px; flex:0 0 auto; display:flex; align-items:center; gap:12px;
+    padding:8px 12px 8px 16px; background:var(--surface);
+    border-bottom:1px solid var(--line);
+  }
+  .identity { min-width:0; display:flex; align-items:baseline; gap:10px }
+  .artifact-name { font-size:14px; font-weight:650 }
+  .artifact-path { color:var(--muted); font-size:12px }
+  .topbar-actions { margin-left:auto; display:flex; align-items:center; gap:8px }
+  .button {
+    min-height:36px; display:inline-flex; align-items:center; justify-content:center;
+    gap:7px; border:1px solid var(--line); border-radius:8px; padding:7px 11px;
+    background:var(--surface); cursor:pointer; font-size:12px; font-weight:600; line-height:1;
+  }
+  .button:hover:not(:disabled) { border-color:var(--accent); background:var(--surface-subtle) }
+  .button.primary { border-color:var(--accent); background:var(--accent); color:#fff }
+  .button.primary:hover:not(:disabled) { border-color:var(--accent-hover); background:var(--accent-hover) }
+  .button.active { border-color:var(--accent); background:var(--accent-soft); color:var(--accent) }
+  .button.small { min-height:28px; padding:5px 9px; font-size:11px }
+  .button.icon { width:36px; padding:0; font-size:18px }
+  .chevron { width:9px; height:9px; fill:none; stroke:currentColor; stroke-width:1.6 }
+  kbd {
+    border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:1px 4px;
+    color:var(--muted); background:var(--surface-subtle);
+    font:10px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .agent-chip {
+    min-height:28px; display:inline-flex; align-items:center; gap:6px; border-radius:999px;
+    padding:4px 9px; background:var(--success-soft); color:var(--success);
+    font-size:11px; font-weight:600; white-space:nowrap;
+  }
+  .agent-dot { width:7px; height:7px; border-radius:50%; background:currentColor }
+
+  /* ------------------------------------------------------------- workspace */
+  .workspace { position:relative; min-height:0; flex:1; display:flex }
+  .stage { position:relative; min-width:0; min-height:0; flex:1; overflow:auto; background:#fff }
+  @media (prefers-color-scheme: dark) { .stage { background:#101318 } }
+  .paper {
+    max-width:720px; margin:0 auto; padding:36px 32px 120px;
+    color:#20242c; font-size:15px; line-height:1.62;
+  }
+  @media (prefers-color-scheme: dark) { .paper { color:#dfe3ea } }
+  .paper h1 { margin:0 0 6px; font-size:25px; line-height:1.25 }
+  .paper .doc-sub { margin:0 0 26px; color:#6b7280; font-size:13px }
+  .paper h2 { margin:30px 0 8px; font-size:17px }
+  .paper p, .paper li { margin:0 0 12px }
+  .paper ul { padding-left:22px }
+  .mode-hint {
+    margin:0 0 24px; border:1px dashed var(--line); border-radius:8px; padding:10px 12px;
+    color:var(--muted); background:var(--surface-subtle); font-size:12px; line-height:1.5;
+  }
+  .mode-hint b { color:var(--ink) }
+
+  /* editable targets, edit mode only */
+  body[data-mode="edit"] .stage { cursor:text }
+  body[data-mode="edit"] [data-block]:hover {
+    background:color-mix(in srgb, var(--accent-soft) 55%, transparent);
+    border-radius:5px;
+  }
+
+  /* ------------------------------------------------------------- edit marks */
+  .mark { border-radius:3px; padding:0 1px }
+  .mark.del { background:var(--danger-soft); color:var(--danger); text-decoration:line-through }
+  .mark.edited {
+    background:var(--success-soft); color:var(--success);
+    text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:2px;
+  }
+  /* A rewritten block carries a tag instead of an underline. Underlining several
+     whole paragraphs says the same thing far too loudly. */
+  .mark.edited.block {
+    position:relative; display:block; padding:6px 10px; margin:0 -10px;
+    border-radius:5px; text-decoration:none;
+  }
+  .mark.edited.block::after {
+    content:"Edited"; position:absolute; top:-9px; right:0; border-radius:999px;
+    padding:1px 7px; background:var(--success); color:var(--surface);
+    font:650 10px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .mark.edited.block > :first-child { margin-top:0 }
+  .mark.edited.block > :last-child { margin-bottom:0 }
+  .mark:hover, .mark.linked { outline:2px solid var(--accent); outline-offset:1px; cursor:pointer }
+  [data-block][data-deleted] {
+    position:relative; background:var(--danger-soft); border-radius:5px;
+    color:var(--danger); text-decoration:line-through;
+  }
+  [data-block][data-deleted]::after {
+    content:"Marked for deletion"; position:absolute; top:-9px; right:0;
+    border-radius:999px; padding:1px 7px; background:var(--danger); color:#fff;
+    font:650 10px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    text-decoration:none;
+  }
+
+  /* ------------------------------------------------------- floating controls */
+  .gutter-group { position:absolute; z-index:25; display:flex; gap:4px }
+  .gutter {
+    width:28px; height:28px; display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid var(--line); border-radius:7px; padding:0; background:var(--surface);
+    color:var(--muted); cursor:pointer; box-shadow:var(--shadow);
+  }
+  .gutter:hover { border-color:var(--accent); background:var(--accent-soft); color:var(--accent) }
+  .gutter.cut:hover { border-color:var(--danger); background:var(--danger-soft); color:var(--danger) }
+  .gutter svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.7;
+                stroke-linecap:round; stroke-linejoin:round }
+
+  .selection-bar {
+    position:absolute; z-index:30; display:flex; align-items:center; gap:4px;
+    border:1px solid var(--line); border-radius:10px; padding:4px;
+    background:var(--surface); box-shadow:var(--shadow);
+  }
+  .selection-bar .button { min-height:30px; padding:6px 9px; font-size:11px }
+  .selection-bar .sep { width:1px; height:20px; margin:0 2px; background:var(--line) }
+
+  .field-label { display:block; margin:0 0 5px; font-size:12px; font-weight:600 }
+
+  /* The selected text itself becomes the editor, so the original words are
+     already there and the reviewer types over them where they stand. */
+  .live-edit {
+    border-radius:4px; padding:0 2px; background:var(--accent-soft);
+    box-shadow:inset 0 0 0 2px var(--accent); caret-color:var(--accent);
+  }
+  .live-edit:focus { outline:none }
+  .live-edit.block { display:block; padding:6px 10px; margin:0 -10px }
+  .live-edit.block > :first-child { margin-top:0 }
+  .live-edit.block > :last-child { margin-bottom:0 }
+  .edit-bar .hint { padding:0 6px; color:var(--muted); font-size:11px; white-space:nowrap }
+
+  /* ------------------------------------------------------------------ rail */
+  .review-rail {
+    width:var(--review-rail-expanded); min-height:0; flex:0 0 var(--review-rail-expanded);
+    display:flex; flex-direction:column; overflow:hidden;
+    border-left:1px solid var(--line); background:var(--surface);
+  }
+  .rail-panel { min-height:0; flex:1; display:flex; flex-direction:column; overflow:hidden auto }
+  .rail-panel > section { min-height:calc(var(--rail-head) + 44px); display:flex;
+                          flex-direction:column; overflow:hidden }
+  .rail-panel > section:first-child { flex:0 0 auto }
+  .activity-section { flex:1 1 auto }
+  .section-head {
+    min-height:var(--rail-head); display:flex; align-items:center; gap:8px;
+    padding:8px 12px; border-bottom:1px solid var(--line);
+  }
+  .section-head h2 { margin:0; font-size:12px; font-weight:650 }
+  .section-head .hint { margin-left:auto; color:var(--muted); font-size:11px }
+  .count {
+    min-width:20px; border-radius:999px; padding:1px 6px; background:var(--surface-subtle);
+    color:var(--muted); font-size:11px; font-weight:650; text-align:center;
+  }
+  .drafts { max-height:264px; overflow:auto }
+  .draft-row {
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:8px; align-items:start;
+    padding:9px 12px; border-bottom:1px solid var(--line);
+  }
+  .draft-row.linked { background:var(--accent-soft) }
+  .state-chip {
+    display:inline-flex; align-items:center; min-height:20px; border-radius:999px;
+    padding:2px 7px; background:var(--surface-subtle); color:var(--muted);
+    font-size:10px; font-weight:650; white-space:nowrap;
+  }
+  .state-chip.edit { color:var(--accent); background:var(--accent-soft) }
+  .state-chip.cut { color:var(--danger); background:var(--danger-soft) }
+  .state-chip.sent, .state-chip.applied { color:var(--success); background:var(--success-soft) }
+  .draft-jump { min-width:0; border:0; padding:0; background:none; cursor:pointer; text-align:left }
+  .draft-main { overflow:hidden; color:var(--ink); font-size:12px; text-overflow:ellipsis; white-space:nowrap }
+  .draft-main del { color:var(--danger) }
+  .draft-main ins { color:var(--success); text-decoration:underline; text-underline-offset:2px }
+  .draft-context { overflow:hidden; margin-top:2px; color:var(--muted); font-size:11px;
+                   text-overflow:ellipsis; white-space:nowrap }
+  .remove {
+    width:28px; height:28px; border:0; border-radius:6px; padding:0; background:transparent;
+    color:var(--muted); cursor:pointer; font-size:17px; line-height:1;
+  }
+  .remove:hover { background:var(--danger-soft); color:var(--danger) }
+  .empty { padding:12px; color:var(--muted); font-size:12px }
+  .activity { flex:1; overflow:auto }
+  .feed-entry { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px }
+  .feed-entry.agent { background:var(--accent-soft) }
+  .feed-meta { display:flex; align-items:center; gap:7px; margin-bottom:5px }
+  .feed-who { font-size:11px; font-weight:650 }
+  .feed-time { margin-left:auto; color:var(--muted); font-size:10px }
+  .feed-entry pre { margin:0; white-space:pre-wrap; word-break:break-word; font:inherit }
+  .composer { flex:0 0 auto; border-top:1px solid var(--line); padding:11px 12px 12px }
+  .composer textarea {
+    width:100%; min-height:64px; resize:vertical; border:1px solid var(--line);
+    border-radius:8px; padding:9px 10px; background:var(--surface-subtle); color:var(--ink);
+  }
+  .composer-help { margin-top:5px; color:var(--muted); font-size:10px }
+  .feedback-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; margin-top:9px }
+  .action-state { margin-right:auto; color:var(--muted); font-size:11px; font-weight:600 }
+  .action-state.applied, .action-state.sent { color:var(--success) }
+
+  /* ----------------------------------------------------------------- menus */
+  .menu {
+    position:absolute; z-index:60; width:288px; border:1px solid var(--line);
+    border-radius:10px; padding:5px; background:var(--surface); box-shadow:var(--shadow);
+  }
+  .menu-item {
+    width:100%; display:block; border:0; border-radius:7px; padding:8px 9px;
+    background:transparent; color:inherit; cursor:pointer; text-align:left;
+  }
+  .menu-item:hover:not(:disabled), .menu-item:focus-visible { background:var(--surface-subtle) }
+  .menu-item strong { display:block; font-size:12px; font-weight:650 }
+  .menu-item small { display:block; margin-top:2px; color:var(--muted); font-size:10px; line-height:1.35 }
+  .menu-separator { height:1px; margin:4px; background:var(--line) }
+  .menu-item.danger strong { color:var(--danger) }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition:none !important; animation:none !important }
+  }
+</style>
+</head>
+<body data-mode="edit">
+
+<header class="topbar">
+  <div class="identity">
+    <span class="artifact-name">Release plan</span>
+    <span class="artifact-path">docs/release-plan.html</span>
+  </div>
+  <div class="topbar-actions">
+    <span class="agent-chip"><span class="agent-dot" aria-hidden="true"></span><span>Agent listening</span></span>
+    <button class="button" id="annBtn" type="button" aria-pressed="false">
+      <span aria-hidden="true">⌖</span><span>Annotate</span><kbd>⌘I</kbd>
+    </button>
+    <button class="button active" id="editBtn" type="button" aria-pressed="true">
+      <span aria-hidden="true">✎</span><span>Edit text</span><kbd>⌘E</kbd>
+    </button>
+    <button class="button icon" type="button" aria-label="Review options">⋯</button>
+  </div>
+</header>
+<div class="sr-only" id="live" role="status" aria-live="polite"></div>
+
+<main class="workspace">
+  <section class="stage" id="stage" aria-label="Artifact">
+    <article class="paper" id="paper">
+      <p class="mode-hint">
+        <b>Mockup.</b> Edit text mode is on. Point at any line: two handles appear on its left, a
+        pencil to edit the whole line and a bin to cut it. Clicking the highlighted line itself opens
+        the same editor. Or select any words, even across several lines, and press Edit text. The
+        text you picked turns into an editor already holding it, and you rewrite it where it stands.
+        Every change lands in the rail on the right, where you save it or send it to the agent.
+      </p>
+
+      <h1 data-block>Release plan: reviewer edit loop</h1>
+      <p class="doc-sub" data-block>Draft 3, owned by the platform team</p>
+
+      <h2 data-block>Summary</h2>
+      <p data-block>
+        The review surface lets a reader point at a problem and describe it. Every fix still
+        travels back through the agent, even when the fix is a single wrong word. This plan
+        closes that gap for text.
+      </p>
+      <p data-block>
+        We expect the median review to contain four or five small text corrections and one
+        structural comment. Today all six of them cost a full agent round trip.
+      </p>
+
+      <h2 data-block>Scope for the first release</h2>
+      <ul>
+        <li data-block>Replace a selected range of words with new text.</li>
+        <li data-block>Mark a selected range, or a whole line, for deletion.</li>
+        <li data-block>Save the collected edits into the artifact, or hand them to the agent.</li>
+        <li data-block>This line is filler and should not survive the review.</li>
+      </ul>
+
+      <h2 data-block>Risks</h2>
+      <p data-block>
+        The artifact is written by the agent. If the reviewer writes to the same file, the two
+        writers can disagree. The plan keeps one owner per save and records who changed what.
+      </p>
+    </article>
+
+    <div class="gutter-group" id="gutterGroup" hidden>
+      <button class="gutter" id="gutterEdit" type="button" aria-label="Edit this line">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM14.5 5.5l4 4"/></svg>
+      </button>
+      <button class="gutter cut" id="gutterCut" type="button" aria-label="Mark this line for deletion">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+      </button>
+    </div>
+
+    <div class="selection-bar" id="selBar" hidden role="toolbar" aria-label="Change the selected text">
+      <button class="button" id="selEdit" type="button">Edit text</button>
+      <button class="button" id="selDelete" type="button">Delete</button>
+      <span class="sep" aria-hidden="true"></span>
+      <button class="button" id="selComment" type="button">Comment</button>
+    </div>
+
+    <div class="selection-bar edit-bar" id="editBar" hidden role="toolbar" aria-label="Finish this edit">
+      <span class="hint">Editing in place. ⌘Enter saves, Escape cancels.</span>
+      <button class="button" id="editCancel" type="button">Cancel</button>
+      <button class="button primary" id="editSave" type="button">Save edit</button>
+    </div>
+
+    <div class="selection-bar" id="undoBar" hidden role="toolbar" aria-label="Edit on this text">
+      <button class="button" id="undoEdit" type="button">Undo this edit</button>
+    </div>
+  </section>
+
+  <aside class="review-rail" aria-label="Review feedback">
+    <div class="rail-panel">
+      <section aria-labelledby="draftTitle">
+        <div class="section-head">
+          <h2 id="draftTitle">Draft feedback</h2>
+          <span class="count" id="qCount">0</span>
+          <span class="hint">Sent together</span>
+        </div>
+        <div class="drafts" id="queue">
+          <div class="empty">Nothing drafted. Edit the text, annotate the artifact, or write a note below.</div>
+        </div>
+      </section>
+      <section class="activity-section" aria-labelledby="activityTitle">
+        <div class="section-head">
+          <h2 id="activityTitle">Activity</h2>
+          <span class="hint">1 message</span>
+        </div>
+        <div class="activity" id="feed">
+          <div class="feed-entry agent">
+            <div class="feed-meta">
+              <span class="feed-who">Agent</span>
+              <span class="state-chip">Answered</span>
+              <span class="feed-time">10:24</span>
+            </div>
+            <pre>Draft 3 is ready. The summary and the risk section are new.</pre>
+          </div>
+        </div>
+      </section>
+      <form class="composer" id="composer" onsubmit="return false">
+        <label class="field-label" for="chat">Feedback for the agent</label>
+        <textarea id="chat" placeholder="Write a review note"></textarea>
+        <div class="composer-help" id="composerHelp">Send now includes every draft. Shift+Enter adds a new line.</div>
+        <div class="feedback-actions">
+          <span class="action-state" id="composerState">Draft</span>
+          <button class="button primary" id="chatAction" type="button" aria-haspopup="menu">
+            <span id="chatActionLabel">Send or add</span>
+            <svg class="chevron" aria-hidden="true" viewBox="0 0 10 6"><path d="M1 1l4 4 4-4"/></svg>
+          </button>
+        </div>
+      </form>
+    </div>
+  </aside>
+</main>
+
+<div class="menu" id="chatMenu" hidden role="menu" aria-label="Feedback action">
+  <button class="menu-item" id="mApply" type="button" role="menuitem">
+    <strong>Save edits to the artifact</strong>
+    <small>Write the text changes into the file now and tell the agent what changed.</small>
+  </button>
+  <button class="menu-item" id="mSend" type="button" role="menuitem">
+    <strong>Send now</strong>
+    <small>Deliver the edits, this note, and every draft. The agent makes the changes.</small>
+  </button>
+  <button class="menu-item" id="mQueue" type="button" role="menuitem">
+    <strong>Add to review</strong>
+    <small>Keep everything as a draft for the next send.</small>
+  </button>
+  <div class="menu-separator" role="separator"></div>
+  <button class="menu-item danger" id="mEnd" type="button" role="menuitem">
+    <strong>Send and end review</strong>
+    <small>Deliver everything, then stop accepting feedback.</small>
+  </button>
+</div>
+
+<script>
+const stage = document.getElementById("stage");
+const paper = document.getElementById("paper");
+const gutterGroup = document.getElementById("gutterGroup");
+const gutterEdit = document.getElementById("gutterEdit");
+const gutterCut = document.getElementById("gutterCut");
+const selBar = document.getElementById("selBar");
+const undoBar = document.getElementById("undoBar");
+const editBar = document.getElementById("editBar");
+const queue = document.getElementById("queue");
+const qCount = document.getElementById("qCount");
+const live = document.getElementById("live");
+const chatMenu = document.getElementById("chatMenu");
+const chatAction = document.getElementById("chatAction");
+const chatActionLabel = document.getElementById("chatActionLabel");
+const composerState = document.getElementById("composerState");
+
+let edits = [];
+let seq = 0;
+let hoverBlock = null;
+let pendingRange = null;
+let activeMark = null;
+let liveEdit = null;
+
+const say = (text) => { live.textContent = text; };
+const place = (el, rect, below) => {
+  const host = stage.getBoundingClientRect();
+  el.hidden = false;
+  const top = below
+    ? rect.bottom - host.top + stage.scrollTop + 8
+    : rect.top - host.top + stage.scrollTop - el.offsetHeight - 8;
+  el.style.top = Math.max(4, top) + "px";
+  el.style.left = Math.max(8, Math.min(
+    rect.left - host.left, host.width - el.offsetWidth - 12)) + "px";
+};
+const hideAll = () => { selBar.hidden = true; undoBar.hidden = true; };
+const rangeBlock = (range) => {
+  const node = range.startContainer;
+  const el = node.nodeType === 1 ? node : node.parentElement;
+  return el.closest("[data-block]") || paper;
+};
+const blockLabel = (block) => {
+  const text = (block.textContent || "").trim().replace(/\s+/g, " ");
+  const tag = block.tagName.toLowerCase();
+  const kind = tag === "li" ? "list item" : tag.startsWith("h") ? "heading" : "paragraph";
+  return kind + ' "' + (text.length > 34 ? text.slice(0, 34) + "…" : text) + '"';
+};
+
+/* --------------------------------------------------- whole line edit and cut */
+paper.addEventListener("mouseover", (event) => {
+  if (liveEdit) return;
+  const block = event.target.closest("[data-block]");
+  if (!block) return;
+  hoverBlock = block;
+  const rect = block.getBoundingClientRect();
+  const host = stage.getBoundingClientRect();
+  gutterGroup.hidden = false;
+  gutterGroup.style.top = (rect.top - host.top + stage.scrollTop) + "px";
+  gutterGroup.style.left =
+    Math.max(4, rect.left - host.left - gutterGroup.offsetWidth - 8) + "px";
+  const cut = block.hasAttribute("data-deleted");
+  gutterCut.setAttribute("aria-label", cut ? "Restore this line" : "Mark this line for deletion");
+  gutterEdit.disabled = cut;
+});
+stage.addEventListener("mouseleave", () => { if (!liveEdit) gutterGroup.hidden = true; });
+
+gutterCut.addEventListener("click", () => {
+  if (!hoverBlock) return;
+  const existing = hoverBlock.getAttribute("data-deleted");
+  if (existing) {
+    dropEdit(existing);
+    return;
+  }
+  const id = "e" + ++seq;
+  const block = hoverBlock;
+  block.setAttribute("data-deleted", id);
+  edits.push({
+    id, kind: "line", chip: "Cut line", label: blockLabel(block),
+    preview: "<del>" + escape(block.textContent.trim()) + "</del>", block,
+    restore: () => block.removeAttribute("data-deleted"),
+  });
+  render();
+  say("Line marked for deletion.");
+});
+
+gutterEdit.addEventListener("click", () => {
+  if (hoverBlock) editWholeBlock(hoverBlock);
+});
+
+/* Clicking the line the pointer is already highlighting opens the same editor,
+   so the pencil is a shortcut rather than the only way in. */
+paper.addEventListener("click", (event) => {
+  if (liveEdit || document.body.dataset.mode !== "edit") return;
+  if (event.target.closest(".mark, .selection-bar")) return;
+  const selection = window.getSelection();
+  if (selection && !selection.isCollapsed && selection.toString().trim()) return;
+  const block = event.target.closest("[data-block]");
+  if (block) editWholeBlock(block);
+});
+
+/* ----------------------------------------------------------- range editing */
+document.addEventListener("mouseup", (event) => {
+  if (liveEdit) return;
+  if (event.target.closest(".selection-bar, .menu, .review-rail")) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+  if (!paper.contains(sel.anchorNode) || !paper.contains(sel.focusNode)) return;
+  hideAll();
+  pendingRange = sel.getRangeAt(0).cloneRange();
+  place(selBar, pendingRange.getBoundingClientRect());
+});
+
+document.addEventListener("mousedown", (event) => {
+  if (liveEdit) return;
+  if (event.target.closest(".selection-bar, .menu")) return;
+  const mark = event.target.closest(".mark");
+  if (mark) {
+    activeMark = mark;
+    hideAll();
+    place(undoBar, mark.getBoundingClientRect());
+    return;
+  }
+  hideAll();
+});
+
+document.getElementById("selDelete").addEventListener("click", () => {
+  if (!pendingRange) return;
+  const id = "e" + ++seq;
+  const original = pendingRange.toString();
+  const label = blockLabel(rangeBlock(pendingRange));
+  const span = document.createElement("span");
+  span.className = "mark del";
+  span.dataset.editId = id;
+  span.append(pendingRange.extractContents());
+  pendingRange.insertNode(span);
+  edits.push({
+    id, kind: "cut", chip: "Cut text", label,
+    preview: "<del>" + escape(original) + "</del>", node: span,
+    restore: () => span.replaceWith(...span.childNodes),
+  });
+  finishSelection("Selected text marked for deletion.");
+});
+
+/* The reviewer edits the selected words where they stand. The range keeps its own
+   text and its own structure, so a multi-line selection opens as those lines. */
+document.getElementById("selEdit").addEventListener("click", () => {
+  if (!pendingRange) return;
+  const label = blockLabel(rangeBlock(pendingRange));
+  const range = wholeBlocksIfMultiple(pendingRange);
+  const spansBlocks = range !== pendingRange;
+  const host = document.createElement(spansBlocks ? "div" : "span");
+  host.className = "live-edit" + (spansBlocks ? " block" : "");
+  host.append(range.extractContents());
+  range.insertNode(host);
+  const fragment = cloneOf(host);
+  startEditing(host, label, spansBlocks, () => host.replaceWith(fragment), fragment);
+  selBar.hidden = true;
+  say("Editing the selected text in place. The original text is in the editor.");
+});
+
+/* A whole line opens as itself, so the paragraph keeps its own tag and its own
+   look while it is edited. */
+function editWholeBlock(block) {
+  if (block.hasAttribute("data-deleted")) return;
+  const done = edits.find((edit) => edit.node === block);
+  if (done) dropEdit(done.id);
+  const fragment = cloneOf(block);
+  block.classList.add("live-edit", "block");
+  startEditing(block, blockLabel(block), true, () => {
+    block.classList.remove("mark", "edited", "block");
+    delete block.dataset.editId;
+    block.replaceChildren(fragment);
+  }, fragment);
+  gutterGroup.hidden = true;
+  say("Editing this line in place. Its text is in the editor.");
+}
+
+function startEditing(host, label, isBlock, restore, fragment) {
+  host.contentEditable = "true";
+  host.spellcheck = false;
+  liveEdit = { host, label, original: host.textContent, block: isBlock, restore, fragment };
+  place(editBar, host.getBoundingClientRect(), true);
+  host.focus();
+  // The caret lands after the text, never over it. Opening on a full selection
+  // would let the first keystroke wipe the words the reviewer came to keep.
+  const caret = document.createRange();
+  caret.selectNodeContents(host);
+  caret.collapse(false);
+  const selection = window.getSelection();
+  selection.removeAllRanges();
+  selection.addRange(caret);
+}
+
+/* A selection crossing two blocks grows to whole blocks, so the reviewer gets
+   every line of the range instead of two half sentences. */
+function wholeBlocksIfMultiple(range) {
+  const first = rangeBlock(range);
+  const endNode = range.endContainer;
+  const endEl = endNode.nodeType === 1 ? endNode : endNode.parentElement;
+  const last = endEl.closest("[data-block]") || first;
+  if (first === last) return range;
+  const wide = document.createRange();
+  wide.setStartBefore(first);
+  wide.setEndAfter(last);
+  return wide;
+}
+
+function cloneOf(host) {
+  const fragment = document.createDocumentFragment();
+  [...host.childNodes].forEach((node) => fragment.append(node.cloneNode(true)));
+  return fragment;
+}
+
+document.getElementById("selComment").addEventListener("click", () => {
+  if (!pendingRange) return;
+  const id = "e" + ++seq;
+  edits.push({
+    id, kind: "note", chip: "Note", label: blockLabel(rangeBlock(pendingRange)),
+    preview: "Comment on “" + escape(pendingRange.toString()) + "”",
+  });
+  finishSelection("Comment drafted on the selected text.");
+});
+
+document.getElementById("editSave").addEventListener("click", commitEdit);
+document.getElementById("editCancel").addEventListener("click", cancelEdit);
+document.addEventListener("keydown", (event) => {
+  if (!liveEdit) return;
+  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault();
+    commitEdit();
+  }
+  if (event.key === "Escape") { event.preventDefault(); cancelEdit(); }
+});
+paper.addEventListener("input", () => {
+  if (liveEdit) place(editBar, liveEdit.host.getBoundingClientRect(), true);
+});
+
+function commitEdit() {
+  if (!liveEdit) return;
+  const { host, original, label, block, restore } = liveEdit;
+  const changed = host.textContent;
+  liveEdit = null;
+  editBar.hidden = true;
+  host.contentEditable = "false";
+  host.classList.remove("live-edit");
+  if (!changed.trim() || changed === original) {
+    restore();
+    window.getSelection().removeAllRanges();
+    say("Nothing changed. The text is as it was.");
+    return;
+  }
+  const id = "e" + ++seq;
+  host.classList.add("mark", "edited");
+  if (block) host.classList.add("block");
+  host.dataset.editId = id;
+  edits.push({
+    id, kind: "edit", chip: "Edited", label,
+    preview: "<del>" + escape(trim(original)) + "</del> <ins>" + escape(trim(changed)) + "</ins>",
+    node: host, restore,
+  });
+  window.getSelection().removeAllRanges();
+  render();
+  say("Edit saved as a draft.");
+}
+
+function cancelEdit() {
+  if (!liveEdit) return;
+  const { host, restore } = liveEdit;
+  liveEdit = null;
+  editBar.hidden = true;
+  host.contentEditable = "false";
+  host.classList.remove("live-edit");
+  restore();
+  window.getSelection().removeAllRanges();
+  say("Edit cancelled. The text is unchanged.");
+}
+
+function trim(value) {
+  const text = value.trim().replace(/\s+/g, " ");
+  return text.length > 60 ? text.slice(0, 60) + "…" : text;
+}
+
+function finishSelection(message) {
+  hideAll();
+  pendingRange = null;
+  window.getSelection().removeAllRanges();
+  render();
+  say(message);
+}
+
+document.getElementById("undoEdit").addEventListener("click", () => {
+  if (activeMark) dropEdit(activeMark.dataset.editId);
+  activeMark = null;
+  hideAll();
+});
+
+/* -------------------------------------------------------------- rail state */
+function dropEdit(id) {
+  const edit = edits.find((item) => item.id === id);
+  if (!edit) return;
+  if (edit.restore) edit.restore();
+  edits = edits.filter((item) => item.id !== id);
+  render();
+  say("Edit removed.");
+}
+
+function escape(value) {
+  return value.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+}
+
+function render() {
+  qCount.textContent = String(edits.length);
+  const hasEdits = edits.some((edit) => edit.kind !== "note");
+  chatActionLabel.textContent = hasEdits ? "Save or send" : "Send or add";
+  document.getElementById("mApply").hidden = !hasEdits;
+  document.getElementById("composerHelp").textContent = hasEdits
+    ? "Saving writes the edits into the artifact. Sending leaves that to the agent."
+    : "Send now includes every draft. Shift+Enter adds a new line.";
+  if (!edits.length) {
+    queue.innerHTML =
+      '<div class="empty">Nothing drafted. Edit the text, annotate the artifact, or write a note below.</div>';
+    return;
+  }
+  queue.innerHTML = edits.map((edit) => `
+    <div class="draft-row" data-row="${edit.id}">
+      <span class="state-chip ${edit.kind === "edit" ? "edit" : edit.kind === "note" ? "" : "cut"}">${edit.chip}</span>
+      <button class="draft-jump" type="button" data-jump="${edit.id}">
+        <div class="draft-main">${edit.preview}</div>
+        <div class="draft-context">${escape(edit.label)}</div>
+      </button>
+      <button class="remove" type="button" data-remove="${edit.id}" aria-label="Remove this edit">×</button>
+    </div>`).join("");
+}
+
+queue.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove]");
+  if (remove) { dropEdit(remove.dataset.remove); return; }
+  const jump = event.target.closest("[data-jump]");
+  if (!jump) return;
+  const edit = edits.find((item) => item.id === jump.dataset.jump);
+  const target = edit && (edit.node || edit.block);
+  if (target) target.scrollIntoView({ block: "center", behavior: "smooth" });
+});
+
+queue.addEventListener("mouseover", (event) => {
+  const row = event.target.closest("[data-row]");
+  paper.querySelectorAll(".mark.linked").forEach((el) => el.classList.remove("linked"));
+  if (!row) return;
+  const edit = edits.find((item) => item.id === row.dataset.row);
+  if (edit && edit.node) edit.node.classList.add("linked");
+});
+
+/* ------------------------------------------------------------------ menu */
+chatAction.addEventListener("click", () => {
+  const rect = chatAction.getBoundingClientRect();
+  chatMenu.hidden = !chatMenu.hidden;
+  if (chatMenu.hidden) return;
+  chatMenu.style.top = (rect.top - chatMenu.offsetHeight - 8) + "px";
+  chatMenu.style.left = (rect.right - chatMenu.offsetWidth) + "px";
+});
+document.addEventListener("click", (event) => {
+  if (!chatMenu.contains(event.target) && event.target !== chatAction &&
+      !chatAction.contains(event.target)) chatMenu.hidden = true;
+});
+
+const settle = (label, className, message) => {
+  chatMenu.hidden = true;
+  composerState.textContent = label;
+  composerState.className = "action-state " + className;
+  queue.querySelectorAll(".state-chip").forEach((chip) => {
+    chip.textContent = label;
+    chip.className = "state-chip " + className;
+  });
+  say(message);
+};
+document.getElementById("mApply").addEventListener("click", () =>
+  settle("Applied", "applied", "Edits written into the artifact and reported to the agent."));
+document.getElementById("mSend").addEventListener("click", () =>
+  settle("Sent", "sent", "Edits sent to the agent."));
+document.getElementById("mQueue").addEventListener("click", () => {
+  chatMenu.hidden = true;
+  say("Kept as drafts.");
+});
+document.getElementById("mEnd").addEventListener("click", () =>
+  settle("Sent", "sent", "Everything sent and the review ended."));
+
+/* ------------------------------------------------------------- mode toggle */
+document.getElementById("editBtn").addEventListener("click", () => setMode("edit"));
+document.getElementById("annBtn").addEventListener("click", () => setMode("annotate"));
+function setMode(mode) {
+  cancelEdit();
+  document.body.dataset.mode = mode;
+  const editing = mode === "edit";
+  document.getElementById("editBtn").classList.toggle("active", editing);
+  document.getElementById("editBtn").setAttribute("aria-pressed", String(editing));
+  document.getElementById("annBtn").classList.toggle("active", !editing);
+  document.getElementById("annBtn").setAttribute("aria-pressed", String(!editing));
+  gutterGroup.hidden = true;
+  hideAll();
+  say(editing ? "Edit text mode on." : "Annotation mode on. Text edits stay drafted.");
+}
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "e") {
+    event.preventDefault();
+    setMode(document.body.dataset.mode === "edit" ? "annotate" : "edit");
+  }
+  if (event.key === "Escape") { hideAll(); chatMenu.hidden = true; }
+});
+
+render();
+</script>
+</body>
+</html>
