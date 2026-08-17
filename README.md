@@ -5,12 +5,6 @@ HTML artifacts it creates. You can annotate content, edit text, make structured
 choices, chat, revise diagrams, and watch the same artifact reload as the agent
 applies your feedback.
 
-The review server is local-first and has no cloud relay. The agent normally
-remains the author of the source file; Artifact Review changes it only when you
-explicitly choose **Save edits to the artifact**.
-
-![Inline artifact and diagram review](docs/images/inline-diagram-review.png)
-
 ## Quick start
 
 You need Python 3.9 or newer, Node.js 22.20 or newer for installation, and a
